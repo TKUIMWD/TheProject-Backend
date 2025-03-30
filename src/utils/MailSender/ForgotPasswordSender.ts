@@ -30,3 +30,7 @@ ${BASE_URL}/api/v1/auth/forgotPassword/?token=${token}\n如果您沒有申請重
         logger.error(`Failed to send password reset email to ${toMail}`);
     });
 }
+
+/*
+之後連結改成前端頁面，而不是直接連到後端，在前端填寫新密碼後透過API回傳給後端
+*/
