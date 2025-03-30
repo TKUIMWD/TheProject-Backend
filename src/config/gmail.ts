@@ -7,7 +7,7 @@ if (!senderEmail) {
     throw new Error('SENDER_EMAIL is not defined in the environment variables');
 }
 
-export const mailConfigurations = (toMail:string, token: string,subject:string,text:string) => ({
+export const mailConfigurations = (toMail:string,subject:string,text:string) => ({
     from: `${senderEmail}`,
 
     to: `${toMail}`,
