@@ -10,7 +10,7 @@ import { Request, Response } from "express";
 import { UsersModel } from "../orm/schemas/UserSchemas";
 import { sendVerificationEmail } from "../utils/MailSender/VerificationTokenSender";
 import { sendForgotPasswordEmail } from "../utils/MailSender/ForgotPasswordSender";
-import { generateHashedPassword } from "../utils/password";
+import { generateHashedPassword, passwordStrengthCheck } from "../utils/password";
 
 
 export class AuthService extends Service {
@@ -55,6 +55,12 @@ export class AuthService extends Service {
                 return resp;
             }
 
+            const passwordStrengthCheckResult = passwordStrengthCheck(password);
+            if (!passwordStrengthCheckResult.isValid) {
+                resp.code = 400;
+                resp.message = `password does not meet the requirements: ${passwordStrengthCheckResult.missingRequirements.join(", ")}`;
+                return resp;
+            }
             const hashedPassword = await generateHashedPassword(password);
 
             const newRegisterUser = new UsersModel({
@@ -248,6 +254,12 @@ export class AuthService extends Service {
                 if (!newPassword) {
                     resp.code = 400;
                     resp.message = "missing password field";
+                    return resp;
+                }
+                const passwordStrengthCheckResult = passwordStrengthCheck(newPassword);
+                if (!passwordStrengthCheckResult.isValid) {
+                    resp.code = 400;
+                    resp.message = `password does not meet the requirements: ${passwordStrengthCheckResult.missingRequirements.join(", ")}`;
                     return resp;
                 }
                 const hashedPassword = await generateHashedPassword(newPassword);
