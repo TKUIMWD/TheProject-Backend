@@ -9,7 +9,7 @@ export function sendForgotPasswordEmail(toMail: string, token: string) {
 ${BASE_URL}/api/v1/auth/forgotPassword/?token=${token}\n如果您沒有申請重置密碼，請忽略此郵件。`
            
     transporter.sendMail({
-        ...mailConfigurations(toMail, token, subject, text)
+        ...mailConfigurations(toMail, subject, text)
     }).then((info: any) => {
         console.log(info);
         logger.info(`Password reset email sent to ${toMail}`);
