@@ -29,5 +29,12 @@ export class AuthRoute extends Route {
         this.router.post(`${this.url}logout`, (req, res) => {
             this.Contorller.logout(req, res);
         })
+
+        this.router.post(`${this.url}forgotPassword`, (req, res) => {
+            this.Contorller.forgotPassword(req, res);
+        })
+        this.router.put(`${this.url}forgotPassword`, (req, res) => {
+            this.Contorller.forgotPassword(req, res);
+        })
     }
 }

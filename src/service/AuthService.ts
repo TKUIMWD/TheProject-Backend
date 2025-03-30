@@ -3,12 +3,14 @@ import { Service } from "../abstract/Service";
 import { resp } from "../utils/resp";
 import { DBResp } from "../interfaces/DBResp";
 import { Document } from "mongoose";
-import { generateToken,generateVerificationToken, verifyToken } from "../utils/token";
+import { generatePasswordResetToken, generateToken,generateVerificationToken, verifyToken } from "../utils/token";
 import { AuthResponse } from "../interfaces/AuthResponse";
 import { logger } from "../middlewares/log";
 import { Request, Response } from "express";
 import { UsersModel } from "../orm/schemas/UserSchemas";
 import { sendVerificationEmail } from "../utils/MailSender/VerificationTokenSender";
+import { sendForgotPasswordEmail } from "../utils/MailSender/ForgotPasswordSender";
+import { generateHashedPassword } from "../utils/password";
 
 
 export class AuthService extends Service {
@@ -53,8 +55,7 @@ export class AuthService extends Service {
                 return resp;
             }
 
-            const salt = await bcrypt.genSalt(10);
-            const hashedPassword = await bcrypt.hash(password, salt);
+            const hashedPassword = await generateHashedPassword(password);
 
             const newRegisterUser = new UsersModel({
                 username,
@@ -199,6 +200,71 @@ export class AuthService extends Service {
             logger.error(error);
             resp.code = 500;
             resp.message = "internal server error";
+        }
+        return resp;
+    }
+
+    public async forgotPassword(Request: Request):Promise<resp<DBResp<Document> | undefined>> {
+        const resp: resp<DBResp<Document> | undefined> = {
+            code: 200,
+            message: "",
+            body: undefined
+        };
+
+        if (Request.method === "POST") {
+            try {
+                const email = Request.body.email;
+                if (!email) {
+                    resp.code = 400;
+                    resp.message = "missing email field";
+                    return resp;
+                }
+                sendForgotPasswordEmail(email,generatePasswordResetToken(email));
+                resp.message = "password reset email sent";
+                logger.info(`password reset email sent to ${email}`);
+            } catch (error) {
+                logger.error(error);
+                resp.code = 500;
+                resp.message = "internal server error";
+            }
+        }
+        else if (Request.method === "PUT") {
+            try {
+                const token = Request.query.token as string;
+                const decoded = verifyToken(token);
+                if (!decoded) {
+                    resp.code = 400;
+                    resp.message = "invalid token";
+                    return resp;
+                }
+                const { email } = decoded as { email: string };
+                const user = await UsersModel.findOne({ email: email });
+                if (!user) {
+                    resp.code = 400;
+                    resp.message = "invalid token";
+                    return resp;
+                }
+                const newPassword = Request.body.password;
+                if (!newPassword) {
+                    resp.code = 400;
+                    resp.message = "missing password field";
+                    return resp;
+                }
+                const hashedPassword = await generateHashedPassword(newPassword);
+                user.password_hash = hashedPassword;
+                await user.save();
+                resp.message = "password reset successful";
+                logger.info(`password reset successful for ${user.email}`);
+            }
+            catch (error) {
+                logger.error(error);
+                resp.code = 500;
+                resp.message = "internal server error";
+            }
+        }
+        else {
+            resp.code = 400;
+            resp.message = "invalid method";
         }
         return resp;
     }

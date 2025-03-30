@@ -33,4 +33,9 @@ export class AuthController extends Contorller {
         const resp = await this.service.logout(Request)
         Response.status(resp.code).send(resp)
     }
+
+    public async forgotPassword(Request: Request, Response: Response) {
+        const resp = await this.service.forgotPassword(Request)
+        Response.status(resp.code).send(resp)
+    }
 }
