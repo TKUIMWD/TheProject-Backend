@@ -8,7 +8,7 @@ import { AuthResponse } from "../interfaces/AuthResponse";
 import { logger } from "../middlewares/log";
 import { Request, Response } from "express";
 import { UsersModel } from "../orm/schemas/UserSchemas";
-import { sendVerificationEmail } from "../utils/VerificationTokenSender";
+import { sendVerificationEmail } from "../utils/MailSender/VerificationTokenSender";
 
 
 export class AuthService extends Service {
@@ -66,7 +66,7 @@ export class AuthService extends Service {
             await newRegisterUser.save();
             resp.message = "user registered successfully";
             logger.info(`user registered successfully: ${username}`);
-
+            sendVerificationEmail(newRegisterUser.email,generateVerificationToken(newRegisterUser._id));
         } catch (error) {
             logger.error(error);
             resp.code = 500;
