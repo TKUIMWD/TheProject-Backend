@@ -1,18 +1,7 @@
 require('dotenv').config();
-import mailConfigurations from "../../config/gmail";
+import {mailConfigurations,transporter} from "../../config/gmail";
 import { logger } from "../../middlewares/log";
 const BASE_URL = process.env.BASE_URL;
-
-
-const nodemailer = require('nodemailer');
-
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: process.env.SENDER_EMAIL,
-        pass: process.env.GOOGLE_APP_PASSWORD
-    }
-});
 
 
 export function sendVerificationEmail(toMail: string, token: string) {
