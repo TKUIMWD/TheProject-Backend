@@ -228,6 +228,12 @@ export class AuthService extends Service {
         if (Request.method === "POST") {
             try {
                 const email = Request.body.email;
+                const user = await UsersModel.findOne({ email });
+                if (!user) {
+                    resp.code = 200;
+                    resp.message = "If the email exists, a password reset email has been sent";
+                    return resp;
+                }
                 if (!email) {
                     resp.code = 400;
                     resp.message = "missing email field";
