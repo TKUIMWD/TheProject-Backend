@@ -244,7 +244,13 @@ export class AuthService extends Service {
         }
         else if (Request.method === "PUT") {
             try {
-                const token = Request.query.token as string;
+                const authHeader = Request.headers.authorization;
+                if (!authHeader) {
+                    resp.code = 400;
+                    resp.message = "missing authorization header";
+                    return resp;
+                }
+                const token = authHeader.split(" ")[1];
                 const decoded = verifyToken(token);
                 if (!decoded) {
                     resp.code = 400;
