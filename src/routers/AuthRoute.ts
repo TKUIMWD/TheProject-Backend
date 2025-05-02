@@ -18,7 +18,7 @@ export class AuthRoute extends Route {
             this.Contorller.register(req, res);
         })
 
-        this.router.get(`${this.url}verify`, (req, res) => {
+        this.router.post(`${this.url}verify`, (req, res) => {
             this.Contorller.verify(req, res);
         })
 

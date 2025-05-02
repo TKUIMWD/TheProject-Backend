@@ -83,7 +83,7 @@ export class AuthService extends Service {
     }
 
 
-    public async verify(token:string):Promise<resp<AuthResponse | undefined>> {
+    public async verify(Request:Request):Promise<resp<AuthResponse | undefined>> {
         const resp: resp<AuthResponse | undefined> = {
             code: 200,
             message: "",
@@ -91,6 +91,13 @@ export class AuthService extends Service {
         };
 
         try {
+            const authHeader = Request.headers.authorization;
+            if (!authHeader) {
+                resp.code = 400;
+                resp.message = "missing authorization header";
+                return resp;
+            }
+            const token = authHeader.split(" ")[1];
             const decoded = verifyToken(token);
             if (!decoded) {
                 resp.code = 400;
@@ -148,7 +155,8 @@ export class AuthService extends Service {
             }
             if (!user.isVerified) {
                 resp.code = 400;
-                resp.message = "email not verified";
+                resp.message = "email not verified, please verify your email";
+                sendVerificationEmail(user.email,generateVerificationToken(user._id));
                 logger.warn(`someone tried to login with unverified email: ${user.email}`);
                 return resp;
             }
@@ -159,7 +167,7 @@ export class AuthService extends Service {
                 logger.warn(`someone tried to login with invalid password: ${username}`);
                 return resp;
             }
-            const token = generateToken(user._id, user.role);
+            const token = generateToken(user._id, user.role , user.username);
             resp.message = "login successful";
             resp.body = { token } as AuthResponse;
             logger.info(`login successful for ${username}`);
@@ -236,7 +244,13 @@ export class AuthService extends Service {
         }
         else if (Request.method === "PUT") {
             try {
-                const token = Request.query.token as string;
+                const authHeader = Request.headers.authorization;
+                if (!authHeader) {
+                    resp.code = 400;
+                    resp.message = "missing authorization header";
+                    return resp;
+                }
+                const token = authHeader.split(" ")[1];
                 const decoded = verifyToken(token);
                 if (!decoded) {
                     resp.code = 400;
