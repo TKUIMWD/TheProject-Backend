@@ -4,6 +4,7 @@ export interface AuthResponse {
     data: {
         _id: string;
         role: Roles;
+        username: string;
     };
     token: string;
 }

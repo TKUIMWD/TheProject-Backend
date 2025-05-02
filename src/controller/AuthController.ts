@@ -19,8 +19,7 @@ export class AuthController extends Contorller {
     }
 
     public async verify(Request: Request, Response: Response) {
-        const token = Request.query.token as string;
-        const resp = await this.service.verify(token);
+        const resp = await this.service.verify(Request);
         Response.status(resp.code).send(resp)
     }
 

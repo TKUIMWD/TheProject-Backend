@@ -9,8 +9,8 @@ if (!secret) {
     throw new Error('JWT_SECRET is not defined in the environment variables');
 }
 
-export const generateToken = (_id: string, role: Roles):string => {
-    return jwt.sign({ _id, role }, secret, { expiresIn: '1d' });
+export const generateToken = (_id: string, role: Roles , username:string):string => {
+    return jwt.sign({ _id, username, role }, secret, { expiresIn: '1d' });
 }
 
 export const generateVerificationToken = (_id: string):string => {
