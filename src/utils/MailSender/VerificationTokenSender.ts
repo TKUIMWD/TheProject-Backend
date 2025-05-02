@@ -6,8 +6,9 @@ const BASE_URL = process.env.BASE_URL;
 
 export function sendVerificationEmail(toMail: string, token: string) {
     const subject = '信箱驗證';
+    const frontendUrl = process.env.FRONTEND_BASE_URL+`/verify?token=${token}`;
     const text = `請點擊下面的連結驗證您的電子郵件以完成註冊並開始使用我們的服務：
-${BASE_URL}/api/v1/auth/verify/?token=${token}\n如果您沒有註冊，請忽略此郵件。`
+${frontendUrl}\n如果您沒有註冊，請忽略此郵件。`
            
     transporter.sendMail({
         ...mailConfigurations(toMail, subject, text)
