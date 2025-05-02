@@ -1,5 +1,5 @@
 import {Route} from "./abstract/Route";
-import { AuthRoute } from "./routers/ AuthRoute";
+import { AuthRoute } from "./routers/AuthRoute";
 import { PageRoute } from "./routers/PageRoute";
 import { UserRoute } from "./routers/UserRoute";
 
