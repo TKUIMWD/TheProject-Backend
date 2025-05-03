@@ -6,5 +6,7 @@ export interface User{
     password_hash: string,
     email: string,
     isVerified: boolean,
-    role: Roles
+    role: Roles,
+    lastTimeVerifyEmailSent?: Date,
+    lastTimePasswordResetEmailSent?: Date,
 }
