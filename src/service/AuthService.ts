@@ -3,7 +3,7 @@ import { Service } from "../abstract/Service";
 import { resp } from "../utils/resp";
 import { DBResp } from "../interfaces/DBResp";
 import { Document } from "mongoose";
-import { generatePasswordResetToken, generateToken,generateVerificationToken, verifyToken } from "../utils/token";
+import { generatePasswordResetToken, generateToken, generateVerificationToken, verifyToken } from "../utils/token";
 import { AuthResponse } from "../interfaces/AuthResponse";
 import { logger } from "../middlewares/log";
 import { Request, Response } from "express";
@@ -14,11 +14,25 @@ import { generateHashedPassword, passwordStrengthCheck } from "../utils/password
 
 
 export class AuthService extends Service {
+    /**
+     * Checks if enough time has passed since the last email was sent.
+     * @param lastTimeSent - The Date when the last email was sent (can be null/undefined if never sent).
+     * @param intervalMinutes - The minimum interval in minutes required between emails.
+     * @returns true if an email can be sent, false otherwise.
+     */
+    public canSendEmail(lastTimeSent: Date | null | undefined, intervalMinutes: number): boolean {
+        if (!lastTimeSent) return true;
+        const now = new Date();
+        const diffMs = now.getTime() - lastTimeSent.getTime();
+        const diffMinutes = diffMs / (1000 * 60);
+        return diffMinutes >= intervalMinutes;
+    }
+
     /*
     * @param data : {username:string,email:string,password:string}
     * @returns resp<DBResp<Document> | undefined>
     */
-    public async register(data :{username:string,email:string,password:string}):Promise<resp<DBResp<Document> | undefined>> {
+    public async register(data: { username: string, email: string, password: string }): Promise<resp<DBResp<Document> | undefined>> {
         const resp: resp<DBResp<Document> | undefined> = {
             code: 200,
             message: "",
@@ -40,13 +54,19 @@ export class AuthService extends Service {
             // check if username or email already exists
             const existingUsername = await UsersModel.findOne({ username });
             const existingEmail = await UsersModel.findOne({ email });
-            
+
             if (existingUsername || existingEmail) {
                 if (existingEmail && existingEmail.isVerified === false) {
                     resp.code = 400;
                     resp.message = "email already exists but not verified , please verify your email";
                     logger.warn(`someone tried to register with existing email but not verified: ${email}`);
-                    sendVerificationEmail(existingEmail.email,generateVerificationToken(existingEmail._id));
+                    if (this.canSendEmail(existingEmail.lastTimeVerifyEmailSent, 5)) {
+                        sendVerificationEmail(existingEmail.email, generateVerificationToken(existingEmail._id));
+                        existingEmail.lastTimePasswordResetEmailSent = new Date();
+                        await existingEmail.save();
+                    } else {
+                        resp.message = "please wait 5 minutes before resending the verification email";
+                    }
                     return resp;
                 }
                 resp.code = 400;
@@ -65,15 +85,21 @@ export class AuthService extends Service {
 
             const newRegisterUser = new UsersModel({
                 username,
-                password_hash:hashedPassword,
+                password_hash: hashedPassword,
                 email,
-                isVerified:false
+                isVerified: false
             });
 
             await newRegisterUser.save();
             resp.message = "user registered successfully";
             logger.info(`user registered successfully: ${username}`);
-            sendVerificationEmail(newRegisterUser.email,generateVerificationToken(newRegisterUser._id));
+            if (this.canSendEmail(newRegisterUser.lastTimeVerifyEmailSent, 5)) {
+                sendVerificationEmail(newRegisterUser.email, generateVerificationToken(newRegisterUser._id));
+                newRegisterUser.lastTimeVerifyEmailSent = new Date();
+                await newRegisterUser.save();
+            } else{
+                resp.message = "please wait 5 minutes before resending the verification email";
+            }
         } catch (error) {
             logger.error(error);
             resp.code = 500;
@@ -83,7 +109,7 @@ export class AuthService extends Service {
     }
 
 
-    public async verify(Request:Request):Promise<resp<AuthResponse | undefined>> {
+    public async verify(Request: Request): Promise<resp<AuthResponse | undefined>> {
         const resp: resp<AuthResponse | undefined> = {
             code: 200,
             message: "",
@@ -129,14 +155,14 @@ export class AuthService extends Service {
     * @param data : {username:string,password:string}
     * @returns resp<AuthResponse | undefined>
     */
-    public async login(data:{username:string,password:string}):Promise<resp<AuthResponse | undefined>> {
+    public async login(data: { username: string, password: string }): Promise<resp<AuthResponse | undefined>> {
         const resp: resp<AuthResponse | undefined> = {
             code: 200,
             message: "",
             body: undefined
         };
 
-       try {
+        try {
             const { username, password } = data;
             if (!username || !password) {
                 resp.code = 400;
@@ -156,7 +182,13 @@ export class AuthService extends Service {
             if (!user.isVerified) {
                 resp.code = 400;
                 resp.message = "email not verified, please verify your email";
-                sendVerificationEmail(user.email,generateVerificationToken(user._id));
+                if (this.canSendEmail(user.lastTimeVerifyEmailSent, 5)) {
+                    sendVerificationEmail(user.email, generateVerificationToken(user._id));
+                    user.lastTimeVerifyEmailSent = new Date();
+                    await user.save();
+                } else {
+                    resp.message = "please wait 5 minutes before resending the verification email";
+                }
                 logger.warn(`someone tried to login with unverified email: ${user.email}`);
                 return resp;
             }
@@ -167,11 +199,11 @@ export class AuthService extends Service {
                 logger.warn(`someone tried to login with invalid password: ${username}`);
                 return resp;
             }
-            const token = generateToken(user._id, user.role , user.username);
+            const token = generateToken(user._id, user.role, user.username);
             resp.message = "login successful";
             resp.body = { token } as AuthResponse;
             logger.info(`login successful for ${username}`);
-       
+
         } catch (error) {
             logger.error(error);
             resp.code = 500;
@@ -180,7 +212,7 @@ export class AuthService extends Service {
         return resp;
     }
 
-    public async logout(Request: Request):Promise<resp<DBResp<Document> | undefined>> {
+    public async logout(Request: Request): Promise<resp<DBResp<Document> | undefined>> {
         const resp: resp<DBResp<Document> | undefined> = {
             code: 200,
             message: "",
@@ -218,7 +250,7 @@ export class AuthService extends Service {
         return resp;
     }
 
-    public async forgotPassword(Request: Request):Promise<resp<DBResp<Document> | undefined>> {
+    public async forgotPassword(Request: Request): Promise<resp<DBResp<Document> | undefined>> {
         const resp: resp<DBResp<Document> | undefined> = {
             code: 200,
             message: "",
@@ -239,9 +271,16 @@ export class AuthService extends Service {
                     resp.message = "missing email field";
                     return resp;
                 }
-                sendForgotPasswordEmail(email,generatePasswordResetToken(email));
+                if (this.canSendEmail(user.lastTimePasswordResetEmailSent, 5)) {
+                    sendForgotPasswordEmail(email, generatePasswordResetToken(email));
+                    user.lastTimePasswordResetEmailSent = new Date();
+                    await user.save();
+                } else {
+                    resp.code = 400;
+                    resp.message = "please wait 5 minutes before resending the password reset email";
+                    return resp;
+                }
                 resp.message = "password reset email sent";
-                // logger.info(`password reset email sent to ${email}`);
             } catch (error) {
                 logger.error(error);
                 resp.code = 500;

@@ -7,7 +7,9 @@ export const UsersSchemas = new Schema<User>({
     password_hash:{ type: String, required: true },
     email:{ type: String, required: true },
     isVerified:{ type: Boolean, default: true },
-    role:{ type: String , default: Roles.User }
+    role:{ type: String , default: Roles.User },
+    lastTimeVerifyEmailSent:{ type: Date },
+    lastTimePasswordResetEmailSent:{ type: Date },
 });
 
 export const UsersModel = model<User>('users', UsersSchemas);
