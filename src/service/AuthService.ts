@@ -241,7 +241,7 @@ export class AuthService extends Service {
                 }
                 sendForgotPasswordEmail(email,generatePasswordResetToken(email));
                 resp.message = "password reset email sent";
-                logger.info(`password reset email sent to ${email}`);
+                // logger.info(`password reset email sent to ${email}`);
             } catch (error) {
                 logger.error(error);
                 resp.code = 500;
