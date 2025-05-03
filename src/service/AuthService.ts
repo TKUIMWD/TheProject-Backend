@@ -103,13 +103,6 @@ export class AuthService extends Service {
                     resp.code = 400;
                     resp.message = "email already exists but not verified , please verify your email";
                     logger.warn(`someone tried to register with existing email but not verified: ${email}`);
-                    if (this.canSendEmail(existingEmail.lastTimeVerifyEmailSent, 5)) {
-                        sendVerificationEmail(existingEmail.email, generateVerificationToken(existingEmail._id));
-                        existingEmail.lastTimePasswordResetEmailSent = new Date();
-                        await existingEmail.save();
-                    } else {
-                        resp.message = "please wait 5 minutes before resending the verification email";
-                    }
                     return resp;
                 }
                 resp.code = 400;
@@ -142,7 +135,11 @@ export class AuthService extends Service {
                 newRegisterUser.lastTimeVerifyEmailSent = new Date();
                 await newRegisterUser.save();
             } else {
-                resp.message = "please wait 5 minutes before resending the verification email";
+                resp.code = 400;
+                const minutesLeft = newRegisterUser.lastTimeVerifyEmailSent
+                    ? Math.ceil((newRegisterUser.lastTimeVerifyEmailSent.getTime() + 5 * 60 * 1000 - new Date().getTime()) / 60000)
+                    : 5;
+                resp.message = `please wait ${minutesLeft} minute(s) before resending the verification email`;
             }
         } catch (error) {
             logger.error(error);
@@ -231,7 +228,11 @@ export class AuthService extends Service {
                     user.lastTimeVerifyEmailSent = new Date();
                     await user.save();
                 } else {
-                    resp.message = "please wait 5 minutes before resending the verification email";
+                    resp.code = 400;
+                    const minutesLeft = user.lastTimeVerifyEmailSent
+                        ? Math.ceil((user.lastTimeVerifyEmailSent.getTime() + 5 * 60 * 1000 - new Date().getTime()) / 60000)
+                        : 5;
+                    resp.message = `please wait ${minutesLeft} minute(s) before resending the verification email`;
                 }
                 logger.warn(`someone tried to login with unverified email: ${user.email}`);
                 return resp;
@@ -351,7 +352,10 @@ export class AuthService extends Service {
                     await user.save();
                 } else {
                     resp.code = 400;
-                    resp.message = "please wait 5 minutes before resending the password reset email";
+                    const minutesLeft = user.lastTimePasswordResetEmailSent
+                        ? Math.ceil((user.lastTimePasswordResetEmailSent.getTime() + 5 * 60 * 1000 - new Date().getTime()) / 60000)
+                        : 5;
+                    resp.message = `please wait ${minutesLeft} minute(s) before resending the verification email`;
                     return resp;
                 }
                 resp.message = "password reset email sent";
