@@ -10,6 +10,11 @@ export const UsersSchemas = new Schema<User>({
     role:{ type: String , default: Roles.User },
     lastTimeVerifyEmailSent:{ type: Date },
     lastTimePasswordResetEmailSent:{ type: Date },
+    wrongLoginAttemptStartTime:{ type: Date },
+    wrongLoginAttemptCount:{ type: Number, default: 0 },
+    isLocked:{ type: Boolean, default: false },
+    lockUntil:{ type: Date },
+    registeredAt:{ type: Date},
 });
 
 export const UsersModel = model<User>('users', UsersSchemas);
