@@ -11,6 +11,7 @@ import { UsersModel } from "../orm/schemas/UserSchemas";
 import { sendVerificationEmail } from "../utils/MailSender/VerificationTokenSender";
 import { sendForgotPasswordEmail } from "../utils/MailSender/ForgotPasswordSender";
 import { generateHashedPassword, passwordStrengthCheck } from "../utils/password";
+import { User } from "../interfaces/User";
 
 
 export class AuthService extends Service {
@@ -26,6 +27,48 @@ export class AuthService extends Service {
         const diffMs = now.getTime() - lastTimeSent.getTime();
         const diffMinutes = diffMs / (1000 * 60);
         return diffMinutes >= intervalMinutes;
+    }
+
+    /**
+     * Handles wrong login attempts for a user.
+     * Locks the user if too many failed attempts within the interval.
+     * @param user - The user document.
+     * @param intervalMinutes - The interval in minutes to check for failed attempts.
+     */
+    async handleWrongLoginAttempt(user: Document & User, intervalMinutes: number, maxWrongLoginAttemptCount: number): Promise<void> {
+        const now = new Date();
+        const intervalMs = intervalMinutes * 60 * 1000;
+        logger.info(`user ${user.username} wrong login attempt, count: ${user.wrongLoginAttemptCount}, isLocked: ${user.isLocked}`);
+
+        if (user.isLocked && user.lockUntil && user.lockUntil > now) {
+            user.wrongLoginAttemptCount = (user.wrongLoginAttemptCount ?? 0) + 1;
+            logger.info(`user ${user.username} is already locked until ${user.lockUntil}`);
+            await user.save();
+            return;
+        }
+
+        // If lock expired, unlock user
+        if (user.isLocked && user.lockUntil && user.lockUntil <= now) {
+            user.isLocked = false;
+            user.lockUntil = undefined;
+            user.wrongLoginAttemptCount = 0;
+            user.wrongLoginAttemptStartTime = undefined;
+            await user.save();
+        }
+
+        if (!user.wrongLoginAttemptStartTime || (now.getTime() - user.wrongLoginAttemptStartTime.getTime()) > intervalMs) {
+            user.wrongLoginAttemptStartTime = now;
+            user.wrongLoginAttemptCount = 1;
+        } else {
+            user.wrongLoginAttemptCount = (user.wrongLoginAttemptCount ?? 0) + 1;
+        }
+
+        if (user.wrongLoginAttemptCount >= maxWrongLoginAttemptCount) {
+            user.isLocked = true;
+            user.lockUntil = new Date(now.getTime() + intervalMs);
+        }
+
+        await user.save();
     }
 
     /*
@@ -87,7 +130,8 @@ export class AuthService extends Service {
                 username,
                 password_hash: hashedPassword,
                 email,
-                isVerified: false
+                isVerified: false,
+                registeredAt: new Date(),
             });
 
             await newRegisterUser.save();
@@ -97,7 +141,7 @@ export class AuthService extends Service {
                 sendVerificationEmail(newRegisterUser.email, generateVerificationToken(newRegisterUser._id));
                 newRegisterUser.lastTimeVerifyEmailSent = new Date();
                 await newRegisterUser.save();
-            } else{
+            } else {
                 resp.message = "please wait 5 minutes before resending the verification email";
             }
         } catch (error) {
@@ -194,10 +238,40 @@ export class AuthService extends Service {
             }
             const isMatch = await bcrypt.compare(password, user.password_hash);
             if (!isMatch) {
+                await this.handleWrongLoginAttempt(user, 5, 20);
+                if (user.isLocked) {
+                    resp.code = 400;
+                    const minutesLeft = user.lockUntil
+                        ? Math.ceil((user.lockUntil.getTime() - new Date().getTime()) / 60000)
+                        : 0;
+                    // console.log(user.lockUntil?.getTime(), new Date().getTime(), minutesLeft);
+                    resp.message = `user is locked, please wait ${minutesLeft} minute(s) until the lock is lifted`;
+                    return resp;
+                }
                 resp.code = 400;
                 resp.message = "invalid username or password";
                 logger.warn(`someone tried to login with invalid password: ${username}`);
                 return resp;
+            } else {
+                if (user.isLocked && user.lockUntil && user.lockUntil > new Date()) {
+                    resp.code = 400;
+                    const minutesLeft = user.lockUntil
+                        ? Math.ceil((user.lockUntil.getTime() - new Date().getTime()) / 60000)
+                        : 0;
+                    resp.message = `user is locked, please wait ${minutesLeft} minute(s) until the lock is lifted`;
+                    return resp;
+                }
+                if (user.isLocked && user.lockUntil && user.lockUntil <= new Date()) {
+                    user.isLocked = false;
+                    user.lockUntil = undefined;
+                    logger.info(`user ${username} is unlocked`);
+                    await user.save();
+                }
+                if (!user.isLocked) {
+                    user.wrongLoginAttemptCount = undefined;
+                    user.wrongLoginAttemptStartTime = undefined;
+                    await user.save();
+                }
             }
             const token = generateToken(user._id, user.role, user.username);
             resp.message = "login successful";

@@ -9,4 +9,9 @@ export interface User{
     role: Roles,
     lastTimeVerifyEmailSent?: Date,
     lastTimePasswordResetEmailSent?: Date,
+    wrongLoginAttemptStartTime?: Date,
+    wrongLoginAttemptCount?: number,
+    isLocked?: boolean,
+    lockUntil?: Date,
+    registeredAt?: Date,
 }
