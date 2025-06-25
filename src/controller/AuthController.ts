@@ -1,11 +1,11 @@
-import { Contorller } from "../abstract/Contorller";
+import { Controller } from "../abstract/Controller";
 import { Request, response, Response } from "express";
 import { resp } from "../utils/resp";
 import { DBResp } from "../interfaces/DBResp";
 import { AuthService } from "../service/AuthService";
 require('dotenv').config()
 
-export class AuthController extends Contorller {
+export class AuthController extends Controller {
     protected service: AuthService;
 
     constructor() {

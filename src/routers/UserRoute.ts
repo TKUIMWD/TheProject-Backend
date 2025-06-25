@@ -5,7 +5,7 @@ import { logger } from "../middlewares/log";
 export class UserRoute extends Route{
     
     protected url: string;
-    protected Contorller = new UserController();
+    protected Controller = new UserController();
 
     constructor(){
         super()
@@ -14,6 +14,14 @@ export class UserRoute extends Route{
     }
 
     protected setRoutes(): void {
-        
+        this.router.get(`${this.url}getProfile`,(req,res)=>{
+            this.Controller.getProfile(req,res);
+        });
+        this.router.put(`${this.url}updateProfile`,(req,res)=>{
+            this.Controller.updateProfile(req,res);
+        });
+        this.router.put(`${this.url}changePassword`, (req, res) => {
+            this.Controller.changePassword(req, res);
+        });
     }
 }
