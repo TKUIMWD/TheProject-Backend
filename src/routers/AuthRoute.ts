@@ -4,7 +4,7 @@ import { AuthController } from "../controller/AuthController";
 export class AuthRoute extends Route {
 
     protected url: string;
-    protected Contorller = new AuthController();
+    protected Controller = new AuthController();
 
     constructor() {
         super()
@@ -15,26 +15,26 @@ export class AuthRoute extends Route {
     protected setRoutes(): void {
 
         this.router.post(`${this.url}register`, (req, res) => {
-            this.Contorller.register(req, res);
+            this.Controller.register(req, res);
         })
 
         this.router.post(`${this.url}verify`, (req, res) => {
-            this.Contorller.verify(req, res);
+            this.Controller.verify(req, res);
         })
 
         this.router.post(`${this.url}login`, (req, res) => {
-            this.Contorller.login(req, res);
+            this.Controller.login(req, res);
         })
 
         this.router.post(`${this.url}logout`, (req, res) => {
-            this.Contorller.logout(req, res);
+            this.Controller.logout(req, res);
         })
 
         this.router.post(`${this.url}forgotPassword`, (req, res) => {
-            this.Contorller.forgotPassword(req, res);
+            this.Controller.forgotPassword(req, res);
         })
         this.router.put(`${this.url}forgotPassword`, (req, res) => {
-            this.Contorller.forgotPassword(req, res);
+            this.Controller.forgotPassword(req, res);
         })
     }
 }

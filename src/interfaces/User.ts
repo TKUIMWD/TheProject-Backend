@@ -15,3 +15,8 @@ export interface User{
     lockUntil?: Date,
     registeredAt?: Date,
 }
+
+export interface UserProfile {
+    username: string;
+    email: string;
+}
