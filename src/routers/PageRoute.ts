@@ -4,7 +4,7 @@ import { PageController } from '../controller/PageController'
 export class PageRoute extends Route{
     
     protected url: string;
-    protected Contorller = new PageController();
+    protected Controller = new PageController();
 
     constructor(){
         super()
@@ -14,7 +14,7 @@ export class PageRoute extends Route{
 
     protected setRoutes(): void {
         this.router.get(`${this.url}`,(req, res)=>{
-            this.Contorller.sendPage(req, res);
+            this.Controller.sendPage(req, res);
         })
     }
 

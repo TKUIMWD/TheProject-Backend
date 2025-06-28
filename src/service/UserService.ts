@@ -10,6 +10,8 @@ import { getUserFromRequest } from "../utils/auth";
 import { generateHashedPassword, passwordStrengthCheck } from "../utils/password";
 import { sendVerificationEmail } from "../utils/MailSender/VerificationTokenSender";
 import { generateVerificationToken } from "../utils/token";
+import { processAvatar, deleteAvatar, DEFAULT_AVATAR } from "../utils/avatarUpload";
+import { UsersModel } from "../orm/schemas/UserSchemas";
 
 
 export class UserService extends Service {
@@ -54,7 +56,8 @@ export class UserService extends Service {
 
             const profile: UserProfile = {
                 username: user.username,
-                email: user.email
+                email: user.email,
+                avatar_path: user.avatar_path || DEFAULT_AVATAR
             };
 
             resp.body = profile;
@@ -69,8 +72,8 @@ export class UserService extends Service {
     }
 
     /** 
-    * @param Request (Request.body: {username, email})
-    * @returns resp<T> | undefined>
+    * @param Request (Request.body: {username})
+    * @returns resp<UserProfile | undefined>
     */
     public async updateProfile(Request: Request): Promise<resp<UserProfile | undefined>> {
         const resp: resp<UserProfile | undefined> = {
@@ -87,37 +90,27 @@ export class UserService extends Service {
                 return resp;
             }
 
-            const { username, email } = Request.body;
-            if (!username || !email) {
+            const { username } = Request.body;
+            if (!username) {
                 resp.code = 400;
-                const missingFields = [];
-                if (!username) missingFields.push("username");
-                if (!email) missingFields.push("email");
-                resp.message = `missing required fields: ${missingFields.join(", ")}`;
+                resp.message = "missing required field: username";
+                return resp;
+            }
+
+            const existingUser = await UsersModel.findOne({ username, _id: { $ne: user._id } });
+            if (existingUser) {
+                resp.code = 400;
+                resp.message = "unable to update profile";
                 return resp;
             }
 
             user.username = username;
-            user.email = email;
-            user.isVerified = false;
             await user.save();
-            
-            if (this.canSendEmail(user.lastTimeVerifyEmailSent, 5)) {
-                sendVerificationEmail(user.email, generateVerificationToken(user._id));
-                user.lastTimeVerifyEmailSent = new Date();
-                await user.save();
-            } else {
-                resp.code = 400;
-                const minutesLeft = user.lastTimeVerifyEmailSent
-                    ? Math.ceil((user.lastTimeVerifyEmailSent.getTime() + 5 * 60 * 1000 - new Date().getTime()) / 60000)
-                    : 5;
-                resp.message = `please wait ${minutesLeft} minute(s) before resending the verification email`;
-                return resp;
-            }
 
             const profile: UserProfile = {
                 username: user.username,
-                email: user.email
+                email: user.email,
+                avatar_path: user.avatar_path || DEFAULT_AVATAR
             };
             resp.message = "Profile updated successfully";
             resp.body = profile;
@@ -196,6 +189,128 @@ export class UserService extends Service {
             resp.code = 500;
             resp.message = "Internal server error";
         }
+        return resp;
+    }
+
+    /**
+     * Upload avatar for user
+     * @param Request - Request with file in req.file
+     * @returns resp<UserProfile | undefined>
+     */
+    public async uploadAvatar(Request: Request): Promise<resp<UserProfile | undefined>> {
+        const resp: resp<UserProfile | undefined> = {
+            code: 200,
+            message: "",
+            body: undefined
+        };
+
+        try {
+            const user = await getUserFromRequest(Request);
+            if (!user) {
+                resp.code = 400;
+                resp.message = "invalid token";
+                return resp;
+            }
+
+            if (!user.isVerified) {
+                resp.code = 403;
+                resp.message = "user is not verified";
+                return resp;
+            }
+
+            // 檢查是否有文件上傳
+            const file = (Request as any).file as Express.Multer.File;
+            if (!file) {
+                resp.code = 400;
+                resp.message = "no file uploaded";
+                return resp;
+            }
+
+            // 如果用戶已有頭像，先刪除舊的
+            if (user.avatar_path && user.avatar_path !== DEFAULT_AVATAR) {
+                deleteAvatar(user.avatar_path);
+            }
+
+            // 處理新頭像
+            const avatarPath = await processAvatar(file);
+            user.avatar_path = avatarPath;
+            await user.save();
+
+            const profile: UserProfile = {
+                username: user.username,
+                email: user.email,
+                avatar_path: user.avatar_path
+            };
+
+            resp.message = "Avatar uploaded successfully";
+            resp.body = profile;
+            logger.info(`User ${user.username} uploaded avatar successfully`);
+
+        } catch (error) {
+            logger.error(`Error uploading avatar: ${error}`);
+            resp.code = 500;
+            resp.message = error instanceof Error ? error.message : "Internal server error";
+        }
+
+        return resp;
+    }
+
+    /**
+     * Delete user avatar
+     * @param Request - Request object
+     * @returns resp<UserProfile | undefined>
+     */
+    public async deleteAvatar(Request: Request): Promise<resp<UserProfile | undefined>> {
+        const resp: resp<UserProfile | undefined> = {
+            code: 200,
+            message: "",
+            body: undefined
+        };
+
+        try {
+            const user = await getUserFromRequest(Request);
+            if (!user) {
+                resp.code = 400;
+                resp.message = "invalid token";
+                return resp;
+            }
+
+            if (!user.isVerified) {
+                resp.code = 403;
+                resp.message = "user is not verified";
+                return resp;
+            }
+
+            // 檢查用戶是否有自定義頭像
+            if (!user.avatar_path || user.avatar_path === DEFAULT_AVATAR) {
+                resp.code = 400;
+                resp.message = "no custom avatar to delete";
+                return resp;
+            }
+
+            // 刪除頭像文件
+            deleteAvatar(user.avatar_path);
+            
+            // 重置為默認頭像
+            user.avatar_path = DEFAULT_AVATAR;
+            await user.save();
+
+            const profile: UserProfile = {
+                username: user.username,
+                email: user.email,
+                avatar_path: user.avatar_path
+            };
+
+            resp.message = "Avatar deleted successfully";
+            resp.body = profile;
+            logger.info(`User ${user.username} deleted avatar successfully`);
+
+        } catch (error) {
+            logger.error(`Error deleting avatar: ${error}`);
+            resp.code = 500;
+            resp.message = "Internal server error";
+        }
+
         return resp;
     }
 }

@@ -12,6 +12,7 @@ import { sendVerificationEmail } from "../utils/MailSender/VerificationTokenSend
 import { sendForgotPasswordEmail } from "../utils/MailSender/ForgotPasswordSender";
 import { generateHashedPassword, passwordStrengthCheck } from "../utils/password";
 import { User } from "../interfaces/User";
+import { WrongLoginAttemptModel } from "../orm/schemas/WrongLoginAttemptSchemas";
 
 
 export class AuthService extends Service {
@@ -38,36 +39,50 @@ export class AuthService extends Service {
     async handleWrongLoginAttempt(user: Document & User, intervalMinutes: number, maxWrongLoginAttemptCount: number): Promise<void> {
         const now = new Date();
         const intervalMs = intervalMinutes * 60 * 1000;
-        logger.info(`user ${user.username} wrong login attempt, count: ${user.wrongLoginAttemptCount}, isLocked: ${user.isLocked}`);
+        let wrongLoginAttempt = user.wrongLoginAttemptId
+            ? await WrongLoginAttemptModel.findById(user.wrongLoginAttemptId)
+            : null;
 
-        if (user.isLocked && user.lockUntil && user.lockUntil > now) {
-            user.wrongLoginAttemptCount = (user.wrongLoginAttemptCount ?? 0) + 1;
-            logger.info(`user ${user.username} is already locked until ${user.lockUntil}`);
+        if (!wrongLoginAttempt) {
+            wrongLoginAttempt = new WrongLoginAttemptModel({
+                _id: user._id,
+                wrongLoginAttemptStartTime: now,
+                wrongLoginAttemptCount: 1,
+                lockUntil: null,
+            });
+            await wrongLoginAttempt.save();
+            user.wrongLoginAttemptId = wrongLoginAttempt._id;
             await user.save();
             return;
         }
 
-        // If lock expired, unlock user
-        if (user.isLocked && user.lockUntil && user.lockUntil <= now) {
-            user.isLocked = false;
-            user.lockUntil = undefined;
-            user.wrongLoginAttemptCount = 0;
-            user.wrongLoginAttemptStartTime = undefined;
-            await user.save();
+        // 若帳號已鎖且未解鎖，直接 return
+        if (wrongLoginAttempt.lockUntil && wrongLoginAttempt.lockUntil > now) {
+            return;
         }
 
-        if (!user.wrongLoginAttemptStartTime || (now.getTime() - user.wrongLoginAttemptStartTime.getTime()) > intervalMs) {
-            user.wrongLoginAttemptStartTime = now;
-            user.wrongLoginAttemptCount = 1;
+        // 若鎖定已過期，自動解鎖並重設
+        if (wrongLoginAttempt.lockUntil && wrongLoginAttempt.lockUntil <= now) {
+            wrongLoginAttempt.lockUntil = undefined;
+            wrongLoginAttempt.wrongLoginAttemptCount = 0;
+            wrongLoginAttempt.wrongLoginAttemptStartTime = now;
+        }
+
+        // 判斷是否超過 interval
+        if (!wrongLoginAttempt.wrongLoginAttemptStartTime || (now.getTime() - wrongLoginAttempt.wrongLoginAttemptStartTime.getTime()) > intervalMs) {
+            wrongLoginAttempt.wrongLoginAttemptStartTime = now;
+            wrongLoginAttempt.wrongLoginAttemptCount = 1;
         } else {
-            user.wrongLoginAttemptCount = (user.wrongLoginAttemptCount ?? 0) + 1;
+            wrongLoginAttempt.wrongLoginAttemptCount = (wrongLoginAttempt.wrongLoginAttemptCount ?? 0) + 1;
         }
 
-        if (user.wrongLoginAttemptCount >= maxWrongLoginAttemptCount) {
+        // 達到上限則鎖定
+        if ((wrongLoginAttempt.wrongLoginAttemptCount ?? 0) >= maxWrongLoginAttemptCount) {
+            wrongLoginAttempt.lockUntil = new Date(now.getTime() + intervalMs);
             user.isLocked = true;
-            user.lockUntil = new Date(now.getTime() + intervalMs);
         }
 
+        await wrongLoginAttempt.save();
         await user.save();
     }
 
@@ -193,10 +208,10 @@ export class AuthService extends Service {
     }
 
     /*
-    * @param data : {username:string,password:string}
+    * @param data : {email:string,password:string}
     * @returns resp<AuthResponse | undefined>
     */
-    public async login(data: { username: string, password: string }): Promise<resp<AuthResponse | undefined>> {
+    public async login(data: { email: string, password: string }): Promise<resp<AuthResponse | undefined>> {
         const resp: resp<AuthResponse | undefined> = {
             code: 200,
             message: "",
@@ -204,20 +219,32 @@ export class AuthService extends Service {
         };
 
         try {
-            const { username, password } = data;
-            if (!username || !password) {
+            const { email, password } = data;
+            if (!email || !password) {
                 resp.code = 400;
                 const missingFields = [];
-                if (!username) missingFields.push("username");
+                if (!email) missingFields.push("email");
                 if (!password) missingFields.push("password");
                 resp.message = `missing required fields: ${missingFields.join(", ")}`;
                 return resp;
             }
-            const user = await UsersModel.findOne({ username });
+            const user = await UsersModel.findOne({ email });
             if (!user) {
                 resp.code = 400;
-                resp.message = "invalid username or password";
-                logger.warn(`someone tried to login with invalid username: ${username}`);
+                resp.message = "invalid email or password";
+                logger.warn(`someone tried to login with invalid email: ${email}`);
+                return resp;
+            }
+
+            // 檢查是否鎖定
+            let wrongLoginAttempt = user.wrongLoginAttemptId
+                ? await WrongLoginAttemptModel.findById(user.wrongLoginAttemptId)
+                : null;
+
+            if (wrongLoginAttempt && wrongLoginAttempt.lockUntil && wrongLoginAttempt.lockUntil > new Date()) {
+                resp.code = 400;
+                const minutesLeft = Math.ceil((wrongLoginAttempt.lockUntil.getTime() - new Date().getTime()) / 60000);
+                resp.message = `user is locked, please wait ${minutesLeft} minute(s) until the lock is lifted`;
                 return resp;
             }
             if (!user.isVerified) {
@@ -239,45 +266,48 @@ export class AuthService extends Service {
             }
             const isMatch = await bcrypt.compare(password, user.password_hash);
             if (!isMatch) {
-                await this.handleWrongLoginAttempt(user, 5, 20);
-                if (user.isLocked) {
+                await this.handleWrongLoginAttempt(user, 5, 10);
+                // 重新檢查鎖定狀態
+                wrongLoginAttempt = user.wrongLoginAttemptId
+                    ? await WrongLoginAttemptModel.findById(user.wrongLoginAttemptId)
+                    : null;
+                if (wrongLoginAttempt && wrongLoginAttempt.lockUntil && wrongLoginAttempt.lockUntil > new Date()) {
                     resp.code = 400;
-                    const minutesLeft = user.lockUntil
-                        ? Math.ceil((user.lockUntil.getTime() - new Date().getTime()) / 60000)
-                        : 0;
-                    // console.log(user.lockUntil?.getTime(), new Date().getTime(), minutesLeft);
+                    const minutesLeft = Math.ceil((wrongLoginAttempt.lockUntil.getTime() - new Date().getTime()) / 60000);
                     resp.message = `user is locked, please wait ${minutesLeft} minute(s) until the lock is lifted`;
                     return resp;
                 }
                 resp.code = 400;
-                resp.message = "invalid username or password";
-                logger.warn(`someone tried to login with invalid password: ${username}`);
+                resp.message = "invalid email or password";
+                logger.warn(`someone tried to login with invalid password: ${email}`);
                 return resp;
             } else {
-                if (user.isLocked && user.lockUntil && user.lockUntil > new Date()) {
+                // 登入成功，檢查並解鎖
+                if (wrongLoginAttempt && wrongLoginAttempt.lockUntil && wrongLoginAttempt.lockUntil > new Date()) {
                     resp.code = 400;
-                    const minutesLeft = user.lockUntil
-                        ? Math.ceil((user.lockUntil.getTime() - new Date().getTime()) / 60000)
-                        : 0;
+                    const minutesLeft = Math.ceil((wrongLoginAttempt.lockUntil.getTime() - new Date().getTime()) / 60000);
                     resp.message = `user is locked, please wait ${minutesLeft} minute(s) until the lock is lifted`;
                     return resp;
                 }
-                if (user.isLocked && user.lockUntil && user.lockUntil <= new Date()) {
+                // 自動解鎖並清除錯誤記錄
+                if (wrongLoginAttempt && wrongLoginAttempt.lockUntil && wrongLoginAttempt.lockUntil <= new Date()) {
                     user.isLocked = false;
-                    user.lockUntil = undefined;
-                    logger.info(`user ${username} is unlocked`);
+                    await WrongLoginAttemptModel.deleteOne({ _id: user._id });
+                    user.wrongLoginAttemptId = undefined;
+                    logger.info(`user ${user.email} is unlocked`);
                     await user.save();
                 }
-                if (!user.isLocked) {
-                    user.wrongLoginAttemptCount = undefined;
-                    user.wrongLoginAttemptStartTime = undefined;
+                // 登入成功，清除錯誤記錄
+                if (wrongLoginAttempt) {
+                    await WrongLoginAttemptModel.deleteOne({ _id: user._id });
+                    user.wrongLoginAttemptId = undefined;
                     await user.save();
                 }
             }
             const token = generateToken(user._id, user.role, user.username);
             resp.message = "login successful";
             resp.body = { token } as AuthResponse;
-            logger.info(`login successful for ${username}`);
+            logger.info(`login successful for ${user.email}`);
 
         } catch (error) {
             logger.error(error);

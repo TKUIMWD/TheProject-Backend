@@ -4,6 +4,7 @@ import { logger } from './middlewares/log';
 const http = require('http');
 import cors from 'cors';
 import { MongoDB } from './utils/MongoDB';
+import path from 'path';
 require('dotenv').config()
 const app: express.Application = express()
 const server = http.createServer(app);
@@ -28,6 +29,7 @@ app.use(cors({
 app.use(express.json({limit:'50mb'}));
 app.use(express.urlencoded({ extended: false }))
 app.use('/assets', express.static(process.env.assetsPath as string));
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 for (const route of router) {
   app.use(route.getRouter())

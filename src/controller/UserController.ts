@@ -3,6 +3,7 @@ import { Request, response, Response } from "express";
 import { UserService } from "../service/UserService";
 import { resp } from "../utils/resp";
 import { DBResp } from "../interfaces/DBResp";
+import { upload, handleMulterError } from "../utils/avatarUpload";
 require('dotenv').config()
 
 export class UserController extends Controller {
@@ -26,5 +27,15 @@ export class UserController extends Controller {
     public async changePassword(Request: Request, Response: Response) {
         const resp = await this.service.changePassword(Request);
         Response.status(resp.code).send(resp)
+    }
+
+    public async uploadAvatar(Request: Request, Response: Response) {
+        const resp = await this.service.uploadAvatar(Request);
+        Response.status(resp.code).send(resp);
+    }
+
+    public async deleteAvatar(Request: Request, Response: Response) {
+        const resp = await this.service.deleteAvatar(Request);
+        Response.status(resp.code).send(resp);
     }
 }
