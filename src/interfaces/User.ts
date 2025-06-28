@@ -9,14 +9,14 @@ export interface User{
     role: Roles,
     lastTimeVerifyEmailSent?: Date,
     lastTimePasswordResetEmailSent?: Date,
-    wrongLoginAttemptStartTime?: Date,
-    wrongLoginAttemptCount?: number,
     isLocked?: boolean,
-    lockUntil?: Date,
     registeredAt?: Date,
+    avatar_path?: string,
+    wrongLoginAttemptId?: string,
 }
 
 export interface UserProfile {
     username: string;
     email: string;
+    avatar_path?: string;
 }
