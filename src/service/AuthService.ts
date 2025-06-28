@@ -208,10 +208,10 @@ export class AuthService extends Service {
     }
 
     /*
-    * @param data : {username:string,password:string}
+    * @param data : {email:string,password:string}
     * @returns resp<AuthResponse | undefined>
     */
-    public async login(data: { username: string, password: string }): Promise<resp<AuthResponse | undefined>> {
+    public async login(data: { email: string, password: string }): Promise<resp<AuthResponse | undefined>> {
         const resp: resp<AuthResponse | undefined> = {
             code: 200,
             message: "",
@@ -219,20 +219,20 @@ export class AuthService extends Service {
         };
 
         try {
-            const { username, password } = data;
-            if (!username || !password) {
+            const { email, password } = data;
+            if (!email || !password) {
                 resp.code = 400;
                 const missingFields = [];
-                if (!username) missingFields.push("username");
+                if (!email) missingFields.push("email");
                 if (!password) missingFields.push("password");
                 resp.message = `missing required fields: ${missingFields.join(", ")}`;
                 return resp;
             }
-            const user = await UsersModel.findOne({ username });
+            const user = await UsersModel.findOne({ email });
             if (!user) {
                 resp.code = 400;
-                resp.message = "invalid username or password";
-                logger.warn(`someone tried to login with invalid username: ${username}`);
+                resp.message = "invalid email or password";
+                logger.warn(`someone tried to login with invalid email: ${email}`);
                 return resp;
             }
 
@@ -278,8 +278,8 @@ export class AuthService extends Service {
                     return resp;
                 }
                 resp.code = 400;
-                resp.message = "invalid username or password";
-                logger.warn(`someone tried to login with invalid password: ${username}`);
+                resp.message = "invalid email or password";
+                logger.warn(`someone tried to login with invalid password: ${email}`);
                 return resp;
             } else {
                 // 登入成功，檢查並解鎖
@@ -294,7 +294,7 @@ export class AuthService extends Service {
                     user.isLocked = false;
                     await WrongLoginAttemptModel.deleteOne({ _id: user._id });
                     user.wrongLoginAttemptId = undefined;
-                    logger.info(`user ${username} is unlocked`);
+                    logger.info(`user ${user.email} is unlocked`);
                     await user.save();
                 }
                 // 登入成功，清除錯誤記錄
@@ -307,7 +307,7 @@ export class AuthService extends Service {
             const token = generateToken(user._id, user.role, user.username);
             resp.message = "login successful";
             resp.body = { token } as AuthResponse;
-            logger.info(`login successful for ${username}`);
+            logger.info(`login successful for ${user.email}`);
 
         } catch (error) {
             logger.error(error);

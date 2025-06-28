@@ -11,6 +11,7 @@ import { generateHashedPassword, passwordStrengthCheck } from "../utils/password
 import { sendVerificationEmail } from "../utils/MailSender/VerificationTokenSender";
 import { generateVerificationToken } from "../utils/token";
 import { processAvatar, deleteAvatar, DEFAULT_AVATAR } from "../utils/avatarUpload";
+import { UsersModel } from "../orm/schemas/UserSchemas";
 
 
 export class UserService extends Service {
@@ -71,8 +72,8 @@ export class UserService extends Service {
     }
 
     /** 
-    * @param Request (Request.body: {username, email})
-    * @returns resp<T> | undefined>
+    * @param Request (Request.body: {username})
+    * @returns resp<UserProfile | undefined>
     */
     public async updateProfile(Request: Request): Promise<resp<UserProfile | undefined>> {
         const resp: resp<UserProfile | undefined> = {
@@ -89,33 +90,22 @@ export class UserService extends Service {
                 return resp;
             }
 
-            const { username, email } = Request.body;
-            if (!username || !email) {
+            const { username } = Request.body;
+            if (!username) {
                 resp.code = 400;
-                const missingFields = [];
-                if (!username) missingFields.push("username");
-                if (!email) missingFields.push("email");
-                resp.message = `missing required fields: ${missingFields.join(", ")}`;
+                resp.message = "missing required field: username";
+                return resp;
+            }
+
+            const existingUser = await UsersModel.findOne({ username, _id: { $ne: user._id } });
+            if (existingUser) {
+                resp.code = 400;
+                resp.message = "unable to update profile";
                 return resp;
             }
 
             user.username = username;
-            user.email = email;
-            user.isVerified = false;
             await user.save();
-            
-            if (this.canSendEmail(user.lastTimeVerifyEmailSent, 5)) {
-                sendVerificationEmail(user.email, generateVerificationToken(user._id));
-                user.lastTimeVerifyEmailSent = new Date();
-                await user.save();
-            } else {
-                resp.code = 400;
-                const minutesLeft = user.lastTimeVerifyEmailSent
-                    ? Math.ceil((user.lastTimeVerifyEmailSent.getTime() + 5 * 60 * 1000 - new Date().getTime()) / 60000)
-                    : 5;
-                resp.message = `please wait ${minutesLeft} minute(s) before resending the verification email`;
-                return resp;
-            }
 
             const profile: UserProfile = {
                 username: user.username,
