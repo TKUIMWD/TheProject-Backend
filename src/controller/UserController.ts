@@ -38,4 +38,9 @@ export class UserController extends Controller {
         const resp = await this.service.deleteAvatar(Request);
         Response.status(resp.code).send(resp);
     }
+
+    public async getUserCourses(Request: Request, Response: Response) {
+        const resp = await this.service.getUserCourses(Request);
+        Response.status(resp.code).send(resp);
+    }
 }

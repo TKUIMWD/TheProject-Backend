@@ -39,5 +39,9 @@ export class UserRoute extends Route{
         this.router.delete(`${this.url}deleteAvatar`, (req: Request, res: Response) => {
             this.Controller.deleteAvatar(req, res);
         });
+
+        this.router.get(`${this.url}getUserCourses`, (req: Request, res: Response) => {
+            this.Controller.getUserCourses(req, res);
+        });
     }
 }

@@ -13,6 +13,7 @@ export interface User{
     registeredAt?: Date,
     avatar_path?: string,
     wrongLoginAttemptId?: string,
+    course_ids: Array<string>;
 }
 
 export interface UserProfile {

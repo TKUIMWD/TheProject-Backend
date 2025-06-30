@@ -1,7 +1,7 @@
 import bcrypt from "bcrypt";
 import { Service } from "../abstract/Service";
 import { logger } from "../middlewares/log";
-import { Document } from "mongoose"
+import { Document, Types } from "mongoose"
 import { DBResp } from "../interfaces/DBResp";
 import { resp } from "../utils/resp";
 import { UserProfile } from "../interfaces/User";
@@ -12,6 +12,9 @@ import { sendVerificationEmail } from "../utils/MailSender/VerificationTokenSend
 import { generateVerificationToken } from "../utils/token";
 import { processAvatar, deleteAvatar, DEFAULT_AVATAR } from "../utils/avatarUpload";
 import { UsersModel } from "../orm/schemas/UserSchemas";
+import { Course, CourseInfo } from "../interfaces/Course";
+import { CourseModel } from "../orm/schemas/CourseSchemas";
+import { log } from "console";
 
 
 export class UserService extends Service {
@@ -115,7 +118,7 @@ export class UserService extends Service {
             resp.message = "Profile updated successfully";
             resp.body = profile;
             logger.info(`User ${user.username} updated profile successfully`);
-            
+
         } catch (error) {
             logger.error(`Error updating profile: ${error}`);
             resp.code = 500;
@@ -290,7 +293,7 @@ export class UserService extends Service {
 
             // 刪除頭像文件
             deleteAvatar(user.avatar_path);
-            
+
             // 重置為默認頭像
             user.avatar_path = DEFAULT_AVATAR;
             await user.save();
@@ -307,6 +310,88 @@ export class UserService extends Service {
 
         } catch (error) {
             logger.error(`Error deleting avatar: ${error}`);
+            resp.code = 500;
+            resp.message = "Internal server error";
+        }
+
+        return resp;
+    }
+
+    /**
+     * get user's courses
+     * @param Request - Request object
+     * @returns resp<Array<CourseInfo> | undefined>
+     */
+    public async getUserCourses(Request: Request): Promise<resp<Array<CourseInfo> | undefined>> {
+        const resp: resp<Array<CourseInfo> | undefined> = {
+            code: 200,
+            message: "",
+            body: undefined
+        };
+
+        try {
+            const user = await getUserFromRequest(Request);
+            if (!user) {
+                resp.code = 400;
+                resp.message = "invalid token";
+                return resp;
+            }
+
+            if (!user.isVerified) {
+                resp.code = 403;
+                resp.message = "user is not verified";
+                return resp;
+            }
+
+            const courseObjectIds = user.course_ids.map(id => new Types.ObjectId(id));
+            const courseInfo = await CourseModel.aggregate([
+                {
+                    $match: {
+                        "_id": { $in: courseObjectIds }
+                    }
+                },
+                {
+                    $addFields: {
+                        convertedSubmitterId: { $toObjectId: "$submitter_user_id" }
+                    }
+                },
+                {
+                    $lookup: {
+                        from: "users",
+                        localField: "convertedSubmitterId",
+                        foreignField: "_id",
+                        as: "teacherDetails"
+                    }
+                },
+                {
+                    $unwind: {
+                        path: "$teacherDetails",
+                        preserveNullAndEmptyArrays: true
+                    }
+                },
+                {
+                    $project: {
+                        _id: 0,
+                        course_name: "$course_name",
+                        duration_in_minutes: "$duration_in_minutes",
+                        difficulty: "$difficulty",
+                        rating: "$rating",
+                        teacher_name: { $ifNull: ["$teacherDetails.username", "Unknown"] },
+                        update_date: "$update_date"
+                    }
+                }
+            ]);
+
+            if (!courseInfo || courseInfo.length === 0) {
+                resp.message = "User has no courses";
+                resp.body = [];
+                return resp;
+            }
+
+            resp.message = "User courses retrieved successfully";
+            resp.body = courseInfo;
+        } catch (error) {
+            logger.error(`Error getting user courses: ${error}`);
             resp.code = 500;
             resp.message = "Internal server error";
         }
