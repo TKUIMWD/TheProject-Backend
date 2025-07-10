@@ -371,7 +371,7 @@ export class UserService extends Service {
                 },
                 {
                     $project: {
-                        _id: 0,
+                        _id: "$_id",
                         course_name: "$course_name",
                         duration_in_minutes: "$duration_in_minutes",
                         difficulty: "$difficulty",
