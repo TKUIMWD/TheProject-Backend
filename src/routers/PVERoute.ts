@@ -16,6 +16,10 @@ export class PVERoute extends Route{
         this.router.get(`${this.url}getNodes`, (req, res) => {
             this.Controller.getNodes(req, res);
         });
+
+        this.router.get(`${this.url}getNextId`, (req, res) => {
+            this.Controller.getNextId(req, res);
+        });
     }
 
 }

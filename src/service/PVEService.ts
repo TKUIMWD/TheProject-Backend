@@ -71,4 +71,34 @@ export class PVEService extends Service {
 
         return resp;
     }
+
+    public async getNextId(Request: Request): Promise<resp<PVEResp | undefined>> {
+        const resp: resp<PVEResp | undefined> = {
+            code: 200,
+            message: "",
+            body: undefined
+        };
+        try {
+            const { user, error } = await validateTokenAndGetAdminUser<PVEResp>(Request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return error;
+            }
+            const nextId = await callPVE('GET', pve_api.cluster_next_id, undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
+                }
+            });
+            resp.body = nextId;
+            resp.message = "Next ID fetched successfully";
+            resp.code = 200;
+        } catch (error) {
+            resp.code = 500;
+            resp.message = "Internal Server Error";
+            resp.body = undefined;
+            console.error("Error in getNextId:", error);
+        }
+
+        return resp;
+    }
 }

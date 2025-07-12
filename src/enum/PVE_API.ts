@@ -15,5 +15,5 @@ access_ticket: 取得訪問 ticket
 nodes: 取得節點列表 -> /api/v1/pve/getNodes
 nodes_qemu: 創建 QEMU 虛擬機
 qemu_config: 取得 QEMU 虛擬機配置
-cluster_next_id: 取得集群下一個可用 ID
+cluster_next_id: 取得集群下一個可用 ID -> /api/v1/pve/getNextId
 */
