@@ -6,10 +6,8 @@ import { DBResp } from "../interfaces/DBResp";
 import { resp } from "../utils/resp";
 import { UserProfile } from "../interfaces/User";
 import { Request } from "express";
-import { getUserFromRequest } from "../utils/auth";
+import { validateTokenAndGetUser } from "../utils/auth";
 import { generateHashedPassword, passwordStrengthCheck } from "../utils/password";
-import { sendVerificationEmail } from "../utils/MailSender/VerificationTokenSender";
-import { generateVerificationToken } from "../utils/token";
 import { processAvatar, deleteAvatar, DEFAULT_AVATAR } from "../utils/avatarUpload";
 import { UsersModel } from "../orm/schemas/UserSchemas";
 import { Course, CourseInfo } from "../interfaces/Course";
@@ -44,11 +42,9 @@ export class UserService extends Service {
         };
 
         try {
-            const user = await getUserFromRequest(Request);
-            if (!user) {
-                resp.code = 400;
-                resp.message = "invalid token";
-                return resp;
+            const { user, error } = await validateTokenAndGetUser<UserProfile>(Request);
+            if (error) {
+                return error;
             }
 
             if (!user.isVerified) {
@@ -86,11 +82,9 @@ export class UserService extends Service {
         };
 
         try {
-            const user = await getUserFromRequest(Request);
-            if (!user) {
-                resp.code = 400;
-                resp.message = "invalid token";
-                return resp;
+            const { user, error } = await validateTokenAndGetUser<UserProfile>(Request);
+            if (error) {
+                return error;
             }
 
             const { username } = Request.body;
@@ -138,11 +132,9 @@ export class UserService extends Service {
             body: undefined
         };
         try {
-            const user = await getUserFromRequest(Request);
-            if (!user) {
-                resp.code = 400;
-                resp.message = "invalid token";
-                return resp;
+            const { user, error } = await validateTokenAndGetUser<DBResp<Document>>(Request);
+            if (error) {
+                return error;
             }
 
             if (!user.isVerified) {
@@ -208,11 +200,9 @@ export class UserService extends Service {
         };
 
         try {
-            const user = await getUserFromRequest(Request);
-            if (!user) {
-                resp.code = 400;
-                resp.message = "invalid token";
-                return resp;
+            const { user, error } = await validateTokenAndGetUser<UserProfile>(Request);
+            if (error) {
+                return error;
             }
 
             if (!user.isVerified) {
@@ -271,11 +261,9 @@ export class UserService extends Service {
         };
 
         try {
-            const user = await getUserFromRequest(Request);
-            if (!user) {
-                resp.code = 400;
-                resp.message = "invalid token";
-                return resp;
+            const { user, error } = await validateTokenAndGetUser<UserProfile>(Request);
+            if (error) {
+                return error;
             }
 
             if (!user.isVerified) {
@@ -330,11 +318,9 @@ export class UserService extends Service {
         };
 
         try {
-            const user = await getUserFromRequest(Request);
-            if (!user) {
-                resp.code = 400;
-                resp.message = "invalid token";
-                return resp;
+            const { user, error } = await validateTokenAndGetUser<Array<CourseInfo>>(Request);
+            if (error) {
+                return error;
             }
 
             if (!user.isVerified) {
@@ -343,7 +329,7 @@ export class UserService extends Service {
                 return resp;
             }
 
-            const courseObjectIds = user.course_ids.map(id => new Types.ObjectId(id));
+            const courseObjectIds = user.course_ids.map((id: string) => new Types.ObjectId(id));
             const courseInfo = await CourseModel.aggregate([
                 {
                     $match: {

@@ -3,7 +3,7 @@ import { Service } from "../abstract/Service";
 import { resp } from "../utils/resp";
 import { DBResp } from "../interfaces/DBResp";
 import { Document } from "mongoose";
-import { generatePasswordResetToken, generateToken, generateVerificationToken, verifyToken } from "../utils/token";
+import { generatePasswordResetToken, generateToken, generateVerificationToken } from "../utils/token";
 import { AuthResponse } from "../interfaces/AuthResponse";
 import { logger } from "../middlewares/log";
 import { Request, Response } from "express";
@@ -13,6 +13,7 @@ import { sendForgotPasswordEmail } from "../utils/MailSender/ForgotPasswordSende
 import { generateHashedPassword, passwordStrengthCheck } from "../utils/password";
 import { User } from "../interfaces/User";
 import { WrongLoginAttemptModel } from "../orm/schemas/WrongLoginAttemptSchemas";
+import { validateTokenAndGetUser, validatePasswordResetTokenAndGetUser } from "../utils/auth";
 
 
 export class AuthService extends Service {
@@ -173,31 +174,16 @@ export class AuthService extends Service {
         };
 
         try {
-            const authHeader = Request.headers.authorization;
-            if (!authHeader) {
-                resp.code = 400;
-                resp.message = "missing authorization header";
-                return resp;
+            const { user, error } = await validateTokenAndGetUser<AuthResponse>(Request);
+            if (error) {
+                return error;
             }
-            const token = authHeader.split(" ")[1];
-            const decoded = verifyToken(token);
-            if (!decoded) {
-                resp.code = 400;
-                resp.message = "invalid token";
-                return resp;
-            }
-            const { _id } = decoded as { _id: string };
-            const user = await UsersModel.findById(_id);
+
             if (user) {
                 user.isVerified = true;
                 await user.save();
                 resp.message = "email verified successfully";
                 logger.info(`email verified successfully for ${user.email}`);
-            }
-            else {
-                resp.code = 400;
-                resp.message = "invalid token";
-                logger.warn(`someone tried to verify with invalid token: ${token}`);
             }
         } catch (error) {
             logger.error(error);
@@ -325,28 +311,15 @@ export class AuthService extends Service {
         };
 
         try {
-            const authHeader = Request.headers.authorization;
-            if (!authHeader) {
-                resp.code = 400;
-                resp.message = "missing authorization header";
-                return resp;
+            const { user, error } = await validateTokenAndGetUser<DBResp<Document>>(Request);
+            if (error) {
+                return error;
             }
-            const token = authHeader.split(" ")[1];
-            const decoded = verifyToken(token);
-            if (!decoded) {
-                resp.code = 400;
-                resp.message = "invalid token";
-                return resp;
+
+            if (user) {
+                resp.message = "logout successful";
+                logger.info(`logout successful for ${user.username}`);
             }
-            const { _id } = decoded as { _id: string };
-            const user = await UsersModel.findById(_id);
-            if (!user) {
-                resp.code = 400;
-                resp.message = "invalid token";
-                return resp;
-            }
-            resp.message = "logout successful";
-            logger.info(`logout successful for ${user.username}`);
         } catch (error) {
             logger.error(error);
             resp.code = 500;
@@ -397,26 +370,11 @@ export class AuthService extends Service {
         }
         else if (Request.method === "PUT") {
             try {
-                const authHeader = Request.headers.authorization;
-                if (!authHeader) {
-                    resp.code = 400;
-                    resp.message = "missing authorization header";
-                    return resp;
+                const { user, error } = await validatePasswordResetTokenAndGetUser<DBResp<Document>>(Request);
+                if (error) {
+                    return error;
                 }
-                const token = authHeader.split(" ")[1];
-                const decoded = verifyToken(token);
-                if (!decoded) {
-                    resp.code = 400;
-                    resp.message = "invalid token";
-                    return resp;
-                }
-                const { email } = decoded as { email: string };
-                const user = await UsersModel.findOne({ email: email });
-                if (!user) {
-                    resp.code = 400;
-                    resp.message = "invalid token";
-                    return resp;
-                }
+
                 const newPassword = Request.body.password;
                 if (!newPassword) {
                     resp.code = 400;
