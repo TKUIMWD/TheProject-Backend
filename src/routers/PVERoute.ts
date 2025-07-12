@@ -27,6 +27,10 @@ export class PVERoute extends Route{
         this.router.post(`${this.url}getQemuConfig`, (req, res) => {
             this.Controller.getQemuConfig(req, res);
         });
+
+        this.router.get(`${this.url}getAllTemplates`, (req, res) => {
+            this.Controller.getAllTemplates(req, res);
+        });
     }
 
 }

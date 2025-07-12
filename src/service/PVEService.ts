@@ -2,9 +2,11 @@ import { Service } from "../abstract/Service";
 import { resp, createResponse } from "../utils/resp";
 import { PVEResp } from "../interfaces/PVEResp";
 import { Request } from "express";
-import { getTokenRole, validateTokenAndGetAdminUser, validateTokenAndGetSuperAdminUser } from "../utils/auth";
+import { getTokenRole, validateTokenAndGetAdminUser, validateTokenAndGetSuperAdminUser, validateTokenAndGetUser } from "../utils/auth";
 import { pve_api } from "../enum/PVE_API";
-import { asyncGet, asyncPost, asyncPut, asyncDelete, asyncPatch, callWithUnauthorized } from "../utils/fetch";
+import { callWithUnauthorized } from "../utils/fetch";
+import { PVE_node, PVE_template_info } from "../interfaces/PVE";
+import { data } from "jquery";
 
 const PVE_API_ADMINMODE_TOKEN = process.env.PVE_API_ADMINMODE_TOKEN;
 const PVE_API_SUPERADMINMODE_TOKEN = process.env.PVE_API_SUPERADMINMODE_TOKEN;
@@ -19,7 +21,7 @@ export class PVEService extends Service {
     // 在其他方法中調用此方法以獲取下一個 ID
     private async _getNextId(): Promise<resp<PVEResp | undefined>> {
         try {
-            const nextId = await callWithUnauthorized('GET', pve_api.cluster_next_id, undefined, {
+            const nextId:PVEResp = await callWithUnauthorized('GET', pve_api.cluster_next_id, undefined, {
                 headers: {
                     'Authorization': `PVEAPIToken=${PVE_API_USERMODE_TOKEN}`
                 }
@@ -27,6 +29,20 @@ export class PVEService extends Service {
             return createResponse(200, "Next ID fetched successfully", nextId);
         } catch (error) {
             console.error("Error in _getNextId:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    private async _getNodes(): Promise<resp<PVEResp | undefined>> {
+        try {
+            const nodes:PVEResp = await callWithUnauthorized('GET', pve_api.nodes, undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
+                }
+            });
+            return createResponse(200, "Nodes fetched successfully", nodes);
+        } catch (error) {
+            console.error("Error in _getNodes:", error);
             return createResponse(500, "Internal Server Error");
         }
     }
@@ -63,7 +79,7 @@ export class PVEService extends Service {
                 return createResponse(400, "Missing node or vmid in request body");
             }
             try {
-                const qemuConfig = await callWithUnauthorized('GET', pve_api.qemu_config(node, vmid), undefined, {
+                const qemuConfig:PVEResp = await callWithUnauthorized('GET', pve_api.qemu_config(node, vmid), undefined, {
                     headers: {
                         'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
                     }
@@ -86,7 +102,7 @@ export class PVEService extends Service {
                 console.error("Error validating token:", error);
                 return error;
             }
-            const nodes = await callWithUnauthorized('GET', pve_api.nodes, undefined, {
+            const nodes:PVEResp = await callWithUnauthorized('GET', pve_api.nodes, undefined, {
                 headers: {
                     'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
                 }
@@ -105,7 +121,7 @@ export class PVEService extends Service {
                 console.error("Error validating token:", error);
                 return error;
             }
-            const nextId = await callWithUnauthorized('GET', pve_api.cluster_next_id, undefined, {
+            const nextId:PVEResp = await callWithUnauthorized('GET', pve_api.cluster_next_id, undefined, {
                 headers: {
                     'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
                 }
@@ -113,6 +129,44 @@ export class PVEService extends Service {
             return createResponse(200, "Next ID fetched successfully", nextId);
         } catch (error) {
             console.error("Error in getNextId:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    public async getAllTemplates(Request: Request): Promise<resp<PVEResp | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser<PVEResp>(Request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return error;
+            }
+            const nodes:PVEResp = await this._getNodes();
+            if (nodes.error) {
+                console.error("Error fetching nodes:", nodes.error);
+                return nodes.error;
+            }
+            const nodesList:PVE_node[] = nodes.body.data || [];
+            let templatesList:PVE_template_info[] = [];
+            for (const node of nodesList) {
+                const templates:PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu(node.node), undefined, {
+                    headers: {
+                        'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
+                    }
+                });
+                for (const template of templates.data) {
+                    if (template.template) {
+                        templatesList.push({
+                            node: node.node,
+                            vmid: template.vmid,
+                            name: template.name
+                        });
+                    }
+                }
+            }
+
+            return createResponse(200, "Templates fetched successfully", {data: templatesList});
+        } catch (error) {
+            console.error("Error in getAllTemplates:", error);
             return createResponse(500, "Internal Server Error");
         }
     }
