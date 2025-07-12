@@ -175,28 +175,18 @@ export class AuthService extends Service {
     * @returns resp<AuthResponse | undefined>
     */
     public async login(data: { email: string, password: string }): Promise<resp<AuthResponse | undefined>> {
-        const resp: resp<AuthResponse | undefined> = {
-            code: 200,
-            message: "",
-            body: undefined
-        };
-
         try {
             const { email, password } = data;
             if (!email || !password) {
-                resp.code = 400;
                 const missingFields = [];
                 if (!email) missingFields.push("email");
                 if (!password) missingFields.push("password");
-                resp.message = `missing required fields: ${missingFields.join(", ")}`;
-                return resp;
+                return createResponse(400, `missing required fields: ${missingFields.join(", ")}`);
             }
             const user = await UsersModel.findOne({ email });
             if (!user) {
-                resp.code = 400;
-                resp.message = "invalid email or password";
                 logger.warn(`someone tried to login with invalid email: ${email}`);
-                return resp;
+                return createResponse(400, "invalid email or password");
             }
 
             // 檢查是否鎖定
@@ -205,27 +195,23 @@ export class AuthService extends Service {
                 : null;
 
             if (wrongLoginAttempt && wrongLoginAttempt.lockUntil && wrongLoginAttempt.lockUntil > new Date()) {
-                resp.code = 400;
                 const minutesLeft = Math.ceil((wrongLoginAttempt.lockUntil.getTime() - new Date().getTime()) / 60000);
-                resp.message = `user is locked, please wait ${minutesLeft} minute(s) until the lock is lifted`;
-                return resp;
+                return createResponse(400, `user is locked, please wait ${minutesLeft} minute(s) until the lock is lifted`);
             }
             if (!user.isVerified) {
-                resp.code = 400;
-                resp.message = "email not verified, please verify your email";
                 if (this.canSendEmail(user.lastTimeVerifyEmailSent, 5)) {
                     sendVerificationEmail(user.email, generateVerificationToken(user._id));
                     user.lastTimeVerifyEmailSent = new Date();
                     await user.save();
+                    logger.warn(`someone tried to login with unverified email: ${user.email}`);
+                    return createResponse(400, "email not verified, please verify your email");
                 } else {
-                    resp.code = 400;
                     const minutesLeft = user.lastTimeVerifyEmailSent
                         ? Math.ceil((user.lastTimeVerifyEmailSent.getTime() + 5 * 60 * 1000 - new Date().getTime()) / 60000)
                         : 5;
-                    resp.message = `please wait ${minutesLeft} minute(s) before resending the verification email`;
+                    logger.warn(`someone tried to login with unverified email: ${user.email}`);
+                    return createResponse(400, `please wait ${minutesLeft} minute(s) before resending the verification email`);
                 }
-                logger.warn(`someone tried to login with unverified email: ${user.email}`);
-                return resp;
             }
             const isMatch = await bcrypt.compare(password, user.password_hash);
             if (!isMatch) {
@@ -235,22 +221,16 @@ export class AuthService extends Service {
                     ? await WrongLoginAttemptModel.findById(user.wrongLoginAttemptId)
                     : null;
                 if (wrongLoginAttempt && wrongLoginAttempt.lockUntil && wrongLoginAttempt.lockUntil > new Date()) {
-                    resp.code = 400;
                     const minutesLeft = Math.ceil((wrongLoginAttempt.lockUntil.getTime() - new Date().getTime()) / 60000);
-                    resp.message = `user is locked, please wait ${minutesLeft} minute(s) until the lock is lifted`;
-                    return resp;
+                    return createResponse(400, `user is locked, please wait ${minutesLeft} minute(s) until the lock is lifted`);
                 }
-                resp.code = 400;
-                resp.message = "invalid email or password";
                 logger.warn(`someone tried to login with invalid password: ${email}`);
-                return resp;
+                return createResponse(400, "invalid email or password");
             } else {
                 // 登入成功，檢查並解鎖
                 if (wrongLoginAttempt && wrongLoginAttempt.lockUntil && wrongLoginAttempt.lockUntil > new Date()) {
-                    resp.code = 400;
                     const minutesLeft = Math.ceil((wrongLoginAttempt.lockUntil.getTime() - new Date().getTime()) / 60000);
-                    resp.message = `user is locked, please wait ${minutesLeft} minute(s) until the lock is lifted`;
-                    return resp;
+                    return createResponse(400, `user is locked, please wait ${minutesLeft} minute(s) until the lock is lifted`);
                 }
                 // 自動解鎖並清除錯誤記錄
                 if (wrongLoginAttempt && wrongLoginAttempt.lockUntil && wrongLoginAttempt.lockUntil <= new Date()) {
@@ -268,16 +248,13 @@ export class AuthService extends Service {
                 }
             }
             const token = generateToken(user._id, user.role, user.username);
-            resp.message = "login successful";
-            resp.body = { token } as AuthResponse;
             logger.info(`login successful for ${user.email}`);
+            return createResponse(200, "login successful", { token } as AuthResponse);
 
         } catch (error) {
             logger.error(error);
-            resp.code = 500;
-            resp.message = "internal server error";
+            return createResponse(500, "internal server error");
         }
-        return resp;
     }
 
     public async logout(Request: Request): Promise<resp<DBResp<Document> | undefined>> {
