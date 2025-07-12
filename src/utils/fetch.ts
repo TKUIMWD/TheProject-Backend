@@ -89,19 +89,21 @@ export async function asyncDelete(api: string, body: {} | FormData, options: Req
     }
 }
 
-export async function asyncPatch(api: string, body: {} | FormData) {
+export async function asyncPatch(api: string, body: {} | FormData, options: RequestOptions = {}): Promise<any> {
     const res: Response = await fetch(api, {
         method: 'PATCH',
-        headers:new Headers({
-            'Access-Control-Allow-Origin':api_base,
-        }),
-        body: body instanceof FormData?body:JSON.stringify(body),
-        mode:"cors"
-    })
+        headers: {
+            'Access-Control-Allow-Origin': api_base,
+            'Content-Type': body instanceof FormData ? 'multipart/form-data' : 'application/json',
+            ...options.headers,
+        },
+        body: body instanceof FormData ? body : JSON.stringify(body),
+        mode: 'cors',
+    });
     try {
-        let data = res.json()
-        return data
+        let data = await res.json();
+        return data;
     } catch (error) {
-        console.error(error)
+        console.error(error);
     }
 }
