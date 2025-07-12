@@ -4,43 +4,13 @@ import { PVEResp } from "../interfaces/PVEResp";
 import { Request } from "express";
 import { getTokenRole, validateTokenAndGetAdminUser, validateTokenAndGetSuperAdminUser } from "../utils/auth";
 import { pve_api } from "../enum/PVE_API";
-import { asyncGet, asyncPost, asyncPut, asyncDelete, asyncPatch } from "../utils/fetch";
+import { asyncGet, asyncPost, asyncPut, asyncDelete, asyncPatch, callWithUnauthorized } from "../utils/fetch";
 
 const PVE_API_ADMINMODE_TOKEN = process.env.PVE_API_ADMINMODE_TOKEN;
 const PVE_API_SUPERADMINMODE_TOKEN = process.env.PVE_API_SUPERADMINMODE_TOKEN;
 const PVE_API_USERMODE_TOKEN = process.env.PVE_API_USERMODE_TOKEN;
 
 const ALLOW_THE_TEST_ENDPOINT = true;
-
-const callPVE = async (
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH',
-    url: string,
-    body?: any,
-    options: any = {}
-) => {
-    // 只對 PVE URL 臨時禁用 SSL 驗證
-    const originalValue = process.env.NODE_TLS_REJECT_UNAUTHORIZED || '1';
-    try {
-        process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-
-        switch (method) {
-            case 'GET':
-                return await asyncGet(url, options);
-            case 'POST':
-                return await asyncPost(url, body || {}, options);
-            case 'PUT':
-                return await asyncPut(url, body || {}, options);
-            case 'DELETE':
-                return await asyncDelete(url, body || {}, options);
-            case 'PATCH':
-                return await asyncPatch(url, body || {}, options);
-            default:
-                throw new Error(`Unsupported HTTP method: ${method}`);
-        }
-    } finally {
-        process.env.NODE_TLS_REJECT_UNAUTHORIZED = originalValue;
-    }
-};
 
 
 export class PVEService extends Service {
@@ -49,7 +19,7 @@ export class PVEService extends Service {
     // 在其他方法中調用此方法以獲取下一個 ID
     private async _getNextId(): Promise<resp<PVEResp | undefined>> {
         try {
-            const nextId = await callPVE('GET', pve_api.cluster_next_id, undefined, {
+            const nextId = await callWithUnauthorized('GET', pve_api.cluster_next_id, undefined, {
                 headers: {
                     'Authorization': `PVEAPIToken=${PVE_API_USERMODE_TOKEN}`
                 }
@@ -93,7 +63,7 @@ export class PVEService extends Service {
                 return createResponse(400, "Missing node or vmid in request body");
             }
             try {
-                const qemuConfig = await callPVE('GET', pve_api.qemu_config(node, vmid), undefined, {
+                const qemuConfig = await callWithUnauthorized('GET', pve_api.qemu_config(node, vmid), undefined, {
                     headers: {
                         'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
                     }
@@ -116,7 +86,7 @@ export class PVEService extends Service {
                 console.error("Error validating token:", error);
                 return error;
             }
-            const nodes = await callPVE('GET', pve_api.nodes, undefined, {
+            const nodes = await callWithUnauthorized('GET', pve_api.nodes, undefined, {
                 headers: {
                     'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
                 }
@@ -135,7 +105,7 @@ export class PVEService extends Service {
                 console.error("Error validating token:", error);
                 return error;
             }
-            const nextId = await callPVE('GET', pve_api.cluster_next_id, undefined, {
+            const nextId = await callWithUnauthorized('GET', pve_api.cluster_next_id, undefined, {
                 headers: {
                     'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
                 }

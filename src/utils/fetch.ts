@@ -107,3 +107,35 @@ export async function asyncPatch(api: string, body: {} | FormData, options: Requ
         console.error(error);
     }
 }
+
+type HTTPMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+
+export async function callWithUnauthorized<T = unknown>(
+    method: HTTPMethod,
+    url: string,
+    body?: Record<string, unknown> | FormData,
+    options: RequestOptions = {}
+): Promise<T> {
+    // 臨時禁用 SSL 驗證
+    const originalValue = process.env.NODE_TLS_REJECT_UNAUTHORIZED || '1';
+    try {
+        process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
+        switch (method) {
+            case 'GET':
+                return await asyncGet(url, options) as T;
+            case 'POST':
+                return await asyncPost(url, body || {}, options) as T;
+            case 'PUT':
+                return await asyncPut(url, body || {}, options) as T;
+            case 'DELETE':
+                return await asyncDelete(url, body || {}, options) as T;
+            case 'PATCH':
+                return await asyncPatch(url, body || {}, options) as T;
+            default:
+                throw new Error(`Unsupported HTTP method: ${method}`);
+        }
+    } finally {
+        process.env.NODE_TLS_REJECT_UNAUTHORIZED = originalValue;
+    }
+}
