@@ -3,12 +3,12 @@ import { PVEApiEndPoints } from "../interfaces/ApiEndPoints";
 const pve_api_base = process.env.PVE_API_BASE_URL;
 
 export const pve_api: PVEApiEndPoints = {
-    test: `${pve_api_base}/test`, // POST /test
-    access_ticket: `${pve_api_base}/access/ticket`,  // POST /access/ticket
-    nodes: `${pve_api_base}/nodes`, // GET /nodes
-    nodes_qemu: (node: string) => `${pve_api_base}/nodes/${node}/qemu`, // POST /nodes/{node}/qemu
-    qemu_config: (node: string, vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${vmid}/config`, // GET /nodes/{node}/qemu/{vmid}/config
-    cluster_next_id: `${pve_api_base}/cluster/nextid`, // GET /cluster/nextid
+    test: `${pve_api_base}/test`, // /test
+    access_ticket: `${pve_api_base}/access/ticket`,  // /access/ticket
+    nodes: `${pve_api_base}/nodes`, // /nodes
+    nodes_qemu: (node: string) => `${pve_api_base}/nodes/${node}/qemu`, // /nodes/{node}/qemu
+    qemu_config: (node: string, vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${vmid}/config`, // /nodes/{node}/qemu/{vmid}/config
+    cluster_next_id: `${pve_api_base}/cluster/nextid`, // /cluster/nextid
 };
 
 /*
