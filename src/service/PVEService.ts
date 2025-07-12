@@ -150,7 +150,7 @@ export class PVEService extends Service {
             for (const node of nodesList) {
                 const templates:PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu(node.node), undefined, {
                     headers: {
-                        'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
+                        'Authorization': `PVEAPIToken=${PVE_API_USERMODE_TOKEN}`
                     }
                 });
                 for (const template of templates.data) {
