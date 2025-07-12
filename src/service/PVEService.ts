@@ -6,7 +6,6 @@ import { getTokenRole, validateTokenAndGetAdminUser, validateTokenAndGetSuperAdm
 import { pve_api } from "../enum/PVE_API";
 import { callWithUnauthorized } from "../utils/fetch";
 import { PVE_node, PVE_template_info } from "../interfaces/PVE";
-import { data } from "jquery";
 
 const PVE_API_ADMINMODE_TOKEN = process.env.PVE_API_ADMINMODE_TOKEN;
 const PVE_API_SUPERADMINMODE_TOKEN = process.env.PVE_API_SUPERADMINMODE_TOKEN;
