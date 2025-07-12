@@ -20,7 +20,7 @@ const callPVE = async (
     const originalValue = process.env.NODE_TLS_REJECT_UNAUTHORIZED || '1';
     try {
         process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-        
+
         switch (method) {
             case 'GET':
                 return await asyncGet(url, options);
@@ -42,6 +42,33 @@ const callPVE = async (
 
 
 export class PVEService extends Service {
+
+    // 用於 PVEService 的私有方法，獲取節點列表，無需驗證
+    // 這個方法可以在需要時被其他方法調用
+    private async _getNodes(): Promise<resp<PVEResp | undefined>> {
+        const resp: resp<PVEResp | undefined> = {
+            code: 200,
+            message: "",
+            body: undefined
+        };
+        try {
+            const nodes = await callPVE('GET', pve_api.nodes, undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
+                }
+            });
+            resp.body = nodes;
+            resp.message = "Nodes fetched successfully";
+            resp.code = 200;
+        } catch (error) {
+            resp.code = 500;
+            resp.message = "Internal Server Error";
+            resp.body = undefined;
+            console.error("Error in getNodes:", error);
+        }
+        return resp;
+    }
+
     public async getNodes(Request: Request): Promise<resp<PVEResp | undefined>> {
         const resp: resp<PVEResp | undefined> = {
             code: 200,
