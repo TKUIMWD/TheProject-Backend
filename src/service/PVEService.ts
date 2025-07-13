@@ -107,6 +107,9 @@ export class PVEService extends Service {
                         'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
                     }
                 });
+                if (!qemuConfig || !qemuConfig.data) {
+                    return createResponse(404, "QEMU config not found");
+                }
                 return createResponse(200, "QEMU config fetched successfully", qemuConfig.data);
             } catch (error) {
                 console.error("Error in getQemuConfig:", error);
