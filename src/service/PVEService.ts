@@ -60,7 +60,7 @@ export class PVEService extends Service {
 
     private async _getTemplateInfo(node: string, vmid: string): Promise<resp<PVE_qemu_config | undefined>> {
         try {
-            const apiResponse: PVEResp = await callWithUnauthorized('GET', pve_api.qemu_config(node, vmid), undefined, {
+            const apiResponse: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(node, vmid), undefined, {
                 headers: {
                     'Authorization': `PVEAPIToken=${PVE_API_USERMODE_TOKEN}`
                 }
@@ -102,7 +102,7 @@ export class PVEService extends Service {
                 return createResponse(400, "Missing node or vmid in request body");
             }
             try {
-                const qemuConfig:PVEResp = await callWithUnauthorized('GET', pve_api.qemu_config(node, vmid), undefined, {
+                const qemuConfig:PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(node, vmid), undefined, {
                     headers: {
                         'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
                     }

@@ -7,6 +7,6 @@ export const pve_api: PVEApiEndPoints = {
     access_ticket: `${pve_api_base}/access/ticket`,
     nodes: `${pve_api_base}/nodes`,
     nodes_qemu: (node: string) => `${pve_api_base}/nodes/${node}/qemu`,
-    qemu_config: (node: string, vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${vmid}/config`,
+    nodes_qemu_config: (node: string, vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${vmid}/config`,
     cluster_next_id: `${pve_api_base}/cluster/nextid`,
 };
