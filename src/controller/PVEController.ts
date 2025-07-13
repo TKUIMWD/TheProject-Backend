@@ -35,4 +35,9 @@ export class PVEController extends Controller {
     const resp = await this.service.getAllTemplates(Request);
     Response.status(resp.code).send(resp);
   }
+
+  public async getAllApprovedTemplates(Request: Request, Response: Response) {
+    const resp = await this.service.getAllApprovedTemplates(Request);
+    Response.status(resp.code).send(resp);
+  }
 }
