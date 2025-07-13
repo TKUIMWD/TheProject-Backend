@@ -24,8 +24,26 @@ export interface PVE_vm {
     uptime:number;
 }
 
-export interface PVE_template_info {
+export interface PVE_qemu_config {
     vmid: number;
     name: string;
     node: string;
+    cores: number;
+    memory: string;
+    sockets: number;
+    numa: number;
+    cpu: string;
+    ostype: string;
+    agent: string;
+    boot: string;
+    digest: string;
+    meta: string;
+    vmgenid: string;
+    scsihw: string;
+    net0: string;
+    net1: string;
+    net2: string;
+    scsi0: string;
+    ide2: string;
+    smbios1: string;
 }
