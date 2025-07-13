@@ -7,23 +7,6 @@ export interface PVE_node {
     ssl_fingerprint: string;
 }
 
-export interface PVE_vm {
-    mem:number;
-    cpu:number
-    maxmem:number;
-    name:string;
-    diskread:number;
-    vmid:number;
-    status:string;
-    cpus:number;
-    diskwrite:number;
-    netin:number;
-    maxdisk:number;
-    disk:number;
-    netout:number;
-    uptime:number;
-}
-
 export interface PVE_qemu_config {
     vmid: number;
     name: string;

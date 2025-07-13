@@ -211,7 +211,8 @@ export class PVEService extends Service {
         }
     }
 
-
+    // 所有用戶都可以訪問的端點
+    // 僅返回已審核通過的模板信息
     public async getAllApprovedTemplates(Request: Request): Promise<resp<VM_Template_Info[] | undefined>> {
         try {
             const { user, error } = await validateTokenAndGetUser<VM_Template_Info[]>(Request);
