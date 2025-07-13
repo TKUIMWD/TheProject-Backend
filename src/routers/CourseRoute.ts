@@ -8,17 +8,17 @@ export class CourseRoute extends Route{
 
     constructor(){
         super()
-        this.url = '/api/v1/course'
+        this.url = '/api/v1/courses'
         this.setRoutes()
     }
 
     protected setRoutes(): void {
-        this.router.get(`${this.url}/getClassById`, (req, res) => {
-            this.Controller.getClassById(req, res)
+        this.router.get(`${this.url}/:courseId`, (req, res) => {
+            this.Controller.getCourseById(req, res)
         });
 
-        this.router.get(`${this.url}/getCoursePageDTO`, (req, res) => {
-            this.Controller.getCoursePageDTO(req, res)
+        this.router.get(`${this.url}/:courseId/menu`, (req, res) => {
+            this.Controller.getCourseMenu(req, res)
         });
     }
 

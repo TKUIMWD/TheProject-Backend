@@ -1,5 +1,5 @@
 import { model, Schema } from "mongoose";
-import { Course } from "../../interfaces/Course";
+import { Course } from "../../interfaces/Course/Course";
 import { ObjectId } from "mongodb";
 
 export const CourseSchemas = new Schema<Course>({

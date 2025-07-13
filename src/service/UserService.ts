@@ -12,7 +12,7 @@ import { sendVerificationEmail } from "../utils/MailSender/VerificationTokenSend
 import { generateVerificationToken } from "../utils/token";
 import { processAvatar, deleteAvatar, DEFAULT_AVATAR } from "../utils/avatarUpload";
 import { UsersModel } from "../orm/schemas/UserSchemas";
-import { Course, CourseInfo } from "../interfaces/Course";
+import { Course, CourseInfo } from "../interfaces/Course/Course";
 import { CourseModel } from "../orm/schemas/CourseSchemas";
 import { log } from "console";
 

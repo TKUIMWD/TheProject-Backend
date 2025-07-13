@@ -1,5 +1,5 @@
 import { model, Schema } from "mongoose";
-import { Chapter } from "../../interfaces/Chapter";
+import { Chapter } from "../../interfaces/Chapter/Chapter";
 
 export const ChapterSchemas = new Schema<Chapter>({
     chapter_order: { type: Number, required: true },
