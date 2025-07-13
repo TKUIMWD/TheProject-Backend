@@ -13,7 +13,9 @@ export interface User{
     registeredAt?: Date,
     avatar_path?: string,
     wrongLoginAttemptId?: string,
+    compute_resource_plan_id: string,
     course_ids: Array<string>;
+    owned_vms: Array<string>;
 }
 
 export interface UserProfile {

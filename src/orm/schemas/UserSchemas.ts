@@ -14,7 +14,9 @@ export const UsersSchemas = new Schema<User>({
     registeredAt:{ type: Date},
     avatar_path:{ type: String },
     wrongLoginAttemptId:{ type: String },
-    course_ids:{ type: [String], default: [] }
+    compute_resource_plan_id :{type:String},
+    course_ids:{ type: [String], default: [] },
+    owned_vms: { type: [String], default: [] }
 });
 
 export const UsersModel = model<User>('users', UsersSchemas);
