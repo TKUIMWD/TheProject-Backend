@@ -156,9 +156,11 @@ export class PVEService extends Service {
         }
     }
 
+    // restricted to superadmin
+    // 用於獲取所有模板的詳細信息
     public async getAllTemplates(Request: Request): Promise<resp<VM_Template_Info[] | undefined>> {
         try {
-            const { user, error } = await validateTokenAndGetUser<VM_Template_Info[]>(Request);
+            const { user, error } = await validateTokenAndGetSuperAdminUser<VM_Template_Info[]>(Request);
             if (error) {
                 console.error("Error validating token:", error);
                 return error;
@@ -202,6 +204,58 @@ export class PVEService extends Service {
             return createResponse(200, "Templates fetched successfully", vmTemplateInfos);
         } catch (error) {
             console.error("Error in getAllTemplates:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+
+    public async getAllApprovedTemplates(Request: Request): Promise<resp<VM_Template_Info[] | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser<VM_Template_Info[]>(Request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return error;
+            }
+
+            // 僅查詢已審核通過的模板
+            const templates = await VMTemplateModel.find({ has_approved: true }).exec();
+            if (templates.length === 0) {
+                return createResponse(200, "No approved templates found", []);
+            }
+
+            const templateInfoPromises = templates.map(async (template): Promise<VM_Template_Info> => {
+                const configResp = await this._getTemplateInfo(template.pve_node, template.pve_vmid);
+                if (configResp.code !== 200 || !configResp.body) {
+                    throw new Error(`Failed to get qemu config for template ${template._id}: ${configResp.message}`);
+                }
+                const qemuConfig = configResp.body;
+
+                const submitterUser = await UsersModel.findById(template.submitter_user_id).exec();
+                if (!submitterUser) {
+                    throw new Error(`User not found for ID: ${template.submitter_user_id}, template: ${template._id}`);
+                }
+
+                const templateInfo: VM_Template_Info = {
+                    _id: template._id,
+                    name: qemuConfig.name,
+                    description: template.description,
+                    submitted_date: template.submitted_date,
+                    has_approved: template.has_approved,
+                    submitter_user_info: {
+                        username: submitterUser.username,
+                        email: submitterUser.email
+                    },
+                    default_cpu_cores: this.extractCpuCores(qemuConfig),
+                    default_memory_size: this.extractMemorySize(qemuConfig), // MB
+                    default_disk_size: this.extractDiskSize(qemuConfig) // GB
+                };
+                return templateInfo;
+            });
+
+            const vmTemplateInfos = await Promise.all(templateInfoPromises);            
+            return createResponse(200, "Approved templates fetched successfully", vmTemplateInfos);
+        } catch (error) {
+            console.error("Error in getAllApprovedTemplates:", error);
             return createResponse(500, "Internal Server Error");
         }
     }
