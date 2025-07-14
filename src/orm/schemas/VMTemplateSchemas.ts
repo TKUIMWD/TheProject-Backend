@@ -2,7 +2,6 @@ import { model, Schema } from "mongoose";
 import { VM_Template } from "../../interfaces/VM_Template";
 
 export const VMTemplateSchemas = new Schema<VM_Template>({
-    _id: { type: String, required: true },
     description: { type: String, required: true },
     pve_vmid: { type: String, required: true },
     pve_node: { type: String, required: true },
