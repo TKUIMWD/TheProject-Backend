@@ -2,7 +2,6 @@ import { model, Schema } from "mongoose";
 import { ComputeResourcePlan } from "../../interfaces/ComputeResourcePlan";
 
 export const ComputeResourcePlanSchemas = new Schema<ComputeResourcePlan>({
-    _id: { type: String, required: true },
     name: { type: String, required: true },
     max_cpu_cores_per_vm: { type: Number, required: true },
     max_memory_per_vm: { type: Number, required: true }, // in MB

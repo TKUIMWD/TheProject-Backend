@@ -6,6 +6,8 @@ export interface VM_Template {
     submitter_user_id: string;
     submitted_date: Date;
     has_approved: boolean;
+    ciuser: string;
+    cipassword: string;
 }
 
 export interface VM_Template_Info {

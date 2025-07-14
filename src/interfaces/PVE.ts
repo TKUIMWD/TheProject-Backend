@@ -30,3 +30,30 @@ export interface PVE_qemu_config {
     ide2: string;
     smbios1: string;
 }
+
+export type PVE_Task_Status = 'running' | 'stopped';
+
+export type PVE_Task_ExitStatus = 'OK' | null | string;
+
+export const PVE_TASK_STATUS = {
+    RUNNING: 'running' as const,
+    STOPPED: 'stopped' as const
+} as const;
+
+export const PVE_TASK_EXIT_STATUS = {
+    OK: 'OK' as const
+} as const;
+
+// PVE 任務狀態接口
+export interface PVE_Task_Status_Response {
+    upid: string;
+    node: string;
+    status: PVE_Task_Status;
+    type: string;
+    user: string;
+    starttime: number;
+    endtime?: number;
+    exitstatus?: PVE_Task_ExitStatus;
+    progress?: number;
+    error?: string;
+}

@@ -5,11 +5,15 @@ import { Request } from "express";
 import { getTokenRole, validateTokenAndGetAdminUser, validateTokenAndGetSuperAdminUser, validateTokenAndGetUser } from "../utils/auth";
 import { pve_api } from "../enum/PVE_API";
 import { callWithUnauthorized } from "../utils/fetch";
-import { PVE_node, PVE_qemu_config } from "../interfaces/PVE";
+import { PVE_qemu_config, PVE_Task_Status_Response, PVE_Task_Status, PVE_Task_ExitStatus, PVE_TASK_STATUS, PVE_TASK_EXIT_STATUS } from "../interfaces/PVE";
 import { VMTemplateModel } from "../orm/schemas/VMTemplateSchemas";
-import { VM_Template, VM_Template_Info } from "../interfaces/VM_Template";
+import { VM_Template_Info } from "../interfaces/VM/VM_Template";
 import { UsersModel } from "../orm/schemas/UserSchemas";
-import { User } from "../interfaces/User";
+import { VM_TaskModel } from "../orm/schemas/VM_TaskSchemas";
+import { VM_Task, VM_Task_Status } from "../interfaces/VM/VM_Task";
+import { ComputeResourcePlanModel } from "../orm/schemas/ComputeResourcePlanSchemas";
+import { UsedComputeResourceModel } from "../orm/schemas/UsedComputeResourceSchemas";
+import {logger} from "../middlewares/log";
 
 const PVE_API_ADMINMODE_TOKEN = process.env.PVE_API_ADMINMODE_TOKEN;
 const PVE_API_SUPERADMINMODE_TOKEN = process.env.PVE_API_SUPERADMINMODE_TOKEN;
@@ -20,11 +24,22 @@ const ALLOW_THE_TEST_ENDPOINT = true;
 
 export class PVEService extends Service {
 
+
+    // VM 創建任務步驟索引
+    private readonly VM_CREATION_STEP_INDICES = {
+        CLONE: 0,
+        CPU: 1,
+        MEMORY: 2,
+        DISK: 3,
+        CLOUD_INIT: 4
+    };
+
+
     // PVEService 私有方法，用於獲取集群下一個可用 ID
     // 在其他方法中調用此方法以獲取下一個 ID
     private async _getNextId(): Promise<resp<PVEResp | undefined>> {
         try {
-            const nextId:PVEResp = await callWithUnauthorized('GET', pve_api.cluster_next_id, undefined, {
+            const nextId: PVEResp = await callWithUnauthorized('GET', pve_api.cluster_next_id, undefined, {
                 headers: {
                     'Authorization': `PVEAPIToken=${PVE_API_USERMODE_TOKEN}`
                 }
@@ -36,27 +51,13 @@ export class PVEService extends Service {
         }
     }
 
-    private async _getNodes(): Promise<resp<PVEResp | undefined>> {
-        try {
-            const nodes:PVEResp = await callWithUnauthorized('GET', pve_api.nodes, undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
-                }
-            });
-            return createResponse(200, "Nodes fetched successfully", nodes);
-        } catch (error) {
-            console.error("Error in _getNodes:", error);
-            return createResponse(500, "Internal Server Error");
-        }
-    }
-
-
     public async test(Request: Request): Promise<resp<PVEResp | undefined>> {
         if (!ALLOW_THE_TEST_ENDPOINT) {
             return createResponse(403, "Test endpoint is disabled");
         }
         return createResponse(200, "Test endpoint is enabled");
     }
+
 
     private async _getTemplateInfo(node: string, vmid: string): Promise<resp<PVE_qemu_config | undefined>> {
         try {
@@ -66,11 +67,11 @@ export class PVEService extends Service {
                 }
             });
             const templateInfo = apiResponse.data as PVE_qemu_config;
-            
+
             if (!templateInfo) {
                 throw new Error(`No qemu config data found in API response for node ${node}, vmid ${vmid}`);
             }
-            
+
             return createResponse(200, "Template info fetched successfully", templateInfo);
         } catch (error) {
             console.error(`Error in _getTemplateInfo for node ${node}, vmid ${vmid}:`, error);
@@ -102,7 +103,7 @@ export class PVEService extends Service {
                 return createResponse(400, "Missing node or vmid in request body");
             }
             try {
-                const qemuConfig:PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(node, vmid), undefined, {
+                const qemuConfig: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(node, vmid), undefined, {
                     headers: {
                         'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
                     }
@@ -128,7 +129,7 @@ export class PVEService extends Service {
                 console.error("Error validating token:", error);
                 return error;
             }
-            const nodes:PVEResp = await callWithUnauthorized('GET', pve_api.nodes, undefined, {
+            const nodes: PVEResp = await callWithUnauthorized('GET', pve_api.nodes, undefined, {
                 headers: {
                     'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
                 }
@@ -147,7 +148,7 @@ export class PVEService extends Service {
                 console.error("Error validating token:", error);
                 return error;
             }
-            const nextId:PVEResp = await callWithUnauthorized('GET', pve_api.cluster_next_id, undefined, {
+            const nextId: PVEResp = await callWithUnauthorized('GET', pve_api.cluster_next_id, undefined, {
                 headers: {
                     'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
                 }
@@ -203,7 +204,7 @@ export class PVEService extends Service {
                 return templateInfo;
             });
 
-            const vmTemplateInfos = await Promise.all(templateInfoPromises);            
+            const vmTemplateInfos = await Promise.all(templateInfoPromises);
             return createResponse(200, "Templates fetched successfully", vmTemplateInfos);
         } catch (error) {
             console.error("Error in getAllTemplates:", error);
@@ -256,76 +257,314 @@ export class PVEService extends Service {
                 return templateInfo;
             });
 
-            const vmTemplateInfos = await Promise.all(templateInfoPromises);            
+            const vmTemplateInfos = await Promise.all(templateInfoPromises);
             return createResponse(200, "Approved templates fetched successfully", vmTemplateInfos);
         } catch (error) {
             console.error("Error in getAllApprovedTemplates:", error);
             return createResponse(500, "Internal Server Error");
         }
     }
-    // /nodes/{node}/qemu/{template_vmid}/clone
+
     public async createVMFromTemplate(Request: Request): Promise<resp<PVEResp | undefined>> {
         try {
             const { user, error } = await validateTokenAndGetAdminUser<PVEResp>(Request);
             if (error) {
-                console.error("Error validating token:", error);
+                logger.error("Error validating token for createVMFromTemplate:", error);
                 return error;
             }
-            // template_id 是 VM_Template 的 _id ，用這查詢真實的 pve_vmid
-            const newidRes = await this._getNextId();
-            if (newidRes.code !== 200 || !newidRes.body) {
-                console.error("Failed to get next ID:", newidRes.message);
-                return createResponse(newidRes.code, newidRes.message);
-            }
-            const nextId = newidRes.body.data;
-            const {template_id, name, target, storage="NFS" ,full='1', cpuCores, memorySize, diskSize ,ciuser=undefined,cipassword=undefined } = Request.body;
 
-            if (!template_id || !name || !target || !cpuCores || !memorySize || !diskSize) {
-                const missingFields = [];
-                if (!template_id) missingFields.push("template_id");
-                if (!name) missingFields.push("name");
-                if (!target) missingFields.push("target");
-                if (!cpuCores) missingFields.push("cpuCores");
-                if (!memorySize) missingFields.push("memorySize");
-                if (!diskSize) missingFields.push("diskSize");
-                return createResponse(400, `Missing required fields: ${missingFields.join(", ")}`);
+            const { template_id, name, target, storage = "NFS", full = '1', cpuCores, memorySize, diskSize, ciuser: requestCiuser, cipassword: requestCipassword } = Request.body;
+            
+            logger.info(`User ${user.username} (${user._id}) starting VM creation from template ${template_id}`);
+
+            const validationResult = this._validateVMCreationParams({ template_id, name, target, cpuCores, memorySize, diskSize, ciuser: requestCiuser, cipassword: requestCipassword });
+            if (validationResult.code !== 200) {
+                logger.warn(`VM creation validation failed for user ${user.username}: ${validationResult.message}`);
+                return validationResult;
             }
 
-            // 檢查ci user 和 ci password 是否同時存在
-            if ((ciuser && !cipassword) || (!ciuser && cipassword)) {
-                return createResponse(400, "Both ciuser and cipassword must be provided or neither");
+            const nextIdResult = await this._getNextVMId();
+            if (nextIdResult.code !== 200 || !nextIdResult.body) {
+                logger.error(`Failed to get next VM ID for user ${user.username}: ${nextIdResult.message}`);
+                return nextIdResult;
             }
+            const nextId = nextIdResult.body.data;
 
-            // 驗證和清理 VM 名稱以符合 DNS 格式
+            // 清理 VM 名稱
             const sanitizedName = this.sanitizeVMName(name);
             if (!sanitizedName) {
+                logger.warn(`Invalid VM name provided by user ${user.username}: ${name}`);
                 return createResponse(400, "Invalid VM name. Name must contain only alphanumeric characters, hyphens, and dots, and cannot start or end with a hyphen.");
             }
 
-            // 查詢範本
-            const template_info = await VMTemplateModel.findOne({ _id: template_id }).exec();
-            if (!template_info) {
-                return createResponse(404, "Template not found");
+            // 獲取範本資訊
+            const templateResult = await this._getTemplateDetails(template_id);
+            if (templateResult.code !== 200 || !templateResult.body) {
+                logger.error(`Failed to get template details for user ${user.username}, template ${template_id}: ${templateResult.message}`);
+                return templateResult;
             }
-            // 獲取範本的 pve_vmid 和 pve_node
-            const template_vmid = template_info.pve_vmid;
-            const template_node = template_info.pve_node;
-            // 獲取範本的 qemu 配置
-            const qemuConfigResp = await this._getTemplateInfo(template_node, template_vmid);
-            if (qemuConfigResp.code !== 200 || !qemuConfigResp.body) {
-                console.error(`Failed to get qemu config for template ${template_id}: ${qemuConfigResp.message}`);
-                return createResponse(qemuConfigResp.code, qemuConfigResp.message);
-            }            
-            console.log(`Cloning template ${template_vmid} from node ${template_node} to ${target} with new ID ${nextId}`);
+            const { template_info, qemuConfig } = templateResult.body;
+
+            // 檢查範本是否有有效的 ciuser 和 cipassword
+            const templateHasValidCiuser = template_info.ciuser && 
+                                         typeof template_info.ciuser === 'string' && 
+                                         template_info.ciuser.trim() !== '' && 
+                                         template_info.ciuser !== 'undefined' &&
+                                         template_info.ciuser !== 'null';
+            const templateHasValidCipassword = template_info.cipassword && 
+                                             typeof template_info.cipassword === 'string' && 
+                                             template_info.cipassword.trim() !== '' && 
+                                             template_info.cipassword !== 'undefined' &&
+                                             template_info.cipassword !== 'null';
+
+            // 使用範本的預設 ciuser 和 cipassword，除非 request body 有明確提供
+            // 如果 request body 中的值是 undefined，且範本有有效值，使用範本預設值
+            // 如果 request body 中的值是空字串或其他值，使用請求的值
+            const ciuser = requestCiuser !== undefined ? requestCiuser : (templateHasValidCiuser ? template_info.ciuser! : '');
+            const cipassword = requestCipassword !== undefined ? requestCipassword : (templateHasValidCipassword ? template_info.cipassword! : '');
             
-            // 檢查欲申請資源量是否符合資源限制
+            logger.info(`Template has valid ciuser: ${templateHasValidCiuser}, cipassword: ${templateHasValidCipassword}`);
+            logger.info(`Template ciuser: "${template_info.ciuser || 'EMPTY'}", template cipassword: "${template_info.cipassword ? '[PROVIDED]' : '[NOT PROVIDED]'}"`);
+            logger.info(`Request ciuser: "${requestCiuser || 'EMPTY'}", request cipassword: "${requestCipassword ? '[PROVIDED]' : '[NOT PROVIDED]'}"`);
+            logger.info(`Final ciuser: "${ciuser}", cipassword: "${cipassword ? '[PROVIDED]' : '[NOT PROVIDED]'}", from template: ${requestCiuser === undefined && templateHasValidCiuser}`);
 
-            return createResponse(400, "Resource limits checking not implemented yet");
+            // 檢查資源限制
+            const resourceCheckResult = await this._checkResourceLimits(user, cpuCores, memorySize, diskSize);
+            if (resourceCheckResult.code !== 200) {
+                logger.warn(`Resource limits exceeded for user ${user.username}: CPU=${cpuCores}, Memory=${memorySize}MB, Disk=${diskSize}GB`);
+                return resourceCheckResult;
+            }
 
-            const cloneResp: PVEResp = await callWithUnauthorized('POST', pve_api.nodes_qemu_clone(template_node, template_vmid), {
-                newid: nextId,
-                name: sanitizedName,
-                target: target,
+            // 創建任務前清理用戶的舊任務
+            await this._cleanupUserOldTasks(user._id.toString(), 20); // 每個用戶最多保留20個任務
+
+            const task = await this._createVMTask(template_id, user._id.toString(), nextId, template_info.pve_vmid, target);
+            logger.info(`Created VM task ${task.task_id} for user ${user.username}, VM ID: ${nextId}`);
+
+            const cloneResult = await this._cloneVM(template_info.pve_node, template_info.pve_vmid, nextId, sanitizedName, target, storage, full);
+            
+            await this._updateTaskStatus(task.task_id, cloneResult.success ? VM_Task_Status.IN_PROGRESS : VM_Task_Status.FAILED, cloneResult.upid, cloneResult.errorMessage);
+
+            if (!cloneResult.success) {
+                logger.error(`VM clone failed for user ${user.username}, task ${task.task_id}: ${cloneResult.errorMessage}`);
+                return createResponse(500, "Failed to clone VM from template");
+            }
+
+            const configResult = await this._configureAndFinalizeVM(target, nextId, cpuCores, memorySize, diskSize, cloneResult.upid!, template_info.pve_node, task.task_id, ciuser, cipassword);
+            
+            if (configResult.success) {
+                // 只有在所有操作都成功後才更新資源使用量和用戶 VM 列表
+                await this._updateUsedComputeResources(user._id.toString(), cpuCores, memorySize, diskSize);
+                await this._updateUserOwnedVMs(user._id.toString(), nextId);
+                await this._updateTaskStatus(task.task_id, VM_Task_Status.COMPLETED, cloneResult.upid);
+                
+                logger.info(`VM ${nextId} created successfully for user ${user.username}, task ${task.task_id}`);
+                
+                return createResponse(200, "VM created and configured successfully", {
+                    task_id: task.task_id,
+                    vm_name: sanitizedName,
+                    vmid: nextId
+                });
+            } else {
+                // 配置失敗，需要清理
+                await this._updateTaskStatus(task.task_id, VM_Task_Status.FAILED, cloneResult.upid, configResult.errorMessage);
+                
+                logger.error(`VM configuration failed for user ${user.username}, task ${task.task_id}: ${configResult.errorMessage}`);
+                
+                // TODO: 待實作 - 清理失敗的 VM 和資源
+                // 1. 刪除已創建的 VM (如果存在)
+                // 2. 回滾已分配的資源使用量
+                // 3. 清理相關的任務記錄
+                await this._cleanupFailedVMCreation(user._id.toString(), nextId, task.task_id);
+                
+                return createResponse(500, "VM created but configuration failed");
+            }
+        } catch (error) {
+            logger.error("Error in createVMFromTemplate:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+
+    // 驗證 VM 建立參數
+    private _validateVMCreationParams(params: any): resp<any> {
+        const { template_id, name, target, cpuCores, memorySize, diskSize, ciuser, cipassword } = params;
+
+        const missingFields = [];
+        if (!template_id) missingFields.push("template_id");
+        if (!name) missingFields.push("name");
+        if (!target) missingFields.push("target");
+        if (!cpuCores) missingFields.push("cpuCores");
+        if (!memorySize) missingFields.push("memorySize");
+        if (!diskSize) missingFields.push("diskSize");
+
+        if (missingFields.length > 0) {
+            return createResponse(400, `Missing required fields: ${missingFields.join(", ")}`);
+        }
+
+        // 檢查 ci user 和 ci password 是否同時存在（如果提供的話）
+        if ((ciuser && !cipassword) || (!ciuser && cipassword)) {
+            return createResponse(400, "Both ciuser and cipassword must be provided together if specified");
+        }
+
+        return createResponse(200, "Validation passed");
+    }
+
+    // 獲取下一個可用的 VM ID
+    private async _getNextVMId(): Promise<resp<PVEResp | undefined>> {
+        const result = await this._getNextId();
+        if (result.code !== 200 || !result.body) {
+            console.error("Failed to get next ID:", result.message);
+            return createResponse(result.code, result.message);
+        }
+        return result;
+    }
+
+    // 獲取範本詳細資訊
+    private async _getTemplateDetails(templateId: string): Promise<resp<{ template_info: any, qemuConfig: PVE_qemu_config } | undefined>> {
+        const template_info = await VMTemplateModel.findOne({ _id: templateId }).exec();
+        if (!template_info) {
+            return createResponse(404, "Template not found");
+        }
+
+        // 記錄範本的 ciuser 和 cipassword 值以便調試
+        logger.info(`Template ${templateId} - ciuser: "${template_info.ciuser}", cipassword: "${template_info.cipassword ? '[PROVIDED]' : '[NOT PROVIDED]'}"`);
+        logger.info(`Template ${templateId} - ciuser type: ${typeof template_info.ciuser}, cipassword type: ${typeof template_info.cipassword}`);
+
+        const qemuConfigResp = await this._getTemplateInfo(template_info.pve_node, template_info.pve_vmid);
+        if (qemuConfigResp.code !== 200 || !qemuConfigResp.body) {
+            console.error(`Failed to get qemu config for template ${templateId}: ${qemuConfigResp.message}`);
+            return createResponse(qemuConfigResp.code, qemuConfigResp.message);
+        }
+
+        return createResponse(200, "Template details fetched successfully", {
+            template_info,
+            qemuConfig: qemuConfigResp.body
+        });
+    }
+
+    // 檢查資源限制
+    private async _checkResourceLimits(user: any, cpuCores: number, memorySize: number, diskSize: number): Promise<resp<any>> {
+        const computeResourcePlan = await ComputeResourcePlanModel.findOne({ _id: user.compute_resource_plan_id }).exec();
+        if (!computeResourcePlan) {
+            return createResponse(404, "Compute resource plan not found");
+        }
+
+        // 檢查 per VM 限制
+        if (cpuCores > computeResourcePlan.max_cpu_cores_per_vm ||
+            memorySize > computeResourcePlan.max_memory_per_vm ||
+            diskSize > computeResourcePlan.max_storage_per_vm) {
+            return createResponse(400, "Requested resources exceed the per VM limits of your compute resource plan");
+        }        // 檢查總限制
+        let usedResources = null;
+        if (user.used_compute_resource_id) {
+            usedResources = await UsedComputeResourceModel.findById(user.used_compute_resource_id).exec();
+        }
+        
+        if (!usedResources) {
+            // 如果沒有資源使用記錄，則創建一個新的
+            usedResources = await UsedComputeResourceModel.create({
+                cpu_cores: 0,
+                memory: 0,
+                storage: 0
+            });
+            
+            // 更新用戶記錄，將資源使用記錄的 ID 存儲到用戶資料表
+            await UsersModel.updateOne(
+                { _id: user._id },
+                { used_compute_resource_id: usedResources._id.toString() }
+            );
+        }
+        if (!usedResources) {
+            return createResponse(404, "Used compute resources not found for user");
+        }
+
+        const availableCpu = computeResourcePlan.max_cpu_cores_sum - usedResources.cpu_cores;
+        const availableMemory = computeResourcePlan.max_memory_sum - usedResources.memory;
+        const availableStorage = computeResourcePlan.max_storage_sum - usedResources.storage;
+
+        if (cpuCores > availableCpu || memorySize > availableMemory || diskSize > availableStorage) {
+            return createResponse(400, "Requested resources exceed the available limits of your compute resource plan");
+        }
+
+        return createResponse(200, "Resource limits check passed");
+    }
+
+    // 建立 VM 任務記錄
+    private async _createVMTask(templateId: string, userId: string, vmid: string, templateVmid: string, targetNode: string): Promise<VM_Task> {
+        const task: VM_Task = {
+            task_id: `clone-${templateId}-${new Date().getTime()}-${userId}`,
+            user_id: userId,
+            vmid: vmid,
+            template_vmid: templateVmid,
+            target_node: targetNode,
+            status: VM_Task_Status.PENDING,
+            progress: 0,
+            created_at: new Date(),
+            updated_at: new Date(),
+            steps: [
+                {
+                    step_name: "Clone VM from Template",
+                    pve_upid: "PENDING",
+                    step_status: VM_Task_Status.PENDING,
+                    step_message: "",
+                    step_start_time: new Date(),
+                    step_end_time: undefined,
+                    error_message: ""
+                },
+                {
+                    step_name: "Configure CPU Cores",
+                    pve_upid: "PENDING",
+                    step_status: VM_Task_Status.PENDING,
+                    step_message: "",
+                    step_start_time: undefined,
+                    step_end_time: undefined,
+                    error_message: ""
+                },
+                {
+                    step_name: "Configure Memory",
+                    pve_upid: "PENDING",
+                    step_status: VM_Task_Status.PENDING,
+                    step_message: "",
+                    step_start_time: undefined,
+                    step_end_time: undefined,
+                    error_message: ""
+                },
+                {
+                    step_name: "Resize Disk",
+                    pve_upid: "PENDING",
+                    step_status: VM_Task_Status.PENDING,
+                    step_message: "",
+                    step_start_time: undefined,
+                    step_end_time: undefined,
+                    error_message: ""
+                },
+                {
+                    step_name: "Configure Cloud-Init",
+                    pve_upid: "PENDING",
+                    step_status: VM_Task_Status.PENDING,
+                    step_message: "",
+                    step_start_time: undefined,
+                    step_end_time: undefined,
+                    error_message: ""
+                }
+            ]
+        };
+
+        await VM_TaskModel.create(task);
+        return task;
+    }
+
+    // 執行克隆操作
+    private async _cloneVM(sourceNode: string, sourceVmid: string, newVmid: string, vmName: string, targetNode: string, storage: string, full: string): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
+        try {
+            console.log(`Cloning template ${sourceVmid} from node ${sourceNode} to ${targetNode} with new ID ${newVmid}`);
+
+            // 克隆任務在源節點上執行，通過 target 參數指定目標節點
+            const cloneResp: PVEResp = await callWithUnauthorized('POST', pve_api.nodes_qemu_clone(sourceNode, sourceVmid), {
+                newid: newVmid,
+                name: vmName,
+                target: targetNode,  // 指定目標節點
                 storage: storage,
                 full: full,
             }, {
@@ -333,81 +572,518 @@ export class PVEService extends Service {
                     'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
                 }
             });
-            console.log("Clone Response:", cloneResp);
-            
+
             if (!cloneResp || !cloneResp.data) {
                 console.error("Clone operation failed:", cloneResp);
-                return createResponse(500, "Failed to clone VM from template");
+                return { success: false, errorMessage: "Failed to clone VM from template" };
             }
 
-            // 等待克隆任務完成後進行配置調整
-            console.log("Clone task initiated, task ID:", cloneResp.data);
-
-            // TODO: 實現配置調整
-            // - CPU cores 調整
-            // - Memory 調整 
-            // - Disk 大小調整
-            // - Network 配置
-            // - CI/CD 用戶名和密碼配置
-
-            return createResponse(200, "VM clone initiated successfully", {
-                task_id: cloneResp.data,
-                vm_name: sanitizedName,
-            });
+            logger.info(`Clone task initiated for VM ${newVmid}, UPID: ${cloneResp.data}`);
+            return { success: true, upid: cloneResp.data };
         } catch (error) {
-            console.error("Error in createVMFromTemplate:", error);
-            return createResponse(500, "Internal Server Error");
+            console.error("Error in _cloneVM:", error);
+            return { success: false, errorMessage: "Clone operation failed with exception" };
         }
     }
 
-    // 配置 VM 的 CPU 核心數
-    private async _configureVMCores(node: string, vmid: string, cores: number): Promise<resp<PVEResp | undefined>> {
+    // 配置 VM 並完成設定
+    private async _configureAndFinalizeVM(target_node: string, vmid: string, cpuCores: number, memorySize: number, diskSize: number, cloneUpid: string, sourceNode: string, taskId: string, ciuser: string, cipassword: string): Promise<{ success: boolean, errorMessage?: string }> {
         try {
-            const configResp: PVEResp = await callWithUnauthorized('PUT', pve_api.nodes_qemu_config(node, vmid), {
+            console.log(`Starting VM configuration for VM ${vmid} on node ${target_node}`);
+
+            // 等待克隆完成 - 克隆任務在源節點上執行，需要在源節點查詢狀態
+            const cloneWaitResult = await this._waitForTaskCompletion(sourceNode, cloneUpid, 'clone');
+            if (!cloneWaitResult.success) {
+                return { success: false, errorMessage: cloneWaitResult.errorMessage };
+            }
+
+            console.log(`Clone completed, starting configuration for VM ${vmid}`);
+
+            // 額外等待確保 VM 和磁碟完全準備好
+            logger.info(`Waiting additional time for VM ${vmid} to be fully ready...`);
+            await new Promise(resolve => setTimeout(resolve, 15000)); // 等待 15 秒
+
+            // 等待 VM 磁碟準備完成
+            const diskReadyResult = await this._waitForVMDiskReady(target_node, vmid);
+            if (!diskReadyResult.success) {
+                logger.error(`VM ${vmid} disk not ready: ${diskReadyResult.errorMessage}`);
+                return { success: false, errorMessage: diskReadyResult.errorMessage };
+            }
+
+            // 配置 CPU 核心數 - 配置任務在目標節點上
+            console.log(`Configuring CPU cores: ${cpuCores} for VM ${vmid}`);
+            await this._updateTaskStep(taskId, this.VM_CREATION_STEP_INDICES.CPU, VM_Task_Status.IN_PROGRESS);
+            const cpuResult = await this._configureVMCoresWithUpid(target_node, vmid, cpuCores);
+            if (!cpuResult.success) {
+                await this._updateTaskStep(taskId, this.VM_CREATION_STEP_INDICES.CPU, VM_Task_Status.FAILED, undefined, cpuResult.errorMessage);
+                return { success: false, errorMessage: cpuResult.errorMessage };
+            }
+            await this._updateTaskStep(taskId, this.VM_CREATION_STEP_INDICES.CPU, VM_Task_Status.COMPLETED, cpuResult.upid);
+
+            // 配置記憶體 - 配置任務在目標節點上
+            console.log(`Configuring memory: ${memorySize}MB for VM ${vmid}`);
+            await this._updateTaskStep(taskId, this.VM_CREATION_STEP_INDICES.MEMORY, VM_Task_Status.IN_PROGRESS);
+            const memoryResult = await this._configureVMMemoryWithUpid(target_node, vmid, memorySize);
+            if (!memoryResult.success) {
+                await this._updateTaskStep(taskId, this.VM_CREATION_STEP_INDICES.MEMORY, VM_Task_Status.FAILED, undefined, memoryResult.errorMessage);
+                return { success: false, errorMessage: memoryResult.errorMessage };
+            }
+            await this._updateTaskStep(taskId, this.VM_CREATION_STEP_INDICES.MEMORY, VM_Task_Status.COMPLETED, memoryResult.upid);
+
+            // 配置磁碟大小 - 配置任務在目標節點上
+            console.log(`Configuring disk size: ${diskSize}GB for VM ${vmid}`);
+            await this._updateTaskStep(taskId, this.VM_CREATION_STEP_INDICES.DISK, VM_Task_Status.IN_PROGRESS);
+            const diskResult = await this._configureVMDiskWithUpid(target_node, vmid, diskSize);
+            if (!diskResult.success) {
+                await this._updateTaskStep(taskId, this.VM_CREATION_STEP_INDICES.DISK, VM_Task_Status.FAILED, undefined, diskResult.errorMessage);
+                return { success: false, errorMessage: diskResult.errorMessage };
+            }
+            await this._updateTaskStep(taskId, this.VM_CREATION_STEP_INDICES.DISK, VM_Task_Status.COMPLETED, diskResult.upid);
+
+            // 配置 Cloud-Init - 使用範本預設值或請求覆蓋值
+            // 只有當 ciuser 和 cipassword 都是有效的非空字串時才配置
+            const shouldConfigureCloudInit = ciuser && cipassword && 
+                                           typeof ciuser === 'string' && ciuser.trim() !== '' && ciuser !== 'undefined' && ciuser !== 'null' &&
+                                           typeof cipassword === 'string' && cipassword.trim() !== '' && cipassword !== 'undefined' && cipassword !== 'null';
+
+            if (shouldConfigureCloudInit) {
+                console.log(`Configuring cloud-init for user: ${ciuser} on VM ${vmid}`);
+                logger.info(`Configuring cloud-init for VM ${vmid} with user: ${ciuser}`);
+                await this._updateTaskStep(taskId, this.VM_CREATION_STEP_INDICES.CLOUD_INIT, VM_Task_Status.IN_PROGRESS);
+                const ciResult = await this._configureVMCloudInitWithUpid(target_node, vmid, ciuser, cipassword);
+                if (!ciResult.success) {
+                    await this._updateTaskStep(taskId, this.VM_CREATION_STEP_INDICES.CLOUD_INIT, VM_Task_Status.FAILED, undefined, ciResult.errorMessage);
+                    return { success: false, errorMessage: ciResult.errorMessage };
+                }
+                await this._updateTaskStep(taskId, this.VM_CREATION_STEP_INDICES.CLOUD_INIT, VM_Task_Status.COMPLETED, ciResult.upid);
+            } else {
+                // 如果沒有有效的 cloud-init 配置，標記該步驟為跳過
+                logger.warn(`Skipping cloud-init configuration for VM ${vmid} - ciuser: "${ciuser}", cipassword: "${cipassword ? '[PROVIDED]' : '[NOT PROVIDED]'}"`);
+                await this._updateTaskStep(taskId, this.VM_CREATION_STEP_INDICES.CLOUD_INIT, VM_Task_Status.COMPLETED, "SKIPPED", "No valid cloud-init configuration available");
+            }
+
+            logger.info(`VM ${vmid} configuration completed successfully`);
+            return { success: true };
+        } catch (error) {
+            console.error("Error in _configureAndFinalizeVM:", error);
+            return { success: false, errorMessage: "Configuration failed with exception" };
+        }
+    }
+
+    // 等待任務完成 - 通用方法，使用 PVE upid 查詢任務狀態
+    private async _waitForTaskCompletion(target_node: string, upid: string, taskType: string): Promise<{ success: boolean, errorMessage?: string }> {
+        try {
+            console.log(`Waiting for ${taskType} completion with UPID ${upid} on node ${target_node}`);
+
+            // 輪詢檢查 PVE 任務狀態
+            const maxRetries = 120; // 最多等待 600 秒 (120 * 5 秒)
+            let retries = 0;
+
+            while (retries < maxRetries) {
+                try {
+                    // 使用 PVE API 查詢任務狀態
+                    const pveStatus = await this._checkPVETaskStatus(target_node, upid);
+
+                    if (pveStatus && !pveStatus.error) {
+                        console.log(`PVE task ${upid} status: ${pveStatus.status}, exitstatus: ${pveStatus.exitstatus}`);
+
+                        // 任務仍在運行中
+                        if (pveStatus.status === PVE_TASK_STATUS.RUNNING) {
+                            const progress = pveStatus.progress || 0;
+                            console.log(`${taskType} task ${upid} is running... Progress: ${progress}%`);
+                        }
+                        // 任務已停止，檢查結果
+                        else if (pveStatus.status === PVE_TASK_STATUS.STOPPED) {
+                            if (pveStatus.exitstatus === PVE_TASK_EXIT_STATUS.OK) {
+                                console.log(`${taskType} task ${upid} completed successfully`);
+                                return { success: true };
+                            } else if (pveStatus.exitstatus === null) {
+                                console.log(`${taskType} task ${upid} stopped but no exit status yet`);
+                            } else {
+                                // exitstatus 是錯誤訊息字串
+                                console.error(`${taskType} task ${upid} failed with error: ${pveStatus.exitstatus}`);
+                                return { success: false, errorMessage: `${taskType} task failed: ${pveStatus.exitstatus}` };
+                            }
+                        }
+                    } else {
+                        console.log(`Unable to get PVE task status for ${upid}, error: ${pveStatus.error}`);
+                    }
+
+                    // 等待 5 秒後再次檢查
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                    retries++;
+
+                    // 每 12 次重試（60秒）記錄一次進度
+                    if (retries % 12 === 0) {
+                        console.log(`Still waiting for ${taskType} task ${upid} to complete... (${retries}/${maxRetries}, ${retries * 5}s elapsed)`);
+                    }
+                } catch (error) {
+                    console.error(`Error checking PVE task status during wait: ${error}`);
+                    retries++;
+                    await new Promise(resolve => setTimeout(resolve, 5000));
+                }
+            }
+
+            return { success: false, errorMessage: `Timeout waiting for ${taskType} task ${upid} completion after ${maxRetries * 5} seconds` };
+        } catch (error) {
+            console.error(`Error in _waitForTaskCompletion: ${error}`);
+            return { success: false, errorMessage: `Failed to wait for ${taskType} completion` };
+        }
+    }
+
+    // 等待 VM 磁碟準備完成
+    private async _waitForVMDiskReady(target_node: string, vmid: string, maxRetries: number = 10): Promise<{ success: boolean, errorMessage?: string }> {
+        try {
+            logger.info(`Waiting for VM ${vmid} disk to be ready on node ${target_node}`);
+            
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const configResp: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(target_node, vmid), undefined, {
+                        headers: {
+                            'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+                        }
+                    });
+
+                    if (configResp && configResp.data && configResp.data.scsi0) {
+                        const scsi0Config = configResp.data.scsi0;
+                        
+                        // 檢查磁碟是否不再處於導入/克隆狀態
+                        if (!scsi0Config.includes('importing') && !scsi0Config.includes('cloning')) {
+                            logger.info(`VM ${vmid} disk is ready: ${scsi0Config}`);
+                            return { success: true };
+                        } else {
+                            logger.info(`VM ${vmid} disk still being prepared (attempt ${i + 1}/${maxRetries}): ${scsi0Config}`);
+                        }
+                    } else {
+                        logger.warn(`VM ${vmid} disk config not found (attempt ${i + 1}/${maxRetries})`);
+                    }
+                } catch (error) {
+                    logger.warn(`Error checking VM ${vmid} disk status (attempt ${i + 1}/${maxRetries}):`, error);
+                }
+
+                // 等待 10 秒後再次檢查
+                if (i < maxRetries - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 10000));
+                }
+            }
+
+            return { success: false, errorMessage: `VM ${vmid} disk not ready after ${maxRetries} attempts` };
+        } catch (error) {
+            logger.error(`Error waiting for VM ${vmid} disk to be ready:`, error);
+            return { success: false, errorMessage: `Failed to wait for VM disk readiness` };
+        }
+    }
+
+
+
+    // 更新任務狀態
+    private async _updateTaskStatus(taskId: string, status: VM_Task_Status, upid?: string, errorMessage?: string): Promise<void> {
+        try {
+            const updateData: any = {
+                status: status,
+                updated_at: new Date()
+            };
+
+            // 更新整體任務狀態
+            await VM_TaskModel.updateOne({ task_id: taskId }, updateData);
+
+            // 同時更新第一步（克隆步驟）的狀態
+            await this._updateTaskStep(taskId, this.VM_CREATION_STEP_INDICES.CLONE, status, upid, errorMessage);
+        } catch (error) {
+            console.error(`Error updating task status for ${taskId}:`, error);
+        }
+    }
+
+    // 更新特定步驟的狀態
+    private async _updateTaskStep(taskId: string, stepIndex: number, status: VM_Task_Status, upid?: string, errorMessage?: string): Promise<void> {
+        try {
+            const updateData: any = {
+                updated_at: new Date()
+            };
+
+            if (upid && upid !== "PENDING") {
+                updateData[`steps.${stepIndex}.pve_upid`] = upid;
+            }
+
+            updateData[`steps.${stepIndex}.step_status`] = status;
+
+            if (status === VM_Task_Status.IN_PROGRESS) {
+                updateData[`steps.${stepIndex}.step_start_time`] = new Date();
+            } else if (status === VM_Task_Status.COMPLETED || status === VM_Task_Status.FAILED) {
+                updateData[`steps.${stepIndex}.step_end_time`] = new Date();
+            }
+
+            if (status === VM_Task_Status.FAILED && errorMessage) {
+                updateData[`steps.${stepIndex}.error_message`] = errorMessage;
+            }
+
+            await VM_TaskModel.updateOne({ task_id: taskId }, updateData);
+        } catch (error) {
+            console.error(`Error updating task step ${stepIndex} for ${taskId}:`, error);
+        }
+    }
+
+    // 更新用戶資源使用量
+    private async _updateUsedComputeResources(userId: string, cpuCores: number, memorySize: number, diskSize: number): Promise<void> {
+        try {
+            // 首先獲取用戶信息
+            const user = await UsersModel.findById(userId).exec();
+            if (!user) {
+                throw new Error(`User with ID ${userId} not found`);
+            }
+
+            let usedResourceId = user.used_compute_resource_id;
+
+            // 如果用戶沒有關聯的資源使用記錄，則創建一個新的
+            if (!usedResourceId) {
+                const newUsedResource = await UsedComputeResourceModel.create({
+                    cpu_cores: 0,
+                    memory: 0,
+                    storage: 0
+                });
+                
+                usedResourceId = newUsedResource._id.toString();
+                
+                // 更新用戶記錄，將資源使用記錄的 ID 存儲到用戶資料表
+                await UsersModel.updateOne(
+                    { _id: userId },
+                    { used_compute_resource_id: usedResourceId }
+                );
+                
+                logger.info(`Created new compute resource record ${usedResourceId} for user ${userId}`);
+            }
+
+            // 更新資源使用量
+            const result = await UsedComputeResourceModel.updateOne(
+                { _id: usedResourceId },
+                {
+                    $inc: {
+                        cpu_cores: cpuCores,
+                        memory: memorySize,
+                        storage: diskSize
+                    }
+                }
+            );
+
+            if (result.matchedCount > 0) {
+                logger.info(`Updated compute resources for user ${userId}: ${cpuCores} CPU cores, ${memorySize} MB memory, ${diskSize} GB storage`);
+            } else {
+                throw new Error(`Failed to update compute resources for user ${userId}: resource record not found`);
+            }
+        } catch (error) {
+            logger.error(`Error updating compute resources for user ${userId}:`, error);
+            throw error; // 重新拋出錯誤，讓調用者知道更新失敗
+        }
+    }
+
+    // 配置 VM 的 CPU 核心數 - 立即執行
+    private async _configureVMCoresWithUpid(target_node: string, vmid: string, cores: number): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
+        try {
+            if (cores <= 0) {
+                return { success: false, errorMessage: "CPU cores must be greater than 0" };
+            }
+
+            console.log(`Configuring CPU cores for VM ${vmid}: ${cores} cores`);
+
+            const configResp: PVEResp = await callWithUnauthorized('PUT', pve_api.nodes_qemu_config(target_node, vmid), {
                 cores: cores
             }, {
                 headers: {
                     'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
                 }
             });
-            return createResponse(200, "VM CPU cores configured successfully", configResp);
+            console.log("CPU configResp:", configResp);
+
+
+            // CPU 配置通常是立即執行，不返回 UPID
+            // 如果返回 null，表示配置成功完成
+            if (configResp && configResp.data === null) {
+                console.log(`CPU cores configured successfully for VM ${vmid}: ${cores} cores`);
+                return { success: true };
+            }
+
+            // 如果返回 UPID（字符串），則需要等待任務完成
+            if (configResp && configResp.data && typeof configResp.data === 'string') {
+                const upid = configResp.data;
+                console.log(`CPU configuration task initiated with UPID: ${upid}`);
+
+                const waitResult = await this._waitForTaskCompletion(target_node, upid, 'CPU configuration');
+                if (!waitResult.success) {
+                    return { success: false, errorMessage: waitResult.errorMessage };
+                }
+
+                console.log(`CPU cores configured successfully for VM ${vmid}: ${cores} cores`);
+                return { success: true, upid };
+            }
+
+            // 如果沒有返回任何數據，視為失敗
+            return { success: false, errorMessage: "Failed to configure CPU cores - no response data" };
         } catch (error) {
             console.error(`Error configuring CPU cores for VM ${vmid}:`, error);
-            return createResponse(500, "Failed to configure CPU cores");
+            return { success: false, errorMessage: "Failed to configure CPU cores" };
         }
     }
 
-    // 配置 VM 的記憶體大小
-    private async _configureVMMemory(node: string, vmid: string, memory: number): Promise<resp<PVEResp | undefined>> {
+    // 配置 VM 的記憶體大小 - 立即執行
+    private async _configureVMMemoryWithUpid(target_node: string, vmid: string, memory: number): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
         try {
-            const configResp: PVEResp = await callWithUnauthorized('PUT', pve_api.nodes_qemu_config(node, vmid), {
-                memory: memory
+            if (memory <= 0) {
+                return { success: false, errorMessage: "Memory size must be greater than 0" };
+            }
+
+            console.log(`Configuring memory for VM ${vmid}: ${memory}MB`);
+
+            const configResp: PVEResp = await callWithUnauthorized('PUT', pve_api.nodes_qemu_config(target_node, vmid), {
+                memory: memory,
+                balloon: 0 // 禁用 balloon 以確保固定記憶體大小
             }, {
                 headers: {
                     'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
                 }
             });
-            return createResponse(200, "VM memory configured successfully", configResp);
+
+            console.log("Memory configResp:", configResp);
+
+            // 記憶體配置通常是立即執行，不返回 UPID
+            // 如果返回 null，表示配置成功完成
+            if (configResp && configResp.data === null) {
+                console.log(`Memory configured successfully for VM ${vmid}: ${memory}MB`);
+                return { success: true };
+            }
+
+            // 如果返回 UPID（字符串），則需要等待任務完成
+            if (configResp && configResp.data && typeof configResp.data === 'string') {
+                const upid = configResp.data;
+                console.log(`Memory configuration task initiated with UPID: ${upid}`);
+
+                const waitResult = await this._waitForTaskCompletion(target_node, upid, 'Memory configuration');
+                if (!waitResult.success) {
+                    return { success: false, errorMessage: waitResult.errorMessage };
+                }
+
+                console.log(`Memory configured successfully for VM ${vmid}: ${memory}MB`);
+                return { success: true, upid };
+            }
+
+            // 如果沒有返回任何數據，視為失敗
+            return { success: false, errorMessage: "Failed to configure memory - no response data" };
         } catch (error) {
             console.error(`Error configuring memory for VM ${vmid}:`, error);
-            return createResponse(500, "Failed to configure memory");
+            return { success: false, errorMessage: "Failed to configure memory" };
         }
     }
 
-    // 檢查任務狀態的輔助方法
-    private async _checkTaskStatus(node: string, taskId: string): Promise<resp<PVEResp | undefined>> {
+    // 配置 VM 磁碟大小 - 計算增量並調整
+    private async _configureVMDiskWithUpid(target_node: string, vmid: string, targetDiskSize: number): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
         try {
-            // 注意：這需要在 PVE_API 中添加任務狀態查詢的端點
-            // const taskResp: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_tasks_status(node, taskId), undefined, {
-            //     headers: {
-            //         'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
-            //     }
-            // });
-            // return createResponse(200, "Task status fetched successfully", taskResp);
-            return createResponse(501, "Task status checking not implemented yet");
+            if (targetDiskSize <= 0) {
+                return { success: false, errorMessage: "Target disk size must be greater than 0" };
+            }
+
+            // 獲取當前磁碟大小
+            const currentSizeResult = await this._getCurrentDiskSize(target_node, vmid);
+            if (!currentSizeResult.success || currentSizeResult.currentSize === undefined) {
+                return { success: false, errorMessage: currentSizeResult.errorMessage || "Failed to get current disk size" };
+            }
+
+            const currentSize = currentSizeResult.currentSize;
+            const increaseSize = targetDiskSize - currentSize;
+
+            console.log(`Current disk size: ${currentSize}GB, Target size: ${targetDiskSize}GB, Increase by: ${increaseSize}GB`);
+
+            // 如果目標大小小於或等於當前大小，不需要調整
+            if (increaseSize <= 0) {
+                console.log(`No disk resize needed for VM ${vmid}. Current size (${currentSize}GB) >= target size (${targetDiskSize}GB)`);
+                return { success: true };
+            }
+
+            console.log(`Resizing disk for VM ${vmid}: +${increaseSize}GB`);
+
+            // 使用正確的 resize API - PUT 方法
+            const resizeResp: PVEResp = await callWithUnauthorized('PUT', pve_api.nodes_qemu_resize(target_node, vmid), {
+                disk: 'scsi0',
+                size: `+${increaseSize}G`
+            }, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+                }
+            });
+
+            console.log("Disk resizeResp:", resizeResp);
+
+            // 磁碟調整可能立即執行或返回 UPID
+            // 如果返回 null，表示調整成功完成
+            if (resizeResp && resizeResp.data === null) {
+                console.log(`Disk resized successfully for VM ${vmid}: +${increaseSize}GB`);
+                return { success: true };
+            }
+
+            // 如果返回 UPID（字符串），則需要等待任務完成
+            if (resizeResp && resizeResp.data && typeof resizeResp.data === 'string') {
+                const upid = resizeResp.data;
+                console.log(`Disk resize task initiated with UPID: ${upid}`);
+
+                const waitResult = await this._waitForTaskCompletion(target_node, upid, 'Disk resize');
+                if (!waitResult.success) {
+                    return { success: false, errorMessage: waitResult.errorMessage };
+                }
+
+                console.log(`Disk resized successfully for VM ${vmid}: +${increaseSize}GB`);
+                return { success: true, upid };
+            }
+
+            // 如果沒有返回任何數據，視為失敗
+            return { success: false, errorMessage: "Failed to resize disk - no response data" };
         } catch (error) {
-            console.error(`Error checking task status ${taskId}:`, error);
-            return createResponse(500, "Failed to check task status");
+            console.error(`Error resizing disk for VM ${vmid}:`, error);
+            return { success: false, errorMessage: "Failed to resize disk" };
+        }
+    }
+
+    // 配置 VM Cloud-Init - 可能立即執行或返回 UPID
+    private async _configureVMCloudInitWithUpid(target_node: string, vmid: string, ciuser: string, cipassword: string): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
+        try {
+            console.log(`Configuring cloud-init for VM ${vmid} with user: ${ciuser}`);
+
+            const cloudInitConfig = {
+                ciuser: ciuser,
+                cipassword: cipassword
+            };
+
+            const configResp: PVEResp = await callWithUnauthorized('PUT', pve_api.nodes_qemu_config(target_node, vmid), cloudInitConfig, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
+                }
+            });
+
+            console.log("Cloud-init configResp:", configResp);
+
+            // Cloud-init 配置可能立即執行或返回 UPID
+            // 如果返回 null，表示配置成功完成
+            if (configResp && configResp.data === null) {
+                console.log(`Cloud-init configured successfully for VM ${vmid}`);
+                return { success: true };
+            }
+
+            // 如果返回 UPID（字符串），則需要等待任務完成
+            if (configResp && configResp.data && typeof configResp.data === 'string') {
+                const upid = configResp.data;
+                console.log(`Cloud-init configuration task initiated with UPID: ${upid}`);
+
+                const waitResult = await this._waitForTaskCompletion(target_node, upid, 'Cloud-init configuration');
+                if (!waitResult.success) {
+                    return { success: false, errorMessage: waitResult.errorMessage };
+                }
+
+                console.log(`Cloud-init configured successfully for VM ${vmid}`);
+                return { success: true, upid };
+            }
+
+            // 如果沒有返回任何數據，視為失敗
+            return { success: false, errorMessage: "Failed to configure cloud-init - no response data" };
+        } catch (error) {
+            console.error(`Error configuring cloud-init for VM ${vmid}:`, error);
+            return { success: false, errorMessage: "Failed to configure cloud-init" };
         }
     }
 
@@ -429,12 +1105,12 @@ export class PVEService extends Service {
         if (!scsi0) {
             throw new Error("No scsi0 disk configuration found");
         }
-        
+
         const sizeMatch = scsi0.match(/size=(\d+)G/);
         if (!sizeMatch) {
             throw new Error(`Unable to parse disk size from scsi0: ${scsi0}`);
         }
-        
+
         return parseInt(sizeMatch[1], 10);
     }
 
@@ -466,5 +1142,439 @@ export class PVEService extends Service {
         // 最終驗證
         const dnsNameRegex = /^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/;
         return dnsNameRegex.test(sanitized) ? sanitized : null;
+    }
+
+    // 獲取 VM 當前磁碟大小
+    private async _getCurrentDiskSize(target_node: string, vmid: string): Promise<{ success: boolean, currentSize?: number, errorMessage?: string }> {
+        try {
+            const configResp: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(target_node, vmid), undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
+                }
+            });
+
+            if (configResp && configResp.data) {
+                const config = configResp.data;
+                if (config.scsi0) {
+                    // 檢查磁碟是否仍在準備中
+                    if (config.scsi0.includes('importing') || config.scsi0.includes('cloning')) {
+                        return { success: false, errorMessage: `Disk still being prepared: ${config.scsi0}` };
+                    }
+
+                    // 解析 scsi0 配置，例如 "NFS:105/vm-105-disk-0.raw,size=32G"
+                    const sizeMatch = config.scsi0.match(/size=(\d+)G/);
+                    if (sizeMatch) {
+                        const currentSize = parseInt(sizeMatch[1]);
+                        logger.info(`Current disk size for VM ${vmid}: ${currentSize}GB`);
+                        return { success: true, currentSize };
+                    } else {
+                        return { success: false, errorMessage: `Cannot parse disk size from: ${config.scsi0}` };
+                    }
+                } else {
+                    return { success: false, errorMessage: `No scsi0 disk found for VM ${vmid}` };
+                }
+            }
+
+            return { success: false, errorMessage: "Failed to get VM configuration" };
+        } catch (error) {
+            logger.error(`Error getting current disk size for VM ${vmid}:`, error);
+            return { success: false, errorMessage: "Failed to get current disk size" };
+        }
+    }
+
+    // 檢視多個 VM 任務狀態的自定義接口
+    public async getMultipleTasksStatus(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser<any>(Request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return error;
+            }
+
+            const { task_ids } = Request.body;
+
+            if (!task_ids || !Array.isArray(task_ids) || task_ids.length === 0) {
+                return createResponse(400, "task_ids must be a non-empty array");
+            }
+
+            const tasks = await VM_TaskModel.find({
+                task_id: { $in: task_ids },
+                user_id: user._id.toString()
+            }).exec();
+
+            if (tasks.length === 0) {
+                return createResponse(200, "No tasks found for the provided task IDs", []);
+            }
+
+            const taskStatusPromises = tasks.map(async (task) => {
+                return await this._getTaskWithPVEStatus(task);
+            });
+
+            const tasksWithStatus = await Promise.all(taskStatusPromises);
+
+            return createResponse(200, "Multiple tasks status fetched successfully", tasksWithStatus);
+        } catch (error) {
+            console.error("Error in getMultipleTasksStatus:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    // 獲取用戶所有 VM 任務的狀態
+    public async getUserAllTasksStatus(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser<any>(Request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return error;
+            }
+
+            // 可選的分頁參數
+            const page = parseInt(Request.query.page as string) || 1;
+            const limit = parseInt(Request.query.limit as string) || 10;
+            const status = Request.query.status as string; // 可選的狀態過濾
+
+            // 建立查詢條件
+            const query: any = { user_id: user._id.toString() };
+            if (status) {
+                query.status = status;
+            }
+
+            // 分頁查詢
+            const skip = (page - 1) * limit;
+            const tasks = await VM_TaskModel.find(query)
+                .sort({ created_at: -1 }) // 按建立時間倒序
+                .skip(skip)
+                .limit(limit)
+                .exec();
+
+            const totalTasks = await VM_TaskModel.countDocuments(query);
+
+            if (tasks.length === 0) {
+                return createResponse(200, "No tasks found", {
+                    tasks: [],
+                    pagination: {
+                        page,
+                        limit,
+                        total: totalTasks,
+                        totalPages: Math.ceil(totalTasks / limit)
+                    }
+                });
+            }
+
+            // 並發檢查所有任務的 PVE 狀態
+            const taskStatusPromises = tasks.map(async (task) => {
+                return await this._getTaskWithPVEStatus(task);
+            });
+
+            const tasksWithStatus = await Promise.all(taskStatusPromises);
+
+            return createResponse(200, "User tasks status fetched successfully", {
+                tasks: tasksWithStatus,
+                pagination: {
+                    page,
+                    limit,
+                    total: totalTasks,
+                    totalPages: Math.ceil(totalTasks / limit)
+                }
+            });
+        } catch (error) {
+            console.error("Error in getUserAllTasksStatus:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    // 即時檢查 PVE 任務狀態並更新本地記錄
+    public async refreshTaskStatus(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser<any>(Request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return error;
+            }
+
+            const { task_id } = Request.body;
+            if (!task_id) {
+                return createResponse(400, "task_id is required");
+            }
+
+            // 檢查任務是否屬於當前用戶
+            const task = await VM_TaskModel.findOne({
+                task_id: task_id,
+                user_id: user._id.toString()
+            }).exec();
+
+            if (!task) {
+                return createResponse(404, "Task not found or access denied");
+            }
+
+            // 獲取最新的 PVE 狀態並更新本地記錄
+            const refreshedTask = await this._refreshAndUpdateTaskStatus(task);
+
+            return createResponse(200, "Task status refreshed successfully", refreshedTask);
+        } catch (error) {
+            console.error("Error in refreshTaskStatus:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    // 輔助方法：獲取任務及其 PVE 狀態
+    private async _getTaskWithPVEStatus(task: any): Promise<any> {
+        try {
+            const taskData = {
+                task_id: task.task_id,
+                vmid: task.vmid,
+                template_vmid: task.template_vmid,
+                target_node: task.target_node,
+                status: task.status,
+                progress: task.progress,
+                created_at: task.created_at,
+                updated_at: task.updated_at,
+                steps: task.steps,
+                pve_status: null as any
+            };
+
+            // 如果任務有 PVE UPID，則檢查 PVE 狀態
+            if (task.steps && task.steps.length > 0 && task.steps[0].pve_upid) {
+                const pveStatus = await this._checkPVETaskStatus(task.target_node, task.steps[0].pve_upid);
+                taskData.pve_status = pveStatus;
+            }
+
+            return taskData;
+        } catch (error) {
+            console.error(`Error getting task with PVE status for ${task.task_id}:`, error);
+            return {
+                task_id: task.task_id,
+                vmid: task.vmid,
+                template_vmid: task.template_vmid,
+                target_node: task.target_node,
+                status: task.status,
+                progress: task.progress,
+                created_at: task.created_at,
+                updated_at: task.updated_at,
+                steps: task.steps,
+                pve_status: { error: "Failed to fetch PVE status" }
+            };
+        }
+    }
+
+    // 檢查 PVE 任務狀態
+    private async _checkPVETaskStatus(node: string, upid: string): Promise<PVE_Task_Status_Response> {
+        try {
+            const statusResp: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_tasks_status(node, upid), undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+                }
+            });
+            console.log(`Checking PVE task status for UPID ${upid} on node ${node}`);
+            console.log("PVE task status response:", statusResp);
+
+            if (statusResp && statusResp.data) {
+                return {
+                    upid: upid,
+                    node: node,
+                    status: statusResp.data.status,
+                    type: statusResp.data.type,
+                    user: statusResp.data.user,
+                    starttime: statusResp.data.starttime,
+                    endtime: statusResp.data.endtime,
+                    exitstatus: statusResp.data.exitstatus,
+                    progress: statusResp.data.progress || 0
+                };
+            }
+
+            return {
+                upid: upid,
+                node: node,
+                status: PVE_TASK_STATUS.STOPPED,
+                type: 'unknown',
+                user: 'unknown',
+                starttime: 0,
+                error: "No PVE task data found"
+            };
+        } catch (error) {
+            console.error(`Error checking PVE task status for ${upid}:`, error);
+            return {
+                upid: upid,
+                node: node,
+                status: PVE_TASK_STATUS.STOPPED,
+                type: 'unknown',
+                user: 'unknown',
+                starttime: 0,
+                error: "Failed to check PVE task status"
+            };
+        }
+    }
+
+    // 重新整理並更新任務狀態
+    private async _refreshAndUpdateTaskStatus(task: any): Promise<any> {
+        try {
+            if (!task.steps || task.steps.length === 0 || !task.steps[0].pve_upid) {
+                return task;
+            }
+
+            const pveStatus = await this._checkPVETaskStatus(task.target_node, task.steps[0].pve_upid);
+
+            // 根據 PVE 狀態更新本地任務狀態
+            if (pveStatus && !pveStatus.error) {
+                let newStatus = task.status;
+                let newProgress = task.progress;
+
+                // 根據 PVE 狀態映射到本地狀態
+                if (pveStatus.status === PVE_TASK_STATUS.RUNNING) {
+                    newStatus = VM_Task_Status.IN_PROGRESS;
+                    newProgress = pveStatus.progress || 0;
+                } else if (pveStatus.status === PVE_TASK_STATUS.STOPPED) {
+                    if (pveStatus.exitstatus === PVE_TASK_EXIT_STATUS.OK) {
+                        newStatus = VM_Task_Status.COMPLETED;
+                        newProgress = 100;
+                    } else if (pveStatus.exitstatus === null) {
+                        // 任務停止但沒有結果，保持當前狀態
+                        newStatus = VM_Task_Status.IN_PROGRESS;
+                    } else {
+                        // exitstatus 是錯誤訊息字串
+                        newStatus = VM_Task_Status.FAILED;
+                    }
+                }
+
+                // 更新資料庫中的任務狀態
+                if (newStatus !== task.status || newProgress !== task.progress) {
+                    const updateData: any = {
+                        status: newStatus,
+                        progress: newProgress,
+                        updated_at: new Date(),
+                        'steps.0.step_status': newStatus,
+                        'steps.0.step_end_time': pveStatus.endtime ? new Date(pveStatus.endtime * 1000) : undefined
+                    };
+
+                    // 如果任務失敗，保存錯誤訊息
+                    if (newStatus === VM_Task_Status.FAILED && pveStatus.exitstatus && pveStatus.exitstatus !== PVE_TASK_EXIT_STATUS.OK) {
+                        updateData['steps.0.error_message'] = pveStatus.exitstatus;
+                    }
+
+                    await VM_TaskModel.updateOne({ task_id: task.task_id }, updateData);
+
+                    // 更新本地物件
+                    task.status = newStatus;
+                    task.progress = newProgress;
+                    task.updated_at = new Date();
+                    if (task.steps && task.steps[0]) {
+                        task.steps[0].step_status = newStatus;
+                        if (pveStatus.endtime) {
+                            task.steps[0].step_end_time = new Date(pveStatus.endtime * 1000);
+                        }
+                    }
+                }
+            }
+
+            return await this._getTaskWithPVEStatus(task);
+        } catch (error) {
+            console.error(`Error refreshing task status for ${task.task_id}:`, error);
+            return task;
+        }
+    }
+
+    // 清理舊任務記錄
+    private async _cleanupOldTasks(): Promise<void> {
+        try {
+            const maxTaskAge = 30; // 保留最近30天的任務
+            const cutoffDate = new Date();
+            cutoffDate.setDate(cutoffDate.getDate() - maxTaskAge);
+
+            const result = await VM_TaskModel.deleteMany({
+                created_at: { $lt: cutoffDate }
+            });
+
+            console.log(`Cleaned up ${result.deletedCount} old tasks older than ${maxTaskAge} days`);
+        } catch (error) {
+            console.error("Error cleaning up old tasks:", error);
+        }
+    }
+
+    // 清理特定用戶的舊任務
+    private async _cleanupUserOldTasks(userId: string, maxTasks: number = 50): Promise<void> {
+        try {
+            // 保留用戶最近的 maxTasks 個任務，刪除其餘的
+            const tasksToDelete = await VM_TaskModel.find({ user_id: userId })
+                .sort({ created_at: -1 })
+                .skip(maxTasks)
+                .select('_id')
+                .exec();
+
+            if (tasksToDelete.length > 0) {
+                const taskIds = tasksToDelete.map(task => task._id);
+                const result = await VM_TaskModel.deleteMany({ _id: { $in: taskIds } });
+                console.log(`Cleaned up ${result.deletedCount} old tasks for user ${userId}`);
+            }
+        } catch (error) {
+            console.error(`Error cleaning up old tasks for user ${userId}:`, error);
+        }
+    }
+
+    // 定期清理任務 - 可以設置為定時任務
+    public async cleanupTasks(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetSuperAdminUser<any>(Request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return error;
+            }
+
+            console.log("Starting task cleanup...");
+            await this._cleanupOldTasks();
+
+            // 統計清理後的任務數量
+            const totalTasks = await VM_TaskModel.countDocuments();
+            const tasksByStatus = await VM_TaskModel.aggregate([
+                {
+                    $group: {
+                        _id: "$status",
+                        count: { $sum: 1 }
+                    }
+                }
+            ]);
+
+            return createResponse(200, "Task cleanup completed", {
+                totalTasks,
+                tasksByStatus
+            });
+        } catch (error) {
+            console.error("Error in cleanupTasks:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    // 更新用戶擁有的 VM 列表
+    private async _updateUserOwnedVMs(userId: string, vmid: string): Promise<void> {
+        try {
+            await UsersModel.updateOne(
+                { _id: userId },
+                { $addToSet: { owned_vms: vmid } }
+            );
+            logger.info(`Added VM ${vmid} to user ${userId} owned_vms list`);
+        } catch (error) {
+            logger.error(`Error updating user owned VMs for user ${userId}:`, error);
+            throw error;
+        }
+    }
+
+    // 清理失敗的 VM 創建 - 待實作
+    private async _cleanupFailedVMCreation(userId: string, vmid: string, taskId: string): Promise<void> {
+        try {
+            logger.warn(`Starting cleanup for failed VM creation - User: ${userId}, VM: ${vmid}, Task: ${taskId}`);
+            
+            // TODO: 待實作 - 完整的清理邏輯
+            // 1. 檢查 VM 是否存在於 PVE 中
+            // 2. 如果存在，刪除 VM
+            // 3. 回滾已分配的資源使用量
+            // 4. 從用戶的 owned_vms 中移除 VM ID
+            // 5. 更新任務狀態為清理完成
+            
+            // 暫時實作：只記錄需要清理的資源
+            logger.info(`Cleanup needed for VM ${vmid} - This will be implemented in future updates`);
+            
+        } catch (error) {
+            logger.error(`Error during cleanup for failed VM creation:`, error);
+            // 不拋出錯誤，避免影響主要的錯誤回應
+        }
     }
 }
