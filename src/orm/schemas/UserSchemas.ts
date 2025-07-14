@@ -15,7 +15,8 @@ export const UsersSchemas = new Schema<User>({
     avatar_path:{ type: String },
     wrongLoginAttemptId:{ type: String },
     compute_resource_plan_id :{type:String},
-    course_ids:{ type: [String], default: [] },
+    used_compute_resource_id: { type: String, default: '' },
+    course_ids: { type: [String], default: [] },
     owned_vms: { type: [String], default: [] }
 });
 
