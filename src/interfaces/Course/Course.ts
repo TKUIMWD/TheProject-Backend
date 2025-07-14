@@ -1,12 +1,13 @@
 export interface Course {
     _id?: string,
     course_name: string,
+    course_subtitle: string,
     course_description: string,
     duration_in_minutes: number,
     difficulty: string,
-    reviews: Array<String>, // !temp
+    reviews: Array<string>, // !temp
     rating: number,
-    classes: Array<String>, // !temp
+    class_ids: Array<string>,
     update_date: Date,
     submitter_user_id: string,
     update_log: Array<String>, // !temp

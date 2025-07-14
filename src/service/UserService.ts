@@ -10,7 +10,7 @@ import { validateTokenAndGetUser } from "../utils/auth";
 import { generateHashedPassword, passwordStrengthCheck } from "../utils/password";
 import { processAvatar, deleteAvatar, DEFAULT_AVATAR } from "../utils/avatarUpload";
 import { UsersModel } from "../orm/schemas/UserSchemas";
-import { Course, CourseInfo } from "../interfaces/Course";
+import { Course, CourseInfo } from "../interfaces/Course/Course";
 import { CourseModel } from "../orm/schemas/CourseSchemas";
 import { log } from "console";
 import { createResponse } from "../utils/resp";
@@ -279,7 +279,7 @@ export class UserService extends Service {
                 },
                 {
                     $project: {
-                        _id: 0,
+                        _id: "$_id",
                         course_name: "$course_name",
                         duration_in_minutes: "$duration_in_minutes",
                         difficulty: "$difficulty",
