@@ -1,4 +1,4 @@
-import Roles from "../enum/role";
+import Roles from "../../enum/role";
 
 export interface AuthResponse {
     data: {

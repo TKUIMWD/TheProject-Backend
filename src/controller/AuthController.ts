@@ -1,7 +1,7 @@
 import { Controller } from "../abstract/Controller";
 import { Request, response, Response } from "express";
 import { resp } from "../utils/resp";
-import { DBResp } from "../interfaces/DBResp";
+import { DBResp } from "../interfaces/Response/DBResp";
 import { AuthService } from "../service/AuthService";
 require('dotenv').config()
 

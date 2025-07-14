@@ -1,6 +1,6 @@
 import { Service } from "../abstract/Service";
 import { resp, createResponse } from "../utils/resp";
-import { PVEResp } from "../interfaces/PVEResp";
+import { PVEResp } from "../interfaces/Response/PVEResp";
 import { Request } from "express";
 import { getTokenRole, validateTokenAndGetAdminUser, validateTokenAndGetSuperAdminUser, validateTokenAndGetUser } from "../utils/auth";
 import { pve_api } from "../enum/PVE_API";

@@ -1,10 +1,10 @@
 import bcrypt from "bcrypt";
 import { Service } from "../abstract/Service";
 import { resp , createResponse } from "../utils/resp";
-import { DBResp } from "../interfaces/DBResp";
+import { DBResp } from "../interfaces/Response/DBResp";
 import { Document } from "mongoose";
 import { generatePasswordResetToken, generateToken, generateVerificationToken } from "../utils/token";
-import { AuthResponse } from "../interfaces/AuthResponse";
+import { AuthResponse } from "../interfaces/Response/AuthResponse";
 import { logger } from "../middlewares/log";
 import { Request, Response } from "express";
 import { UsersModel } from "../orm/schemas/UserSchemas";
