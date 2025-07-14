@@ -278,7 +278,7 @@ export class PVEService extends Service {
                 return createResponse(newidRes.code, newidRes.message);
             }
             const nextId = newidRes.body.data;
-            const {template_id, name, target, storage="NFS" ,full='1', cpuCores, memorySize, diskSize } = Request.body;
+            const {template_id, name, target, storage="NFS" ,full='1', cpuCores, memorySize, diskSize ,ciuser=undefined,cipassword=undefined } = Request.body;
 
             if (!template_id || !name || !target || !cpuCores || !memorySize || !diskSize) {
                 const missingFields = [];
@@ -289,6 +289,11 @@ export class PVEService extends Service {
                 if (!memorySize) missingFields.push("memorySize");
                 if (!diskSize) missingFields.push("diskSize");
                 return createResponse(400, `Missing required fields: ${missingFields.join(", ")}`);
+            }
+
+            // 檢查ci user 和 ci password 是否同時存在
+            if ((ciuser && !cipassword) || (!ciuser && cipassword)) {
+                return createResponse(400, "Both ciuser and cipassword must be provided or neither");
             }
 
             // 驗證和清理 VM 名稱以符合 DNS 格式
@@ -343,6 +348,7 @@ export class PVEService extends Service {
             // - Memory 調整 
             // - Disk 大小調整
             // - Network 配置
+            // - CI/CD 用戶名和密碼配置
 
             return createResponse(200, "VM clone initiated successfully", {
                 task_id: cloneResp.data,
