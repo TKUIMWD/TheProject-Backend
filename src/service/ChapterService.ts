@@ -2,8 +2,8 @@ import mongoose from "mongoose";
 import { Service } from "../abstract/Service";
 import { ChapterPageDTO } from "../interfaces/Chapter/ChapterPageDTO";
 import { ChapterModel } from "../orm/schemas/ChapterSchemas";
-import { getUserFromRequest } from "../utils/auth";
-import { resp } from "../utils/resp"
+import { validateTokenAndGetUser } from "../utils/auth";
+import { resp, createResponse } from "../utils/resp"
 import { Request } from "express";
 import { logger } from "../middlewares/log";
 import { ClassMap } from "../interfaces/Course/Maps";
@@ -15,24 +15,16 @@ export class ChapterService extends Service {
      * @returns resp<ChapterPageDTO | undefined>
      */
     public async getChapterById(Request: Request): Promise<resp<ChapterPageDTO | undefined>> {
-        const resp: resp<ChapterPageDTO | undefined> = {
-            code: 200,
-            message: "",
-            body: undefined
-        };
         try {
-            const user = await getUserFromRequest(Request);
-            if (!user) {
-                resp.code = 401;
-                resp.message = "Unauthorized access";
-                return resp;
+            const { user, error } = await validateTokenAndGetUser<ChapterPageDTO>(Request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return error;
             }
 
             const { chapterId } = Request.params;
             if (!chapterId || !mongoose.Types.ObjectId.isValid(chapterId)) {
-                resp.code = 400;
-                resp.message = "Invalid chapter_id format";
-                return resp;
+                return createResponse(400, "Invalid chapter_id format");
             }
 
             const targetChapterId = new mongoose.Types.ObjectId(chapterId);
@@ -41,7 +33,7 @@ export class ChapterService extends Service {
                 {
                     $match: {
                         _id: {
-                            $in: user.course_ids.map(id => new mongoose.Types.ObjectId(id.toString()))
+                            $in: user.course_ids.map((id: any) => new mongoose.Types.ObjectId(id.toString()))
                         }
                     }
                 },
@@ -88,22 +80,16 @@ export class ChapterService extends Service {
             ]);
 
             if (aggregationResult.length === 0) {
-                resp.code = 403;
-                resp.message = "You are not authorized to view this chapter, or the chapter does not exist.";
-                return resp;
+                return createResponse(403, "You are not authorized to view this chapter, or the chapter does not exist.");
             }
 
-            resp.body = aggregationResult[0] as ChapterPageDTO;
-            resp.message = "Chapter data retrieved successfully";
-
+            const chapterData = aggregationResult[0] as ChapterPageDTO;
+            return createResponse(200, "Chapter data retrieved successfully", chapterData);
 
         } catch (err) {
-            resp.code = 500;
-            resp.message = "Internal Server Error";
             logger.error("Error in getChapterPageDTO:", err);
             console.error("Error in getChapterPageDTO:", err);
+            return createResponse(500, "Internal Server Error");
         }
-
-        return resp;
     }
 }

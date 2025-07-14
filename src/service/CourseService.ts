@@ -1,7 +1,7 @@
 import { Service } from "../abstract/Service";
 import { CoursePageDTO } from "../interfaces/Course/CoursePageDTO";
-import { getUserFromRequest } from "../utils/auth";
-import { resp } from "../utils/resp";
+import { validateTokenAndGetUser } from "../utils/auth";
+import { resp, createResponse } from "../utils/resp";
 import { Request } from "express";
 import { logger } from "../middlewares/log";
 import { CourseModel } from "../orm/schemas/CourseSchemas";
@@ -13,25 +13,26 @@ export class CourseService extends Service {
     /**
      * Validates the course access for the user.
      * @param Request - The Express request object.
-     * @returns An object containing courseId if valid, or an error response.
+     * @returns An object containing courseId and user if valid, or an error response.
      */
-    private async _validateCourseAccess(Request: Request): Promise<{ courseId?: string; errorResp?: resp<undefined> }> {
-        const user = await getUserFromRequest(Request);
-        if (!user) {
-            return { errorResp: { code: 401, message: "Unauthorized access", body: undefined } };
+    private async _validateCourseAccess(Request: Request): Promise<{ courseId?: string; user?: any; errorResp?: resp<undefined> }> {
+        const { user, error } = await validateTokenAndGetUser<undefined>(Request);
+        if (error) {
+            console.error("Error validating token:", error);
+            return { errorResp: error };
         }
 
         const { courseId } = Request.params;
         if (!courseId || !mongoose.Types.ObjectId.isValid(courseId)) {
-            return { errorResp: { code: 400, message: "Invalid course_id format", body: undefined } };
+            return { errorResp: createResponse(400, "Invalid course_id format") };
         }
 
-        const isAuthorized = user.course_ids.some(id => id.toString() === courseId);
+        const isAuthorized = user.course_ids.some((id: any) => id.toString() === courseId);
         if (!isAuthorized) {
-            return { errorResp: { code: 403, message: "You are not authorized to view this course", body: undefined } };
+            return { errorResp: createResponse(403, "You are not authorized to view this course") };
         }
 
-        return { courseId };
+        return { courseId, user };
     }
 
     /**
@@ -39,11 +40,6 @@ export class CourseService extends Service {
      * @returns resp<CoursePageDTO | undefined>
      */
     public async getCourseById(Request: Request): Promise<resp<CoursePageDTO | undefined>> {
-        const resp: resp<CoursePageDTO | undefined> = {
-            code: 200,
-            message: "",
-            body: undefined
-        };
         try {
             const validationResult = await this._validateCourseAccess(Request);
             if (validationResult.errorResp) {
@@ -85,21 +81,17 @@ export class CourseService extends Service {
             ]);
 
             if (!aggregationResult || aggregationResult.length === 0) {
-                resp.code = 404;
-                resp.message = "Course not found";
-                return resp;
+                return createResponse(404, "Course not found");
             }
 
-            resp.body = aggregationResult[0] as CoursePageDTO;
-            resp.message = "Course page data retrieved successfully";
+            const courseData = aggregationResult[0] as CoursePageDTO;
+            return createResponse(200, "Course page data retrieved successfully", courseData);
 
         } catch (err) {
-            resp.code = 500;
-            resp.message = "Internal Server Error";
             logger.error("Error in getCourseById:", err);
             console.error("Error in getCourseById:", err);
+            return createResponse(500, "Internal Server Error");
         }
-        return resp;
     }
 
     /**
@@ -107,12 +99,6 @@ export class CourseService extends Service {
      * @returns resp<CourseMenu | undefined>
      */
     public async getCourseMenu(Request: Request): Promise<resp<CourseMenu | undefined>> {
-        const resp: resp<CourseMenu | undefined> = {
-            code: 200,
-            message: "",
-            body: undefined
-        };
-
         try {
             const validationResult = await this._validateCourseAccess(Request);
             if (validationResult.errorResp) {
@@ -169,21 +155,16 @@ export class CourseService extends Service {
             ]);
 
             if (!aggregationResult || aggregationResult.length === 0) {
-                resp.code = 404;
-                resp.message = "Course not found";
-                return resp;
+                return createResponse(404, "Course not found");
             }
 
-            resp.body = aggregationResult[0] as CourseMenu;
-            resp.message = "Course menu data retrieved successfully";
+            const courseMenuData = aggregationResult[0] as CourseMenu;
+            return createResponse(200, "Course menu data retrieved successfully", courseMenuData);
 
         } catch (err) {
-            resp.code = 500;
-            resp.message = "Internal Server Error";
             logger.error("Error in getCourseMenu:", err);
             console.error("Error in getCourseMenu:", err);
+            return createResponse(500, "Internal Server Error");
         }
-
-        return resp;
     }
 }
