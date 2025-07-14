@@ -2,7 +2,7 @@ import bcrypt from "bcrypt";
 import { Service } from "../abstract/Service";
 import { logger } from "../middlewares/log";
 import { Document, Types } from "mongoose"
-import { DBResp } from "../interfaces/DBResp";
+import { DBResp } from "../interfaces/Response/DBResp";
 import { resp } from "../utils/resp";
 import { UserProfile } from "../interfaces/User";
 import { Request } from "express";

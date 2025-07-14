@@ -9,4 +9,5 @@ export const pve_api: PVEApiEndPoints = {
     nodes_qemu: (node: string) => `${pve_api_base}/nodes/${node}/qemu`,
     nodes_qemu_config: (node: string, vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${vmid}/config`,
     cluster_next_id: `${pve_api_base}/cluster/nextid`,
+    nodes_qemu_clone: (node: string, template_vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${template_vmid}/clone`
 };

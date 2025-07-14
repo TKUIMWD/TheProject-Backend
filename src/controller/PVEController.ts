@@ -40,4 +40,9 @@ export class PVEController extends Controller {
     const resp = await this.service.getAllApprovedTemplates(Request);
     Response.status(resp.code).send(resp);
   }
+
+  public async createVMFromTemplate(Request: Request, Response: Response) {
+    const resp = await this.service.createVMFromTemplate(Request);
+    Response.status(resp.code).send(resp);
+  }
 }

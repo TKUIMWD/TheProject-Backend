@@ -35,6 +35,10 @@ export class PVERoute extends Route{
         this.router.get(`${this.url}getAllApprovedTemplates`, (req, res) => {
             this.Controller.getAllApprovedTemplates(req, res);
         });
+
+        this.router.post(`${this.url}createVMFromTemplate`, (req, res) => {
+            this.Controller.createVMFromTemplate(req, res);
+        });
     }
 
 }

@@ -2,7 +2,7 @@ import { Controller } from "../abstract/Controller";
 import { Request, response, Response } from "express";
 import { UserService } from "../service/UserService";
 import { resp } from "../utils/resp";
-import { DBResp } from "../interfaces/DBResp";
+import { DBResp } from "../interfaces/Response/DBResp";
 import { upload, handleMulterError } from "../utils/avatarUpload";
 require('dotenv').config()
 
