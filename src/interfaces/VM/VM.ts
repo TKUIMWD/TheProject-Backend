@@ -14,3 +14,43 @@ export interface VMConfig {
     status?: string;
     [key: string]: any;
 }
+
+export interface VMBasicConfig {
+    vmid: number;
+    name: string;
+    cores: number;
+    memory: string;
+    node: string;
+    status: string;
+    disk_size: number | null;
+}
+
+export interface VMDetailedConfig {
+    vmid: number;
+    name: string;
+    cores: number;
+    memory: string;
+    node: string;
+    status: string;
+    scsi0?: string;
+    net0?: string;
+    bootdisk?: string;
+    ostype?: string;
+    disk_size: number | null;
+}
+
+export interface VMDetailWithConfig {
+    _id?: string;
+    pve_vmid: string;
+    pve_node: string;
+    config: VMDetailedConfig | null;
+    error: string | null;
+}
+
+export interface VMDetailWithBasicConfig {
+    _id?: string;
+    pve_vmid: string;
+    pve_node: string;
+    config: VMBasicConfig | null;
+    error: string | null;
+}

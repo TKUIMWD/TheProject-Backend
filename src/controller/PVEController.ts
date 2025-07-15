@@ -72,4 +72,9 @@ export class PVEController extends Controller {
     const resp = await this.service.getAllVMs(Request);
     Response.status(resp.code).send(resp);
   }
+
+  public async getUserOwnedVMs(Request: Request, Response: Response) {
+    const resp = await this.service.getUserOwnedVMs(Request);
+    Response.status(resp.code).send(resp);
+  }
 }

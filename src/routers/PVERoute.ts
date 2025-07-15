@@ -62,6 +62,10 @@ export class PVERoute extends Route{
         this.router.get(`${this.url}getAllVMs`, (req, res) => {
             this.Controller.getAllVMs(req, res);
         });
+
+        this.router.get(`${this.url}getUserOwnedVMs`, (req, res) => {
+            this.Controller.getUserOwnedVMs(req, res);
+        });
     }
 
 }

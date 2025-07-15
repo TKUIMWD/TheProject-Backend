@@ -16,7 +16,7 @@ import { ComputeResourcePlanModel } from "../orm/schemas/ComputeResourcePlanSche
 import { UsedComputeResourceModel } from "../orm/schemas/UsedComputeResourceSchemas";
 import { User } from "../interfaces/User";
 import {logger} from "../middlewares/log";
-import { VMConfig } from "../interfaces/VM/VM";
+import { VMConfig, VMDetailedConfig, VMDetailWithConfig, VMBasicConfig, VMDetailWithBasicConfig } from "../interfaces/VM/VM";
 import { VMDeletionResponse, VMDeletionUserValidation } from "../interfaces/Response/VMResp";
 
 const PVE_API_ADMINMODE_TOKEN = process.env.PVE_API_ADMINMODE_TOKEN;
@@ -2042,7 +2042,7 @@ export class PVEService extends Service {
     }
 
     // 為普通用戶獲取基本 QEMU 配置（只包含必要資訊）
-    private async _getBasicQemuConfig(node: string, vmid: string): Promise<resp<any>> {
+    private async _getBasicQemuConfig(node: string, vmid: string): Promise<resp<VMBasicConfig | undefined>> {
         try {
             const qemuConfig: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(node, vmid), undefined, {
                 headers: {
@@ -2055,7 +2055,7 @@ export class PVEService extends Service {
             }
 
             // 只返回基本資訊：CPU、記憶體、磁碟
-            const basicConfig = {
+            const basicConfig: VMBasicConfig = {
                 vmid: qemuConfig.data.vmid,
                 name: qemuConfig.data.name,
                 cores: qemuConfig.data.cores,
@@ -2074,7 +2074,7 @@ export class PVEService extends Service {
     }
 
     // 為管理員獲取詳細 QEMU 配置
-    private async _getDetailedQemuConfig(node: string, vmid: string): Promise<resp<any>> {
+    private async _getDetailedQemuConfig(node: string, vmid: string): Promise<resp<VMDetailedConfig | undefined>> {
         try {
             const qemuConfig: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(node, vmid), undefined, {
                 headers: {
@@ -2087,7 +2087,7 @@ export class PVEService extends Service {
             }
 
             // 返回詳細資訊但不包含敏感資訊
-            const detailedConfig = {
+            const detailedConfig: VMDetailedConfig = {
                 vmid: qemuConfig.data.vmid,
                 name: qemuConfig.data.name,
                 cores: qemuConfig.data.cores,
@@ -2141,12 +2141,12 @@ export class PVEService extends Service {
     }
 
     // 獲取用戶擁有的 VM 列表
-    public async getUserOwnedVMs(Request: Request): Promise<resp<any>> {
+    public async getUserOwnedVMs(Request: Request): Promise<resp<VMDetailWithBasicConfig[] | undefined>> {
         try {
-            const { user, error } = await validateTokenAndGetUser<any>(Request);
+            const { user, error } = await validateTokenAndGetUser<User>(Request);
             if (error) {
                 console.error("Error validating token:", error);
-                return error;
+                return createResponse(error.code, error.message);
             }
 
             if (!user.owned_vms || user.owned_vms.length === 0) {
@@ -2159,15 +2159,15 @@ export class PVEService extends Service {
             }).exec();
 
             // 為每個 VM 獲取基本狀態資訊
-            const vmDetails = await Promise.all(
-                vms.map(async (vm) => {
+            const vmDetails: VMDetailWithBasicConfig[] = await Promise.all(
+                vms.map(async (vm): Promise<VMDetailWithBasicConfig> => {
                     try {
                         const basicConfig = await this._getBasicQemuConfig(vm.pve_node, vm.pve_vmid);
                         return {
                             _id: vm._id,
                             pve_vmid: vm.pve_vmid,
                             pve_node: vm.pve_node,
-                            config: basicConfig.code === 200 ? basicConfig.body : null,
+                            config: basicConfig.code === 200 ? (basicConfig.body || null) : null,
                             error: basicConfig.code !== 200 ? basicConfig.message : null
                         };
                     } catch (error) {
@@ -2287,27 +2287,27 @@ export class PVEService extends Service {
     }
 
     // superadmin get all vms
-    public async getAllVMs(Request: Request): Promise<resp<any>> {
+    public async getAllVMs(Request: Request): Promise<resp<VMDetailWithConfig[] | undefined>> {
         try {
-            const { user, error } = await validateTokenAndGetSuperAdminUser<any>(Request);
+            const { user, error } = await validateTokenAndGetSuperAdminUser<User>(Request);
             if (error) {
                 console.error("Error validating token:", error);
-                return error;
+                return createResponse(error.code, error.message);
             }
 
             // 獲取所有 VM 的詳細資訊
             const vms = await VMModel.find({}).exec();
 
             // 為每個 VM 獲取詳細狀態資訊
-            const vmDetails = await Promise.all(
-                vms.map(async (vm) => {
+            const vmDetails: VMDetailWithConfig[] = await Promise.all(
+                vms.map(async (vm): Promise<VMDetailWithConfig> => {
                     try {
                         const detailedConfig = await this._getDetailedQemuConfig(vm.pve_node, vm.pve_vmid);
                         return {
                             _id: vm._id,
                             pve_vmid: vm.pve_vmid,
                             pve_node: vm.pve_node,
-                            config: detailedConfig.code === 200 ? detailedConfig.body : null,
+                            config: detailedConfig.code === 200 ? (detailedConfig.body || null) : null,
                             error: detailedConfig.code !== 200 ? detailedConfig.message : null
                         };
                     } catch (error) {
