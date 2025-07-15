@@ -7,17 +7,18 @@ import { pve_api } from "../enum/PVE_API";
 import { callWithUnauthorized } from "../utils/fetch";
 import { PVE_qemu_config, PVE_Task_Status_Response, PVE_Task_Status, PVE_Task_ExitStatus, PVE_TASK_STATUS, PVE_TASK_EXIT_STATUS } from "../interfaces/PVE";
 import { VMTemplateModel } from "../orm/schemas/VM/VMTemplateSchemas";
-import { VM_Template_Info } from "../interfaces/VM/VM_Template";
+import { VM_Template_Info, VM_Template } from "../interfaces/VM/VM_Template";
 import { UsersModel } from "../orm/schemas/UserSchemas";
 import { VM_TaskModel } from "../orm/schemas/VM/VM_TaskSchemas";
-import { VM_Task, VM_Task_Status } from "../interfaces/VM/VM_Task";
+import { VM_Task, VM_Task_Status, VM_Task_Update, VM_Task_Step_Update, VM_Task_With_PVE_Status, VM_Task_Query, VM_Task_Query_With_Pagination } from "../interfaces/VM/VM_Task";
 import { VMModel } from "../orm/schemas/VM/VMSchemas";
 import { ComputeResourcePlanModel } from "../orm/schemas/ComputeResourcePlanSchemas";
 import { UsedComputeResourceModel } from "../orm/schemas/UsedComputeResourceSchemas";
 import { User } from "../interfaces/User";
 import {logger} from "../middlewares/log";
-import { VMConfig, VMDetailedConfig, VMDetailWithConfig, VMBasicConfig, VMDetailWithBasicConfig } from "../interfaces/VM/VM";
+import { VMConfig, VMDetailedConfig, VMDetailWithConfig, VMBasicConfig, VMDetailWithBasicConfig, VMCreationParams } from "../interfaces/VM/VM";
 import { VMDeletionResponse, VMDeletionUserValidation } from "../interfaces/Response/VMResp";
+import { DeleteResult, UpdateResult } from "mongodb";
 
 const PVE_API_ADMINMODE_TOKEN = process.env.PVE_API_ADMINMODE_TOKEN;
 const PVE_API_SUPERADMINMODE_TOKEN = process.env.PVE_API_SUPERADMINMODE_TOKEN;
@@ -416,7 +417,7 @@ export class PVEService extends Service {
 
 
     // 驗證 VM 建立參數
-    private _validateVMCreationParams(params: any): resp<any> {
+    private _validateVMCreationParams(params: VMCreationParams): resp<string | undefined> {
         const { template_id, name, target, cpuCores, memorySize, diskSize, ciuser, cipassword } = params;
 
         const missingFields = [];
@@ -450,7 +451,7 @@ export class PVEService extends Service {
     }
 
     // 獲取範本詳細資訊
-    private async _getTemplateDetails(templateId: string): Promise<resp<{ template_info: any, qemuConfig: PVE_qemu_config } | undefined>> {
+    private async _getTemplateDetails(templateId: string): Promise<resp<{ template_info: VM_Template, qemuConfig: PVE_qemu_config } | undefined>> {
         const template_info = await VMTemplateModel.findOne({ _id: templateId }).exec();
         if (!template_info) {
             return createResponse(404, "Template not found");
@@ -823,7 +824,7 @@ export class PVEService extends Service {
     // 更新任務狀態
     private async _updateTaskStatus(taskId: string, status: VM_Task_Status, upid?: string, errorMessage?: string): Promise<void> {
         try {
-            const updateData: any = {
+            const updateData: Partial<VM_Task> = {
                 status: status,
                 updated_at: new Date()
             };
@@ -841,7 +842,7 @@ export class PVEService extends Service {
     // 更新特定步驟的狀態
     private async _updateTaskStep(taskId: string, stepIndex: number, status: VM_Task_Status, upid?: string, errorMessage?: string): Promise<void> {
         try {
-            const updateData: any = {
+            const updateData: VM_Task_Step_Update = {
                 updated_at: new Date()
             };
 
@@ -1242,7 +1243,7 @@ export class PVEService extends Service {
     // 檢視多個 VM 任務狀態的自定義接口
     public async getMultipleTasksStatus(Request: Request): Promise<resp<any>> {
         try {
-            const { user, error } = await validateTokenAndGetUser<any>(Request);
+            const { user, error } = await validateTokenAndGetUser<User>(Request);
             if (error) {
                 console.error("Error validating token:", error);
                 return error;
@@ -1279,7 +1280,7 @@ export class PVEService extends Service {
     // 獲取用戶所有 VM 任務的狀態
     public async getUserAllTasksStatus(Request: Request): Promise<resp<any>> {
         try {
-            const { user, error } = await validateTokenAndGetUser<any>(Request);
+            const { user, error } = await validateTokenAndGetUser<User>(Request);
             if (error) {
                 console.error("Error validating token:", error);
                 return error;
@@ -1291,9 +1292,9 @@ export class PVEService extends Service {
             const status = Request.query.status as string; // 可選的狀態過濾
 
             // 建立查詢條件
-            const query: any = { user_id: user._id.toString() };
+            const query: VM_Task_Query = { user_id: user._id.toString() };
             if (status) {
-                query.status = status;
+                query.status = status as VM_Task_Status;
             }
 
             // 分頁查詢
@@ -1343,7 +1344,7 @@ export class PVEService extends Service {
     // 即時檢查 PVE 任務狀態並更新本地記錄
     public async refreshTaskStatus(Request: Request): Promise<resp<any>> {
         try {
-            const { user, error } = await validateTokenAndGetUser<any>(Request);
+            const { user, error } = await validateTokenAndGetUser<User>(Request);
             if (error) {
                 console.error("Error validating token:", error);
                 return error;
@@ -1375,9 +1376,9 @@ export class PVEService extends Service {
     }
 
     // 輔助方法：獲取任務及其 PVE 狀態
-    private async _getTaskWithPVEStatus(task: any): Promise<any> {
+    private async _getTaskWithPVEStatus(task: VM_Task): Promise<VM_Task_With_PVE_Status> {
         try {
-            const taskData = {
+            const taskData: VM_Task_With_PVE_Status = {
                 task_id: task.task_id,
                 vmid: task.vmid,
                 template_vmid: task.template_vmid,
@@ -1387,7 +1388,7 @@ export class PVEService extends Service {
                 created_at: task.created_at,
                 updated_at: task.updated_at,
                 steps: task.steps,
-                pve_status: null as any
+                pve_status: null
             };
 
             // 如果任務有 PVE UPID，則檢查 PVE 狀態
@@ -1409,7 +1410,7 @@ export class PVEService extends Service {
                 created_at: task.created_at,
                 updated_at: task.updated_at,
                 steps: task.steps,
-                pve_status: { error: "Failed to fetch PVE status" }
+                pve_status: null
             };
         }
     }
@@ -1478,10 +1479,10 @@ export class PVEService extends Service {
     }
 
     // 重新整理並更新任務狀態
-    private async _refreshAndUpdateTaskStatus(task: any): Promise<any> {
+    private async _refreshAndUpdateTaskStatus(task: VM_Task): Promise<VM_Task_With_PVE_Status> {
         try {
             if (!task.steps || task.steps.length === 0 || !task.steps[0].pve_upid) {
-                return task;
+                return await this._getTaskWithPVEStatus(task);
             }
 
             const pveStatus = await this._checkPVETaskStatus(task.target_node, task.steps[0].pve_upid);
@@ -1510,7 +1511,7 @@ export class PVEService extends Service {
 
                 // 更新資料庫中的任務狀態
                 if (newStatus !== task.status || newProgress !== task.progress) {
-                    const updateData: any = {
+                    const updateData: VM_Task_Update = {
                         status: newStatus,
                         progress: newProgress,
                         updated_at: new Date(),
@@ -1541,7 +1542,7 @@ export class PVEService extends Service {
             return await this._getTaskWithPVEStatus(task);
         } catch (error) {
             console.error(`Error refreshing task status for ${task.task_id}:`, error);
-            return task;
+            return await this._getTaskWithPVEStatus(task);
         }
     }
 
@@ -1552,7 +1553,7 @@ export class PVEService extends Service {
             const cutoffDate = new Date();
             cutoffDate.setDate(cutoffDate.getDate() - maxTaskAge);
 
-            const result = await VM_TaskModel.deleteMany({
+            const result: DeleteResult = await VM_TaskModel.deleteMany({
                 created_at: { $lt: cutoffDate }
             });
 
@@ -1574,7 +1575,7 @@ export class PVEService extends Service {
 
             if (tasksToDelete.length > 0) {
                 const taskIds = tasksToDelete.map(task => task._id);
-                const result = await VM_TaskModel.deleteMany({ _id: { $in: taskIds } });
+                const result: DeleteResult = await VM_TaskModel.deleteMany({ _id: { $in: taskIds } });
                 console.log(`Cleaned up ${result.deletedCount} old tasks for user ${userId}`);
             }
         } catch (error) {
@@ -1585,7 +1586,7 @@ export class PVEService extends Service {
     // 定期清理任務 - 可以設置為定時任務
     public async cleanupTasks(Request: Request): Promise<resp<any>> {
         try {
-            const { user, error } = await validateTokenAndGetSuperAdminUser<any>(Request);
+            const { user, error } = await validateTokenAndGetSuperAdminUser<User>(Request);
             if (error) {
                 console.error("Error validating token:", error);
                 return error;
@@ -2026,7 +2027,7 @@ export class PVEService extends Service {
             }
 
             // 從所有用戶的 owned_vms 中移除該 VM（清理任何可能的重複記錄）
-            await UsersModel.updateMany(
+            const updateResult: UpdateResult = await UsersModel.updateMany(
                 { owned_vms: vmId },
                 { $pull: { owned_vms: vmId } }
             );

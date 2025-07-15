@@ -351,7 +351,7 @@ export class AuthService extends Service {
      * 取得預設的計算資源方案 (standard)
      * @returns 返回 standard 計算資源方案，如果不存在則返回 null
      */
-    private async getStandardComputeResourcePlan(): Promise<any> {
+    private async getStandardComputeResourcePlan(): Promise<Document | null> {
         try {
             const standardPlan = await ComputeResourcePlanModel.findOne({ name: "standard" }).exec();
             return standardPlan;

@@ -15,6 +15,17 @@ export interface VMConfig {
     [key: string]: any;
 }
 
+export interface VMCreationParams {
+    template_id: string;
+    name: string;
+    target: string;
+    cpuCores: number;
+    memorySize: number;
+    diskSize: number;
+    ciuser?: string;
+    cipassword?: string;
+}
+
 export interface VMBasicConfig {
     vmid: number;
     name: string;
