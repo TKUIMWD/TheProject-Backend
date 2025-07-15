@@ -4,7 +4,6 @@ import { Request } from "express";
 import { validateTokenAndGetUser, validateTokenAndGetSuperAdminUser } from "../utils/auth";
 import { VMTemplateModel } from "../orm/schemas/VM/VMTemplateSchemas";
 import { VM_Template_Info } from "../interfaces/VM/VM_Template";
-import { User } from "../interfaces/User";
 import { UsersModel } from "../orm/schemas/UserSchemas";
 import { PVE_qemu_config } from "../interfaces/PVE";
 import { PVEResp } from "../interfaces/Response/PVEResp";

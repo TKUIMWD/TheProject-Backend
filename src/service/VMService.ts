@@ -5,12 +5,12 @@ import { Request } from "express";
 import { getTokenRole, validateTokenAndGetSuperAdminUser, validateTokenAndGetUser } from "../utils/auth";
 import { pve_api } from "../enum/PVE_API";
 import { callWithUnauthorized } from "../utils/fetch";
-import { PVE_qemu_config, PVE_Task_Status_Response, PVE_Task_Status, PVE_Task_ExitStatus, PVE_TASK_STATUS, PVE_TASK_EXIT_STATUS } from "../interfaces/PVE";
+import { PVE_qemu_config, PVE_Task_Status_Response, PVE_TASK_STATUS, PVE_TASK_EXIT_STATUS } from "../interfaces/PVE";
 import { VMTemplateModel } from "../orm/schemas/VM/VMTemplateSchemas";
-import { VM_Template_Info, VM_Template } from "../interfaces/VM/VM_Template";
+import { VM_Template } from "../interfaces/VM/VM_Template";
 import { UsersModel } from "../orm/schemas/UserSchemas";
 import { VM_TaskModel } from "../orm/schemas/VM/VM_TaskSchemas";
-import { VM_Task, VM_Task_Status, VM_Task_Update, VM_Task_Step_Update, VM_Task_With_PVE_Status, VM_Task_Query, VM_Task_Query_With_Pagination } from "../interfaces/VM/VM_Task";
+import { VM_Task, VM_Task_Status } from "../interfaces/VM/VM_Task";
 import { VMModel } from "../orm/schemas/VM/VMSchemas";
 import { ComputeResourcePlanModel } from "../orm/schemas/ComputeResourcePlanSchemas";
 import { UsedComputeResourceModel } from "../orm/schemas/UsedComputeResourceSchemas";
@@ -451,7 +451,6 @@ export class VMService extends Service {
         }
     }
 
-    // 私有輔助方法 - 這些方法需要從 PVEService 移動過來
     private async _validateVMCreationParams(params: VMCreationParams): Promise<resp<string | undefined>> {
         const { template_id, name, target, cpuCores, memorySize, diskSize, ciuser, cipassword } = params;
 
@@ -579,8 +578,6 @@ export class VMService extends Service {
 
         return createResponse(200, "Resource limits check passed");
     }
-
-    // 其他私有方法...
 
     private async _createVMTask(templateId: string, userId: string, vmid: string, templateVmid: string, targetNode: string): Promise<VM_Task> {
         const task: VM_Task = {
