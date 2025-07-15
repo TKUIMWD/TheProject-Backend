@@ -1,7 +1,5 @@
 import { Controller } from "../abstract/Controller";
 import { Request, Response } from "express";
-import { logger } from "../middlewares/log";
-import { Service } from "../abstract/Service";
 import { PVEService } from "../service/PVEService";
 require('dotenv').config()
 
@@ -40,6 +38,11 @@ export class PVEController extends Controller {
 
   public async cleanupTasks(Request: Request, Response: Response) {
     const resp = await this.service.cleanupTasks(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async getUserLatestTaskStatus(Request: Request, Response: Response) {
+    const resp = await this.service.getUserLatestTaskStatus(Request);
     Response.status(resp.code).send(resp);
   }
 }

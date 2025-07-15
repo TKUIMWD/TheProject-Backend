@@ -163,6 +163,30 @@ export class PVEService extends Service {
         }
     }
 
+    // 獲取用戶最新一筆的 VM 任務狀態
+    public async getUserLatestTaskStatus(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser<User>(Request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return error;
+            }
+            // 獲取用戶最新一筆任務
+            const latestTask = await VM_TaskModel.findOne({ user_id: user._id.toString() })
+                .sort({ created_at: -1 }) // 按建立時間倒序
+                .exec();
+            if (!latestTask) {
+                return createResponse(404, "No tasks found for the user");
+            }
+            // 獲取最新任務的 PVE 狀態
+            const taskWithStatus = await this._getTaskWithPVEStatus(latestTask);
+            return createResponse(200, "Latest task status fetched successfully", taskWithStatus);
+        } catch (error) {
+            console.error("Error validating token:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
     // 獲取用戶所有 VM 任務的狀態
     public async getUserAllTasksStatus(Request: Request): Promise<resp<any>> {
         try {
