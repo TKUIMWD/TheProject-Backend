@@ -211,13 +211,7 @@ export class VMService extends Service {
                 let deleteResp: PVEResp | undefined;
                 
                 try {
-                    // 添加磁碟清理參數
-                    const deleteParams = {
-                        purge: 1,
-                        'destroy-unreferenced-disks': 1
-                    };
-                    
-                    deleteResp = await callWithUnauthorized('DELETE', pve_api.nodes_qemu_vm(vm.pve_node, vm.pve_vmid), deleteParams, {
+                    deleteResp = await callWithUnauthorized('DELETE', pve_api.nodes_qemu_vm(vm.pve_node, vm.pve_vmid), undefined, {
                         headers: {
                             'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
                         }
@@ -793,29 +787,16 @@ export class VMService extends Service {
 
     private async _cleanupFailedVMCreation(userId: string, pve_vmid: string, pve_node: string, taskId: string): Promise<void> {
         try {
-            // 嘗試刪除 PVE 上的 VM，包括磁碟清理
+            // 嘗試刪除 PVE 上的 VM
             try {
-                // 使用 purge=1 參數來清理磁碟
-                const deleteParams = {
-                    purge: 1,
-                    'destroy-unreferenced-disks': 1
-                };
-                
-                await callWithUnauthorized('DELETE', pve_api.nodes_qemu_vm(pve_node, pve_vmid), deleteParams, {
+                await callWithUnauthorized('DELETE', pve_api.nodes_qemu_vm(pve_node, pve_vmid), undefined, {
                     headers: {
                         'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
                     }
                 });
-                logger.info(`Successfully deleted VM ${pve_vmid} from PVE node ${pve_node} with disk cleanup`);
+                logger.info(`Successfully deleted VM ${pve_vmid} from PVE node ${pve_node}`);
             } catch (pveError) {
                 logger.warn(`Failed to delete VM ${pve_vmid} from PVE: ${pveError}`);
-                
-                // 如果 VM 刪除失敗，嘗試手動清理磁碟
-                try {
-                    await this._forceCleanupVMDisks(pve_node, pve_vmid);
-                } catch (diskCleanupError) {
-                    logger.error(`Failed to force cleanup disks for VM ${pve_vmid}:`, diskCleanupError);
-                }
             }
 
             // 從資料庫中移除 VM 記錄
@@ -832,8 +813,6 @@ export class VMService extends Service {
 
             // 更新任務狀態
             await this._updateTaskStatus(taskId, VM_Task_Status.FAILED, undefined, "VM creation failed and resources have been cleaned up");
-            
-            logger.info(`Successfully cleaned up failed VM ${pve_vmid} for user ${userId}`);
         } catch (error) {
             logger.error(`Error during failed VM cleanup:`, error);
         }
@@ -1377,69 +1356,6 @@ export class VMService extends Service {
         } catch (error) {
             logger.error(`Error waiting for VM ${vmid} disk to be ready:`, error);
             return { success: false, errorMessage: `Failed to wait for VM disk readiness` };
-        }
-    }
-
-    // 強制清理 VM 磁碟
-    private async _forceCleanupVMDisks(pve_node: string, pve_vmid: string): Promise<void> {
-        try {
-            // 獲取 VM 的配置以查找磁碟
-            const vmConfig = await this._getVMConfig(pve_node, pve_vmid);
-            if (!vmConfig) {
-                logger.warn(`Cannot get VM ${pve_vmid} config for disk cleanup`);
-                return;
-            }
-
-            // 查找所有磁碟配置
-            const diskConfigs: string[] = [];
-            Object.keys(vmConfig).forEach(key => {
-                if (key.startsWith('scsi') || key.startsWith('ide') || key.startsWith('sata') || key.startsWith('virtio')) {
-                    const diskConfig = vmConfig[key];
-                    if (typeof diskConfig === 'string' && diskConfig.includes(':')) {
-                        diskConfigs.push(diskConfig);
-                    }
-                }
-            });
-
-            // 嘗試刪除每個磁碟
-            for (const diskConfig of diskConfigs) {
-                try {
-                    // 解析磁碟配置，格式通常是 "storage:vmid/vm-vmid-disk-N.qcow2"
-                    const parts = diskConfig.split(':');
-                    if (parts.length >= 2) {
-                        const storage = parts[0];
-                        const volumeId = parts[1].split(',')[0]; // 移除其他參數
-                        
-                        // 嘗試刪除磁碟
-                        await callWithUnauthorized('DELETE', pve_api.nodes_storage_content(pve_node, storage, `${storage}:${volumeId}`), undefined, {
-                            headers: {
-                                'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                            }
-                        });
-                        logger.info(`Successfully deleted disk ${storage}:${volumeId} from VM ${pve_vmid}`);
-                    }
-                } catch (diskError) {
-                    logger.warn(`Failed to delete disk ${diskConfig} from VM ${pve_vmid}:`, diskError);
-                }
-            }
-        } catch (error) {
-            logger.error(`Error during force disk cleanup for VM ${pve_vmid}:`, error);
-        }
-    }
-
-    // 獲取 VM 配置
-    private async _getVMConfig(pve_node: string, pve_vmid: string): Promise<any> {
-        try {
-            const configResp: any = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(pve_node, pve_vmid), undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                }
-            });
-            
-            return configResp?.data || null;
-        } catch (error) {
-            logger.error(`Failed to get VM ${pve_vmid} config:`, error);
-            return null;
         }
     }
 }
