@@ -6,21 +6,24 @@ import { getTokenRole, validateTokenAndGetAdminUser, validateTokenAndGetSuperAdm
 import { pve_api } from "../enum/PVE_API";
 import { callWithUnauthorized } from "../utils/fetch";
 import { PVE_qemu_config, PVE_Task_Status_Response, PVE_Task_Status, PVE_Task_ExitStatus, PVE_TASK_STATUS, PVE_TASK_EXIT_STATUS } from "../interfaces/PVE";
-import { VMTemplateModel } from "../orm/schemas/VMTemplateSchemas";
+import { VMTemplateModel } from "../orm/schemas/VM/VMTemplateSchemas";
 import { VM_Template_Info } from "../interfaces/VM/VM_Template";
 import { UsersModel } from "../orm/schemas/UserSchemas";
-import { VM_TaskModel } from "../orm/schemas/VM_TaskSchemas";
+import { VM_TaskModel } from "../orm/schemas/VM/VM_TaskSchemas";
 import { VM_Task, VM_Task_Status } from "../interfaces/VM/VM_Task";
+import { VMModel } from "../orm/schemas/VM/VMSchemas";
 import { ComputeResourcePlanModel } from "../orm/schemas/ComputeResourcePlanSchemas";
 import { UsedComputeResourceModel } from "../orm/schemas/UsedComputeResourceSchemas";
+import { User } from "../interfaces/User";
 import {logger} from "../middlewares/log";
+import { VMConfig } from "../interfaces/VM/VM";
+import { VMDeletionResponse, VMDeletionUserValidation } from "../interfaces/Response/VMResp";
 
 const PVE_API_ADMINMODE_TOKEN = process.env.PVE_API_ADMINMODE_TOKEN;
 const PVE_API_SUPERADMINMODE_TOKEN = process.env.PVE_API_SUPERADMINMODE_TOKEN;
 const PVE_API_USERMODE_TOKEN = process.env.PVE_API_USERMODE_TOKEN;
 
 const ALLOW_THE_TEST_ENDPOINT = true;
-
 
 export class PVEService extends Service {
 
@@ -80,45 +83,88 @@ export class PVEService extends Service {
     }
 
     public async getQemuConfig(Request: Request): Promise<resp<PVEResp | undefined>> {
-        const token_role = (await getTokenRole(Request)).role;
-        // role 為 user 時，僅允許訪問自己的虛擬機配置，並只提供必要的資訊
-        // 如 CPU、RAM、磁碟等基本配置
-        /*
-        待實作細節
-         */
-        if (token_role === 'user' || token_role === 'admin') {
-            return createResponse(403, "User and Admin role are not allowed to access this endpoint");
-        }
-        /*
-        待實作細節
-         */
-        if (token_role === 'superadmin') {
-            const { user, error } = await validateTokenAndGetSuperAdminUser<PVEResp>(Request);
-            if (error) {
-                console.error("Error validating token:", error);
-                return error;
+        try {
+            const token_role = (await getTokenRole(Request)).role;
+            
+            // 從 query parameter 獲取 VM ID
+            const vm_id = Request.query.id as string;
+            if (!vm_id) {
+                return createResponse(400, "Missing vm_id in query parameters");
             }
-            const { node, vmid } = Request.body;
-            if (!node || !vmid) {
-                return createResponse(400, "Missing node or vmid in request body");
-            }
-            try {
-                const qemuConfig: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(node, vmid), undefined, {
-                    headers: {
-                        'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                    }
-                });
-                if (!qemuConfig || !qemuConfig.data) {
-                    return createResponse(404, "QEMU config not found");
-                }
-                return createResponse(200, "QEMU config fetched successfully", qemuConfig.data);
-            } catch (error) {
-                console.error("Error in getQemuConfig:", error);
-                return createResponse(500, "Internal Server Error");
-            }
-        }
 
-        return createResponse(200, "");
+            // 根據角色進行不同的驗證和處理
+            if (token_role === 'user') {
+                // 普通用戶只能查看自己擁有的 VM
+                const { user, error } = await validateTokenAndGetUser<PVEResp>(Request);
+                if (error) {
+                    console.error("Error validating token:", error);
+                    return error;
+                }
+
+                // 檢查 VM 是否屬於該用戶
+                if (!user.owned_vms.includes(vm_id)) {
+                    return createResponse(403, "Access denied: VM not owned by user");
+                }
+
+                // 獲取 VM 資訊
+                const vm = await VMModel.findById(vm_id).exec();
+                if (!vm) {
+                    return createResponse(404, "VM not found");
+                }
+
+                // 獲取基本配置（用戶只能看到基本資訊）
+                const config = await this._getBasicQemuConfig(vm.pve_node, vm.pve_vmid);
+                return config;
+
+            } else if (token_role === 'admin') {
+                // 管理員只能查看自己擁有的 VM
+                const { user, error } = await validateTokenAndGetAdminUser<PVEResp>(Request);
+                if (error) {
+                    console.error("Error validating token:", error);
+                    return error;
+                }
+
+                // 檢查 VM 是否屬於該用戶
+                if (!user.owned_vms.includes(vm_id)) {
+                    return createResponse(403, "Access denied: VM not owned by user");
+                }
+
+                // 獲取 VM 資訊
+                const vm = await VMModel.findById(vm_id).exec();
+                if (!vm) {
+                    return createResponse(404, "VM not found");
+                }
+
+                // 獲取詳細配置
+                const config = await this._getDetailedQemuConfig(vm.pve_node, vm.pve_vmid);
+                return config;
+
+            } else if (token_role === 'superadmin') {
+                // 超級管理員可以查看所有 VM 的完整配置
+                const { user, error } = await validateTokenAndGetSuperAdminUser<PVEResp>(Request);
+                if (error) {
+                    console.error("Error validating token:", error);
+                    return error;
+                }
+
+                // 獲取 VM 資訊
+                const vm = await VMModel.findById(vm_id).exec();
+                if (!vm) {
+                    return createResponse(404, "VM not found");
+                }
+
+                // 獲取完整配置
+                const config = await this._getFullQemuConfig(vm.pve_node, vm.pve_vmid);
+                return config;
+
+            } else {
+                return createResponse(403, "Invalid role");
+            }
+
+        } catch (error) {
+            console.error("Error in getQemuConfig:", error);
+            return createResponse(500, "Internal Server Error");
+        }
     }
 
 
@@ -137,25 +183,6 @@ export class PVEService extends Service {
             return createResponse(200, "Nodes fetched successfully", nodes.data);
         } catch (error) {
             console.error("Error in getNodes:", error);
-            return createResponse(500, "Internal Server Error");
-        }
-    }
-
-    public async getNextId(Request: Request): Promise<resp<PVEResp | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetAdminUser<PVEResp>(Request);
-            if (error) {
-                console.error("Error validating token:", error);
-                return error;
-            }
-            const nextId: PVEResp = await callWithUnauthorized('GET', pve_api.cluster_next_id, undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
-                }
-            });
-            return createResponse(200, "Next ID fetched successfully", nextId.data);
-        } catch (error) {
-            console.error("Error in getNextId:", error);
             return createResponse(500, "Internal Server Error");
         }
     }
@@ -355,7 +382,7 @@ export class PVEService extends Service {
             if (configResult.success) {
                 // 只有在所有操作都成功後才更新資源使用量和用戶 VM 列表
                 await this._updateUsedComputeResources(user._id.toString(), cpuCores, memorySize, diskSize);
-                await this._updateUserOwnedVMs(user._id.toString(), nextId);
+                const vmTableId = await this._updateUserOwnedVMs(user._id.toString(), nextId, target);
                 await this._updateTaskStatus(task.task_id, VM_Task_Status.COMPLETED, cloneResult.upid);
                 
                 logger.info(`VM ${nextId} created successfully for user ${user.username}, task ${task.task_id}`);
@@ -371,13 +398,15 @@ export class PVEService extends Service {
                 
                 logger.error(`VM configuration failed for user ${user.username}, task ${task.task_id}: ${configResult.errorMessage}`);
                 
-                // TODO: 待實作 - 清理失敗的 VM 和資源
-                // 1. 刪除已創建的 VM (如果存在)
-                // 2. 回滾已分配的資源使用量
-                // 3. 清理相關的任務記錄
-                await this._cleanupFailedVMCreation(user._id.toString(), nextId, task.task_id);
+                // 清理失敗的 VM 和資源 - 強制清理
+                try {
+                    await this._cleanupFailedVMCreation(user._id.toString(), nextId, target, task.task_id);
+                    logger.info(`Successfully cleaned up failed VM ${nextId} for user ${user.username}`);
+                } catch (cleanupError) {
+                    logger.error(`Error during cleanup of failed VM ${nextId}:`, cleanupError);
+                }
                 
-                return createResponse(500, "VM created but configuration failed");
+                return createResponse(500, "VM created but configuration failed, resources have been cleaned up");
             }
         } catch (error) {
             logger.error("Error in createVMFromTemplate:", error);
@@ -444,7 +473,7 @@ export class PVEService extends Service {
     }
 
     // 檢查資源限制
-    private async _checkResourceLimits(user: any, cpuCores: number, memorySize: number, diskSize: number): Promise<resp<any>> {
+    private async _checkResourceLimits(user: User, cpuCores: number, memorySize: number, diskSize: number): Promise<resp<any>> {
         const computeResourcePlan = await ComputeResourcePlanModel.findOne({ _id: user.compute_resource_plan_id }).exec();
         if (!computeResourcePlan) {
             return createResponse(404, "Compute resource plan not found");
@@ -601,10 +630,10 @@ export class PVEService extends Service {
 
             // 額外等待確保 VM 和磁碟完全準備好
             logger.info(`Waiting additional time for VM ${vmid} to be fully ready...`);
-            await new Promise(resolve => setTimeout(resolve, 15000)); // 等待 15 秒
+            await new Promise(resolve => setTimeout(resolve, 30000)); // 等待 30 秒
 
-            // 等待 VM 磁碟準備完成
-            const diskReadyResult = await this._waitForVMDiskReady(target_node, vmid);
+            // 等待 VM 磁碟準備完成 - 增加重試次數
+            const diskReadyResult = await this._waitForVMDiskReady(target_node, vmid, 20);
             if (!diskReadyResult.success) {
                 logger.error(`VM ${vmid} disk not ready: ${diskReadyResult.errorMessage}`);
                 return { success: false, errorMessage: diskReadyResult.errorMessage };
@@ -636,7 +665,8 @@ export class PVEService extends Service {
             const diskResult = await this._configureVMDiskWithUpid(target_node, vmid, diskSize);
             if (!diskResult.success) {
                 await this._updateTaskStep(taskId, this.VM_CREATION_STEP_INDICES.DISK, VM_Task_Status.FAILED, undefined, diskResult.errorMessage);
-                return { success: false, errorMessage: diskResult.errorMessage };
+                logger.error(`Disk configuration failed for VM ${vmid}: ${diskResult.errorMessage}`);
+                return { success: false, errorMessage: `Disk configuration failed: ${diskResult.errorMessage}` };
             }
             await this._updateTaskStep(taskId, this.VM_CREATION_STEP_INDICES.DISK, VM_Task_Status.COMPLETED, diskResult.upid);
 
@@ -749,16 +779,30 @@ export class PVEService extends Service {
                         
                         // 檢查磁碟是否不再處於導入/克隆狀態
                         if (!scsi0Config.includes('importing') && !scsi0Config.includes('cloning')) {
-                            logger.info(`VM ${vmid} disk is ready: ${scsi0Config}`);
-                            return { success: true };
+                            // 進一步檢查磁碟文件是否存在正確格式
+                            const diskFormatMatch = scsi0Config.match(/\.(raw|qcow2|vmdk)/);
+                            if (diskFormatMatch) {
+                                logger.info(`VM ${vmid} disk is ready with format ${diskFormatMatch[1]}: ${scsi0Config}`);
+                                return { success: true };
+                            } else {
+                                logger.warn(`VM ${vmid} disk format unclear (attempt ${i + 1}/${maxRetries}): ${scsi0Config}`);
+                            }
                         } else {
                             logger.info(`VM ${vmid} disk still being prepared (attempt ${i + 1}/${maxRetries}): ${scsi0Config}`);
                         }
                     } else {
                         logger.warn(`VM ${vmid} disk config not found (attempt ${i + 1}/${maxRetries})`);
+                        if (configResp && configResp.data) {
+                            logger.warn(`VM ${vmid} config data:`, JSON.stringify(configResp.data, null, 2));
+                        }
                     }
                 } catch (error) {
                     logger.warn(`Error checking VM ${vmid} disk status (attempt ${i + 1}/${maxRetries}):`, error);
+                    
+                    // 如果是 JSON 解析錯誤，特別記錄
+                    if (error instanceof SyntaxError && error.message.includes('JSON')) {
+                        logger.error(`JSON parsing error while checking disk status for VM ${vmid}:`, error.message);
+                    }
                 }
 
                 // 等待 10 秒後再次檢查
@@ -997,6 +1041,17 @@ export class PVEService extends Service {
                 return { success: true };
             }
 
+            // 在調整磁碟前，再次檢查磁碟狀態並等待更長時間
+            const diskReadyCheck = await this._waitForVMDiskReady(target_node, vmid, 15);
+            if (!diskReadyCheck.success) {
+                logger.error(`Disk not ready for resize on VM ${vmid}: ${diskReadyCheck.errorMessage}`);
+                return { success: false, errorMessage: diskReadyCheck.errorMessage };
+            }
+            
+            // 額外等待確保磁碟完全穩定
+            logger.info(`Waiting additional time for VM ${vmid} disk to stabilize before resize...`);
+            await new Promise(resolve => setTimeout(resolve, 20000)); // 等待 20 秒
+
             console.log(`Resizing disk for VM ${vmid}: +${increaseSize}GB`);
 
             // 使用正確的 resize API - PUT 方法
@@ -1036,7 +1091,8 @@ export class PVEService extends Service {
             return { success: false, errorMessage: "Failed to resize disk - no response data" };
         } catch (error) {
             console.error(`Error resizing disk for VM ${vmid}:`, error);
-            return { success: false, errorMessage: "Failed to resize disk" };
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            return { success: false, errorMessage: `Failed to resize disk: ${errorMessage}` };
         }
     }
 
@@ -1165,9 +1221,10 @@ export class PVEService extends Service {
                     const sizeMatch = config.scsi0.match(/size=(\d+)G/);
                     if (sizeMatch) {
                         const currentSize = parseInt(sizeMatch[1]);
-                        logger.info(`Current disk size for VM ${vmid}: ${currentSize}GB`);
+                        logger.info(`Current disk size for VM ${vmid}: ${currentSize}GB (from: ${config.scsi0})`);
                         return { success: true, currentSize };
                     } else {
+                        logger.error(`Cannot parse disk size from scsi0: ${config.scsi0}`);
                         return { success: false, errorMessage: `Cannot parse disk size from: ${config.scsi0}` };
                     }
                 } else {
@@ -1366,7 +1423,7 @@ export class PVEService extends Service {
                 }
             });
             console.log(`Checking PVE task status for UPID ${upid} on node ${node}`);
-            console.log("PVE task status response:", statusResp);
+            console.log("PVE task status response:", JSON.stringify(statusResp, null, 2));
 
             if (statusResp && statusResp.data) {
                 return {
@@ -1393,6 +1450,21 @@ export class PVEService extends Service {
             };
         } catch (error) {
             console.error(`Error checking PVE task status for ${upid}:`, error);
+            
+            // 如果是 JSON 解析錯誤，特別處理
+            if (error instanceof SyntaxError && error.message.includes('JSON')) {
+                console.error(`JSON parsing error for task ${upid}:`, error.message);
+                return {
+                    upid: upid,
+                    node: node,
+                    status: PVE_TASK_STATUS.STOPPED,
+                    type: 'unknown',
+                    user: 'unknown',
+                    starttime: 0,
+                    error: `JSON parsing error: ${error.message}`
+                };
+            }
+
             return {
                 upid: upid,
                 node: node,
@@ -1543,38 +1615,593 @@ export class PVEService extends Service {
         }
     }
 
-    // 更新用戶擁有的 VM 列表
-    private async _updateUserOwnedVMs(userId: string, vmid: string): Promise<void> {
+    // 更新用戶擁有的 VM 列表 - 使用 VM table
+    private async _updateUserOwnedVMs(userId: string, pve_vmid: string, pve_node: string): Promise<string> {
         try {
+            // 先在 VM table 中創建或獲取 VM 記錄
+            let vm = await VMModel.findOne({ pve_vmid: pve_vmid, pve_node: pve_node }).exec();
+            
+            if (!vm) {
+                // 如果 VM 不存在，創建新的 VM 記錄
+                vm = new VMModel({
+                    pve_vmid: pve_vmid,
+                    pve_node: pve_node,
+                    owner: userId
+                });
+                await vm.save();
+                logger.info(`Created new VM record: ${vm._id} for PVE VM ${pve_vmid} on node ${pve_node} with owner ${userId}`);
+            }
+
+            // 將 VM 的 _id 加入用戶的 owned_vms 列表
             await UsersModel.updateOne(
                 { _id: userId },
-                { $addToSet: { owned_vms: vmid } }
+                { $addToSet: { owned_vms: vm._id.toString() } }
             );
-            logger.info(`Added VM ${vmid} to user ${userId} owned_vms list`);
+            
+            logger.info(`Added VM ${vm._id} (PVE VM ${pve_vmid}) to user ${userId} owned_vms list`);
+            return vm._id.toString();
         } catch (error) {
             logger.error(`Error updating user owned VMs for user ${userId}:`, error);
             throw error;
         }
     }
 
-    // 清理失敗的 VM 創建 - 待實作
-    private async _cleanupFailedVMCreation(userId: string, vmid: string, taskId: string): Promise<void> {
+    // 清理失敗的 VM 創建 - 包含 VM table 清理
+    private async _cleanupFailedVMCreation(userId: string, pve_vmid: string, pve_node: string, taskId: string): Promise<void> {
         try {
-            logger.warn(`Starting cleanup for failed VM creation - User: ${userId}, VM: ${vmid}, Task: ${taskId}`);
+            logger.warn(`Starting cleanup for failed VM creation - User: ${userId}, PVE VM: ${pve_vmid}, Node: ${pve_node}, Task: ${taskId}`);
             
-            // TODO: 待實作 - 完整的清理邏輯
-            // 1. 檢查 VM 是否存在於 PVE 中
-            // 2. 如果存在，刪除 VM
-            // 3. 回滾已分配的資源使用量
-            // 4. 從用戶的 owned_vms 中移除 VM ID
-            // 5. 更新任務狀態為清理完成
-            
-            // 暫時實作：只記錄需要清理的資源
-            logger.info(`Cleanup needed for VM ${vmid} - This will be implemented in future updates`);
+            // 1. 檢查 VM 是否存在於 VM table 中
+            const vm = await VMModel.findOne({ pve_vmid: pve_vmid, pve_node: pve_node }).exec();
+            if (vm) {
+                // 2. 從用戶的 owned_vms 中移除 VM ID
+                await UsersModel.updateOne(
+                    { _id: userId },
+                    { $pull: { owned_vms: vm._id.toString() } }
+                );
+                logger.info(`Removed VM ${vm._id} from user ${userId} owned_vms list`);
+
+                // 3. 檢查是否有其他用戶擁有此 VM
+                const otherOwners = await UsersModel.find({ 
+                    owned_vms: vm._id.toString() 
+                }).exec();
+
+                // 4. 如果沒有其他用戶擁有此 VM，從 VM table 中刪除
+                if (otherOwners.length === 0) {
+                    await VMModel.deleteOne({ _id: vm._id });
+                    logger.info(`Deleted VM ${vm._id} from VM table (no other owners)`);
+                }
+            }
+
+            // 5. 檢查 VM 是否存在於 PVE 中並嘗試刪除
+            try {
+                const vmStatus: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(pve_node, pve_vmid), undefined, {
+                    headers: {
+                        'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+                    }
+                });
+
+                if (vmStatus && vmStatus.data) {
+                    // VM 存在於 PVE 中，嘗試刪除
+                    logger.info(`Attempting to delete failed PVE VM ${pve_vmid} from node ${pve_node}`);
+                    
+                    // 使用 DELETE 方法刪除 VM
+                    const deleteResp: PVEResp = await callWithUnauthorized('DELETE', pve_api.nodes_qemu_vm(pve_node, pve_vmid), undefined, {
+                        headers: {
+                            'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+                        }
+                    });
+
+                    if (deleteResp && deleteResp.data) {
+                        logger.info(`Failed PVE VM ${pve_vmid} deletion task initiated with UPID: ${deleteResp.data}`);
+                        
+                        // 等待刪除完成
+                        try {
+                            const waitResult = await this._waitForTaskCompletion(pve_node, deleteResp.data, 'VM cleanup deletion');
+                            if (waitResult.success) {
+                                logger.info(`Successfully deleted failed VM ${pve_vmid} from PVE`);
+                            } else {
+                                logger.warn(`Failed to delete VM ${pve_vmid} from PVE: ${waitResult.errorMessage}`);
+                            }
+                        } catch (waitError) {
+                            logger.error(`Error waiting for VM ${pve_vmid} deletion: ${waitError}`);
+                        }
+                    } else {
+                        logger.info(`Failed PVE VM ${pve_vmid} deletion completed immediately`);
+                    }
+                } else {
+                    logger.info(`VM ${pve_vmid} not found in PVE, may have been already deleted`);
+                }
+            } catch (deleteError) {
+                logger.error(`Error deleting failed PVE VM ${pve_vmid}:`, deleteError);
+                // 不拋出錯誤，繼續清理其他資源
+            }
+
+            // 6. 回滾已分配的資源使用量
+            // 如果 VM 創建失敗，需要回滾已分配的資源
+            if (vm) {
+                try {
+                    await this._reclaimVMResources(userId, pve_node, pve_vmid);
+                    logger.info(`Reclaimed resources for failed VM creation: ${pve_vmid}`);
+                } catch (resourceError) {
+                    logger.error(`Error reclaiming resources for failed VM creation:`, resourceError);
+                    // 不拋出錯誤，繼續清理流程
+                }
+            }
+
+            // 7. 更新任務狀態為清理完成
+            await VM_TaskModel.updateOne(
+                { task_id: taskId },
+                { 
+                    status: VM_Task_Status.FAILED,
+                    updated_at: new Date(),
+                    error_message: "VM creation failed and cleanup completed"
+                }
+            );
+
+            logger.info(`Cleanup completed for failed VM creation: ${pve_vmid}`);
             
         } catch (error) {
             logger.error(`Error during cleanup for failed VM creation:`, error);
             // 不拋出錯誤，避免影響主要的錯誤回應
+        }
+    }
+
+    // 刪除用戶擁有的 VM
+    public async deleteUserVM(Request: Request): Promise<resp<VMDeletionResponse | undefined>> {
+        try {
+            const tokenRoleResult = await getTokenRole(Request);
+            const token_role = tokenRoleResult.role;
+            
+            if (!token_role) {
+                return createResponse(401, "Unable to determine user role");
+            }
+            
+            // 根據角色驗證用戶並獲取正確的用戶類型
+            const userValidation: VMDeletionUserValidation = await this._validateUserForVMDeletion(Request, token_role);
+            
+            if (userValidation.error) {
+                return userValidation.error;
+            }
+
+            const user = userValidation.user;
+            if (!user || !user._id) {
+                return createResponse(401, "User not found or invalid");
+            }
+
+            const { vm_id } = Request.body;
+            console.log(`[deleteUserVM] vm_id from request: ${vm_id}`);
+            if (!vm_id || typeof vm_id !== 'string') {
+                return createResponse(400, "vm_id is required and must be a string");
+            }
+
+            // 檢查 VM 是否屬於該用戶（superadmin 可以刪除任何 VM）
+            if (token_role !== 'superadmin' && !user.owned_vms.includes(vm_id)) {
+                return createResponse(403, "Access denied: VM not owned by user");
+            }
+
+            // 獲取 VM 資訊
+            const vm = await VMModel.findById(vm_id).exec();
+            if (!vm) {
+                return createResponse(404, "VM not found");
+            }
+
+            try {
+                // 嘗試從 PVE 刪除 VM
+                console.log(`[deleteUserVM] Attempting to delete VM from PVE: node=${vm.pve_node}, vmid=${vm.pve_vmid}`);
+                let deleteResp: PVEResp | undefined;
+                
+                try {
+                    deleteResp = await callWithUnauthorized('DELETE', pve_api.nodes_qemu_vm(vm.pve_node, vm.pve_vmid), undefined, {
+                        headers: {
+                            'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+                        }
+                    });
+                    console.log(`[deleteUserVM] PVE delete response: ${JSON.stringify(deleteResp, null, 2)}`);
+                } catch (apiError) {
+                    console.error(`[deleteUserVM] PVE API call failed:`, apiError);
+                    
+                    // 檢查是否是 JSON 解析錯誤
+                    if (apiError instanceof SyntaxError && apiError.message.includes('JSON')) {
+                        return createResponse(500, `PVE API returned invalid JSON response: ${apiError.message}`);
+                    }
+                    
+                    // 其他 API 錯誤
+                    return createResponse(500, `PVE API call failed: ${apiError instanceof Error ? apiError.message : 'Unknown error'}`);
+                }
+
+                // 檢查刪除操作是否成功
+                const deletionResult = await this._processDeletionResponse(deleteResp, vm);
+                
+                if (!deletionResult.success) {
+                    logger.error(`[deleteUserVM] VM deletion failed: ${deletionResult.errorMessage}`);
+                    return createResponse(500, deletionResult.errorMessage || "VM deletion failed");
+                }
+
+                // 確認 VM 已被刪除後才清理資料庫
+                console.log(`[deleteUserVM] Deletion success, cleaning up database for vm_id: ${vm_id}`);
+                
+                // 對於 superadmin，需要找到所有擁有該 VM 的用戶並清理
+                if (token_role === 'superadmin') {
+                    await this._cleanupVMFromAllUsers(vm_id);
+                    console.log(`[deleteUserVM] _cleanupVMFromAllUsers called for vm_id: ${vm_id}`);
+                } else {
+                    await this._cleanupVMFromDatabase(user._id.toString(), vm_id);
+                    console.log(`[deleteUserVM] _cleanupVMFromDatabase called for user: ${user._id}, vm_id: ${vm_id}`);
+                }
+
+                const response: VMDeletionResponse = {
+                    vm_id: vm_id,
+                    pve_vmid: vm.pve_vmid,
+                    pve_node: vm.pve_node,
+                    message: "VM deleted successfully"
+                };
+
+                if (deletionResult.taskId) {
+                    response.task_id = deletionResult.taskId;
+                    response.message = "VM deletion task completed successfully";
+                } else {
+                    console.log("[deleteUserVM] VM deletion completed without taskId");
+                }
+
+                return createResponse(200, "VM deletion completed successfully", response);
+
+            } catch (deleteError) {
+                logger.error(`[deleteUserVM] Error deleting VM from PVE: ${deleteError}`);
+                
+                const errorResponse: VMDeletionResponse = {
+                    vm_id: vm_id,
+                    pve_vmid: vm.pve_vmid,
+                    pve_node: vm.pve_node,
+                    message: (deleteError as Error).message || "Unknown error"
+                };
+                
+                return createResponse(500, "Failed to delete VM from PVE", errorResponse);
+            }
+        } catch (error) {
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    // 驗證用戶是否有權限刪除 VM
+    private async _validateUserForVMDeletion(Request: Request, token_role: string): Promise<VMDeletionUserValidation> {
+        try {
+            if (token_role === 'superadmin') {
+                const { user, error } = await validateTokenAndGetSuperAdminUser<User>(Request);
+                return { user, error };
+            } else {
+                const { user, error } = await validateTokenAndGetUser<User>(Request);
+                return { user, error };
+            }
+        } catch (error) {
+            return { 
+                user: null, 
+                error: createResponse(500, "Error validating user") 
+            };
+        }
+    }
+
+    // 處理 PVE 刪除響應
+    private async _processDeletionResponse(deleteResp: PVEResp, vm: { pve_node: string; pve_vmid: string }): Promise<{success: boolean, taskId?: string, errorMessage?: string}> {
+        let deletionSuccess = false;
+        let taskId: string | undefined = undefined;
+        // 檢查 PVE API 響應是否有效
+        if (!deleteResp) {
+            return {
+                success: false,
+                errorMessage: "PVE API returned no response or invalid response"
+            };
+        }
+
+        // 檢查 PVE API 是否返回了有效的 data
+        if (deleteResp.data !== undefined) {
+            // PVE API 返回的 data 是 UPID 字串 (任務模式)
+            if (typeof deleteResp.data === 'string') {
+                taskId = deleteResp.data;
+                logger.info(`[deleteUserVM] VM deletion task initiated with UPID: ${taskId}`);
+                console.log(`[deleteUserVM] Waiting for deletion task to complete, UPID: ${taskId}`);
+                
+                // 等待刪除任務完成，此時 taskId 已確定是 string
+                const waitResult = await this._waitForTaskCompletion(vm.pve_node, taskId as string, 'VM deletion');
+                deletionSuccess = waitResult.success;
+                
+                if (!deletionSuccess) {
+                    return {
+                        success: false,
+                        errorMessage: `VM deletion task failed: ${waitResult.errorMessage}`
+                    };
+                }
+            } else if (deleteResp.data === null) {
+                // 返回 null 表示立即執行成功
+                deletionSuccess = true;
+                console.log("[deleteUserVM] VM deletion completed immediately (data=null)");
+            } else {
+                // 其他類型的 data 值，視為失敗
+                return {
+                    success: false,
+                    errorMessage: `Unexpected PVE API response data type: ${typeof deleteResp.data}`
+                };
+            }
+        } else {
+            // 沒有 data 屬性，視為失敗
+            return {
+                success: false,
+                errorMessage: "PVE API response missing data property"
+            };
+        }
+
+        return {
+            success: deletionSuccess,
+            taskId
+        };
+    }
+
+    // 從資料庫中清理 VM 記錄
+    private async _cleanupVMFromDatabase(userId: string, vmId: string): Promise<void> {
+        try {
+            // 在清理之前先獲取 VM 資訊以計算資源回收
+            const vm = await VMModel.findById(vmId).exec();
+            if (vm) {
+                // 嘗試獲取 VM 的資源配置並回收資源
+                try {
+                    await this._reclaimVMResources(userId, vm.pve_node, vm.pve_vmid);
+                } catch (resourceError) {
+                    logger.error(`Error reclaiming resources for VM ${vmId}:`, resourceError);
+                    // 不拋出錯誤，繼續清理流程
+                }
+            }
+
+            // 從用戶的 owned_vms 中移除 VM
+            await UsersModel.updateOne(
+                { _id: userId },
+                { $pull: { owned_vms: vmId } }
+            );
+            logger.info(`Removed VM ${vmId} from user ${userId} owned_vms list`);
+
+            // 檢查是否有其他用戶擁有此 VM
+            const otherOwners = await UsersModel.find({ 
+                owned_vms: vmId 
+            }).exec();
+
+            // 如果沒有其他用戶擁有此 VM，從 VM table 中刪除
+            if (otherOwners.length === 0) {
+                await VMModel.deleteOne({ _id: vmId });
+                logger.info(`Deleted VM ${vmId} from VM table (no other owners)`);
+            }
+        } catch (error) {
+            logger.error(`Error cleaning up VM ${vmId} from database:`, error);
+            throw error;
+        }
+    }
+
+    // 從所有用戶中清理 VM 記錄（用於 superadmin 刪除任意 VM）
+    private async _cleanupVMFromAllUsers(vmId: string): Promise<void> {
+        try {
+            // 在清理之前先獲取 VM 資訊以計算資源回收
+            const vm = await VMModel.findById(vmId).exec();
+            if (vm) {
+                // 找到所有擁有此 VM 的用戶
+                const vmOwners = await UsersModel.find({ 
+                    owned_vms: vmId 
+                }).exec();
+
+                // 為每個擁有此 VM 的用戶回收資源
+                for (const owner of vmOwners) {
+                    try {
+                        await this._reclaimVMResources(owner._id.toString(), vm.pve_node, vm.pve_vmid);
+                    } catch (resourceError) {
+                        logger.error(`Error reclaiming resources for user ${owner._id}:`, resourceError);
+                        // 不拋出錯誤，繼續為其他用戶回收資源
+                    }
+                }
+            }
+
+            // 從所有用戶的 owned_vms 中移除該 VM
+            await UsersModel.updateMany(
+                { owned_vms: vmId },
+                { $pull: { owned_vms: vmId } }
+            );
+            logger.info(`Removed VM ${vmId} from all users' owned_vms lists`);
+
+            // 從 VM table 中刪除 VM 記錄
+            await VMModel.deleteOne({ _id: vmId });
+            logger.info(`Deleted VM ${vmId} from VM table`);
+        } catch (error) {
+            logger.error(`Error cleaning up VM ${vmId} from all users:`, error);
+            throw error;
+        }
+    }
+
+    // 為普通用戶獲取基本 QEMU 配置（只包含必要資訊）
+    private async _getBasicQemuConfig(node: string, vmid: string): Promise<resp<any>> {
+        try {
+            const qemuConfig: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(node, vmid), undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_USERMODE_TOKEN}`
+                }
+            });
+
+            if (!qemuConfig || !qemuConfig.data) {
+                return createResponse(404, "QEMU config not found");
+            }
+
+            // 只返回基本資訊：CPU、記憶體、磁碟
+            const basicConfig = {
+                vmid: qemuConfig.data.vmid,
+                name: qemuConfig.data.name,
+                cores: qemuConfig.data.cores,
+                memory: qemuConfig.data.memory,
+                node: node,
+                status: qemuConfig.data.status || 'stopped',
+                // 只返回磁碟大小資訊，不包含詳細路徑
+                disk_size: this._extractDiskSizeFromConfig(qemuConfig.data.scsi0)
+            };
+
+            return createResponse(200, "Basic QEMU config fetched successfully", basicConfig);
+        } catch (error) {
+            console.error("Error in _getBasicQemuConfig:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    // 為管理員獲取詳細 QEMU 配置
+    private async _getDetailedQemuConfig(node: string, vmid: string): Promise<resp<any>> {
+        try {
+            const qemuConfig: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(node, vmid), undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
+                }
+            });
+
+            if (!qemuConfig || !qemuConfig.data) {
+                return createResponse(404, "QEMU config not found");
+            }
+
+            // 返回詳細資訊但不包含敏感資訊
+            const detailedConfig = {
+                vmid: qemuConfig.data.vmid,
+                name: qemuConfig.data.name,
+                cores: qemuConfig.data.cores,
+                memory: qemuConfig.data.memory,
+                node: node,
+                status: qemuConfig.data.status || 'stopped',
+                scsi0: qemuConfig.data.scsi0,
+                net0: qemuConfig.data.net0,
+                bootdisk: qemuConfig.data.bootdisk,
+                ostype: qemuConfig.data.ostype,
+                disk_size: this._extractDiskSizeFromConfig(qemuConfig.data.scsi0)
+            };
+
+            return createResponse(200, "Detailed QEMU config fetched successfully", detailedConfig);
+        } catch (error) {
+            console.error("Error in _getDetailedQemuConfig:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    // 為超級管理員獲取完整 QEMU 配置
+    private async _getFullQemuConfig(node: string, vmid: string): Promise<resp<any>> {
+        try {
+            const qemuConfig: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(node, vmid), undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+                }
+            });
+
+            if (!qemuConfig || !qemuConfig.data) {
+                return createResponse(404, "QEMU config not found");
+            }
+
+            // 返回完整配置
+            return createResponse(200, "Full QEMU config fetched successfully", qemuConfig.data);
+        } catch (error) {
+            console.error("Error in _getFullQemuConfig:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    // 從 QEMU 配置中提取磁碟大小
+    private _extractDiskSizeFromConfig(scsi0Config: string | undefined): number | null {
+        if (!scsi0Config) return null;
+        
+        const sizeMatch = scsi0Config.match(/size=(\d+)G/);
+        if (sizeMatch) {
+            return parseInt(sizeMatch[1]);
+        }
+        return null;
+    }
+
+    // 獲取用戶擁有的 VM 列表
+    public async getUserOwnedVMs(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser<any>(Request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return error;
+            }
+
+            if (!user.owned_vms || user.owned_vms.length === 0) {
+                return createResponse(200, "No VMs found for user", []);
+            }
+
+            // 獲取用戶擁有的 VM 詳細資訊
+            const vms = await VMModel.find({ 
+                _id: { $in: user.owned_vms } 
+            }).exec();
+
+            // 為每個 VM 獲取基本狀態資訊
+            const vmDetails = await Promise.all(
+                vms.map(async (vm) => {
+                    try {
+                        const basicConfig = await this._getBasicQemuConfig(vm.pve_node, vm.pve_vmid);
+                        return {
+                            _id: vm._id,
+                            pve_vmid: vm.pve_vmid,
+                            pve_node: vm.pve_node,
+                            config: basicConfig.code === 200 ? basicConfig.body : null,
+                            error: basicConfig.code !== 200 ? basicConfig.message : null
+                        };
+                    } catch (error) {
+                        return {
+                            _id: vm._id,
+                            pve_vmid: vm.pve_vmid,
+                            pve_node: vm.pve_node,
+                            config: null,
+                            error: "Failed to fetch VM config"
+                        };
+                    }
+                })
+            );
+
+            return createResponse(200, "User VMs fetched successfully", vmDetails);
+        } catch (error) {
+            console.error("Error in getUserOwnedVMs:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    // 回收 VM 資源（從用戶的已使用資源中扣除）
+    private async _reclaimVMResources(userId: string, pve_node: string, pve_vmid: string): Promise<void> {
+        try {
+            // 獲取 VM 的當前配置
+            const vmConfig = await this._getCurrentVMConfig(pve_node, pve_vmid);
+            if (!vmConfig) {
+                logger.warn(`Cannot get VM config for ${pve_vmid} on node ${pve_node}, skipping resource reclaim`);
+                return;
+            }
+
+            // 提取資源配置
+            const cpuCores = vmConfig.cores || 0;
+            const memoryMB = parseInt(vmConfig.memory) || 0;
+            const diskSizeGB = this._extractDiskSizeFromConfig(vmConfig.scsi0) || 0;
+
+            if (cpuCores > 0 || memoryMB > 0 || diskSizeGB > 0) {
+                // 從用戶的已使用資源中扣除這些資源
+                await this._updateUsedComputeResources(userId, -cpuCores, -memoryMB, -diskSizeGB);
+                logger.info(`Reclaimed resources for user ${userId}: ${cpuCores} CPU cores, ${memoryMB} MB memory, ${diskSizeGB} GB storage`);
+            }
+        } catch (error) {
+            logger.error(`Error reclaiming VM resources for user ${userId}:`, error);
+            throw error;
+        }
+    }
+
+    // 獲取 VM 的當前配置
+    private async _getCurrentVMConfig(pve_node: string, pve_vmid: string): Promise<VMConfig | null> {
+        try {
+            const configResp: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(pve_node, pve_vmid), undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_ADMINMODE_TOKEN}`
+                }
+            });
+
+            if (configResp && configResp.data) {
+                return configResp.data as VMConfig;
+            }
+            return null;
+        } catch (error) {
+            logger.error(`Error getting VM config for ${pve_vmid} on node ${pve_node}:`, error);
+            return null;
         }
     }
 }

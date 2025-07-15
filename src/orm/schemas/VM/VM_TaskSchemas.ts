@@ -1,6 +1,6 @@
 import { model , Schema } from "mongoose";
-import { VM_Task } from "../../interfaces/VM/VM_Task";
-import { VM_Task_Status } from "../../interfaces/VM/VM_Task";
+import { VM_Task } from "../../../interfaces/VM/VM_Task";
+import { VM_Task_Status } from "../../../interfaces/VM/VM_Task";
 
 export const VM_TaskSchemas = new Schema<VM_Task>({
     task_id: { type: String, required: true },

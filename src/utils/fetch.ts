@@ -121,19 +121,81 @@ export async function callWithUnauthorized<T = unknown>(
     try {
         process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
+        let response: Response;
         switch (method) {
             case 'GET':
-                return await asyncGet(url, options) as T;
+                response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Access-Control-Allow-Origin': api_base,
+                        'Content-Type': 'application/json',
+                        ...options.headers,
+                    },
+                    mode: 'cors',
+                });
+                break;
             case 'POST':
-                return await asyncPost(url, body || {}, options) as T;
+                response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Access-Control-Allow-Origin': api_base,
+                        'Content-Type': body instanceof FormData ? 'multipart/form-data' : 'application/json',
+                        ...options.headers,
+                    },
+                    body: body instanceof FormData ? body : JSON.stringify(body),
+                    mode: 'cors',
+                });
+                break;
             case 'PUT':
-                return await asyncPut(url, body || {}, options) as T;
+                response = await fetch(url, {
+                    method: 'PUT',
+                    headers: {
+                        'Access-Control-Allow-Origin': api_base,
+                        'Content-Type': body instanceof FormData ? 'multipart/form-data' : 'application/json',
+                        ...options.headers,
+                    },
+                    body: body instanceof FormData ? body : JSON.stringify(body),
+                    mode: 'cors',
+                });
+                break;
             case 'DELETE':
-                return await asyncDelete(url, body || {}, options) as T;
+                response = await fetch(url, {
+                    method: 'DELETE',
+                    headers: {
+                        'Access-Control-Allow-Origin': api_base,
+                        'Content-Type': body instanceof FormData ? 'multipart/form-data' : 'application/json',
+                        ...options.headers,
+                    },
+                    body: body instanceof FormData ? body : JSON.stringify(body),
+                    mode: 'cors',
+                });
+                break;
             case 'PATCH':
-                return await asyncPatch(url, body || {}, options) as T;
+                response = await fetch(url, {
+                    method: 'PATCH',
+                    headers: {
+                        'Access-Control-Allow-Origin': api_base,
+                        'Content-Type': body instanceof FormData ? 'multipart/form-data' : 'application/json',
+                        ...options.headers,
+                    },
+                    body: body instanceof FormData ? body : JSON.stringify(body),
+                    mode: 'cors',
+                });
+                break;
             default:
                 throw new Error(`Unsupported HTTP method: ${method}`);
+        }
+
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+            return await response.json() as T;
+        } else if (contentType && contentType.includes('text/')) {
+            return await response.text() as T;
+        } else if (contentType && contentType.includes('application/octet-stream')) {
+            return await response.arrayBuffer() as T;
+        } else {
+            // fallback to text
+            return await response.text() as T;
         }
     } finally {
         process.env.NODE_TLS_REJECT_UNAUTHORIZED = originalValue;

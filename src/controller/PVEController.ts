@@ -22,10 +22,7 @@ export class PVEController extends Controller {
     const resp = await this.service.getNodes(Request)
     Response.status(resp.code).send(resp)
   }
-  public async getNextId(Request: Request, Response: Response) {
-    const resp = await this.service.getNextId(Request);
-    Response.status(resp.code).send(resp);
-  }
+
   public async getQemuConfig(Request: Request, Response: Response) {
     const resp = await this.service.getQemuConfig(Request);
     Response.status(resp.code).send(resp);
@@ -63,6 +60,11 @@ export class PVEController extends Controller {
 
   public async cleanupTasks(Request: Request, Response: Response) {
     const resp = await this.service.cleanupTasks(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async deleteUserVM(Request: Request, Response: Response) {
+    const resp = await this.service.deleteUserVM(Request);
     Response.status(resp.code).send(resp);
   }
 }

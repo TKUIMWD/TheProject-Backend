@@ -8,4 +8,5 @@ export interface PVEApiEndPoints {
     nodes_qemu_clone: (node:string,template_vmid:string) => string; // /nodes/{node}/qemu/{template_vmid}/clone
     nodes_tasks_status: (node: string, upid: string) => string; // /nodes/{node}/tasks/{upid}/status
     nodes_qemu_resize: (node: string, vmid: string) => string; // /nodes/{node}/qemu/{vmid}/resize
+    nodes_qemu_vm: (node: string, vmid: string) => string; // /nodes/{node}/qemu/{vmid}
 }

@@ -20,11 +20,7 @@ export class PVERoute extends Route{
             this.Controller.getNodes(req, res);
         });
 
-        this.router.get(`${this.url}getNextId`, (req, res) => {
-            this.Controller.getNextId(req, res);
-        });
-
-        this.router.post(`${this.url}getQemuConfig`, (req, res) => {
+        this.router.get(`${this.url}getQemuConfig`, (req, res) => {
             this.Controller.getQemuConfig(req, res);
         });
 
@@ -56,6 +52,10 @@ export class PVERoute extends Route{
         // 清理舊任務記錄 (超級管理員限定)
         this.router.post(`${this.url}cleanupTasks`, (req, res) => {
             this.Controller.cleanupTasks(req, res);
+        });
+
+        this.router.delete(`${this.url}deleteUserVM`, (req, res) => {
+            this.Controller.deleteUserVM(req, res);
         });
     }
 
