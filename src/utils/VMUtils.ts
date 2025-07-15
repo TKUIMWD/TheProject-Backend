@@ -7,9 +7,9 @@ import { PVE_qemu_config, PVE_Task_Status_Response, PVE_TASK_STATUS, PVE_TASK_EX
 import { logger } from "../middlewares/log";
 import { PVEUtils } from "./PVEUtils";
 
-const PVE_API_ADMINMODE_TOKEN = process.env.PVE_API_ADMINMODE_TOKEN;
-const PVE_API_SUPERADMINMODE_TOKEN = process.env.PVE_API_SUPERADMINMODE_TOKEN;
-const PVE_API_USERMODE_TOKEN = process.env.PVE_API_USERMODE_TOKEN;
+export const PVE_API_ADMINMODE_TOKEN = process.env.PVE_API_ADMINMODE_TOKEN;
+export const PVE_API_SUPERADMINMODE_TOKEN = process.env.PVE_API_SUPERADMINMODE_TOKEN;
+export const PVE_API_USERMODE_TOKEN = process.env.PVE_API_USERMODE_TOKEN;
 
 
 /*
