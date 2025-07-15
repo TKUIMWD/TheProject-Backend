@@ -13,11 +13,6 @@ export class PVEController extends Controller {
     this.service = new PVEService();
   }
 
-  public async test(Request: Request, Response: Response) {
-    const resp = await this.service.test(Request);
-    Response.status(resp.code).send(resp);
-  }
-
   public async getNodes(Request: Request, Response: Response) {
     const resp = await this.service.getNodes(Request)
     Response.status(resp.code).send(resp)
@@ -25,21 +20,6 @@ export class PVEController extends Controller {
 
   public async getQemuConfig(Request: Request, Response: Response) {
     const resp = await this.service.getQemuConfig(Request);
-    Response.status(resp.code).send(resp);
-  }
-
-  public async getAllTemplates(Request: Request, Response: Response) {
-    const resp = await this.service.getAllTemplates(Request);
-    Response.status(resp.code).send(resp);
-  }
-
-  public async getAllApprovedTemplates(Request: Request, Response: Response) {
-    const resp = await this.service.getAllApprovedTemplates(Request);
-    Response.status(resp.code).send(resp);
-  }
-
-  public async createVMFromTemplate(Request: Request, Response: Response) {
-    const resp = await this.service.createVMFromTemplate(Request);
     Response.status(resp.code).send(resp);
   }
 
@@ -60,21 +40,6 @@ export class PVEController extends Controller {
 
   public async cleanupTasks(Request: Request, Response: Response) {
     const resp = await this.service.cleanupTasks(Request);
-    Response.status(resp.code).send(resp);
-  }
-
-  public async deleteUserVM(Request: Request, Response: Response) {
-    const resp = await this.service.deleteUserVM(Request);
-    Response.status(resp.code).send(resp);
-  }
-
-  public async getAllVMs(Request: Request, Response: Response) {
-    const resp = await this.service.getAllVMs(Request);
-    Response.status(resp.code).send(resp);
-  }
-
-  public async getUserOwnedVMs(Request: Request, Response: Response) {
-    const resp = await this.service.getUserOwnedVMs(Request);
     Response.status(resp.code).send(resp);
   }
 }

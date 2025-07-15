@@ -54,6 +54,7 @@ export interface VMDetailWithConfig {
     _id?: string;
     pve_vmid: string;
     pve_node: string;
+    owner: string;
     config: VMDetailedConfig | null;
     error: string | null;
 }
