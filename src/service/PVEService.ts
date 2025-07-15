@@ -2285,4 +2285,47 @@ export class PVEService extends Service {
             return null;
         }
     }
+
+    // superadmin get all vms
+    public async getAllVMs(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetSuperAdminUser<any>(Request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return error;
+            }
+
+            // 獲取所有 VM 的詳細資訊
+            const vms = await VMModel.find({}).exec();
+
+            // 為每個 VM 獲取詳細狀態資訊
+            const vmDetails = await Promise.all(
+                vms.map(async (vm) => {
+                    try {
+                        const detailedConfig = await this._getDetailedQemuConfig(vm.pve_node, vm.pve_vmid);
+                        return {
+                            _id: vm._id,
+                            pve_vmid: vm.pve_vmid,
+                            pve_node: vm.pve_node,
+                            config: detailedConfig.code === 200 ? detailedConfig.body : null,
+                            error: detailedConfig.code !== 200 ? detailedConfig.message : null
+                        };
+                    } catch (error) {
+                        return {
+                            _id: vm._id,
+                            pve_vmid: vm.pve_vmid,
+                            pve_node: vm.pve_node,
+                            config: null,
+                            error: "Failed to fetch VM config"
+                        };
+                    }
+                })
+            );
+
+            return createResponse(200, "All VMs fetched successfully", vmDetails);
+        } catch (error) {
+            console.error("Error in getAllVMs:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
 }

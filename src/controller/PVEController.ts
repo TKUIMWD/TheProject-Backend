@@ -67,4 +67,9 @@ export class PVEController extends Controller {
     const resp = await this.service.deleteUserVM(Request);
     Response.status(resp.code).send(resp);
   }
+
+  public async getAllVMs(Request: Request, Response: Response) {
+    const resp = await this.service.getAllVMs(Request);
+    Response.status(resp.code).send(resp);
+  }
 }

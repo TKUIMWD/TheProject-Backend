@@ -57,6 +57,11 @@ export class PVERoute extends Route{
         this.router.delete(`${this.url}deleteUserVM`, (req, res) => {
             this.Controller.deleteUserVM(req, res);
         });
+
+        // superadmin get all vms
+        this.router.get(`${this.url}getAllVMs`, (req, res) => {
+            this.Controller.getAllVMs(req, res);
+        });
     }
 
 }
