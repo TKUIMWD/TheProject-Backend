@@ -14,6 +14,7 @@ import { generateHashedPassword, passwordStrengthCheck } from "../utils/password
 import { User } from "../interfaces/User";
 import { WrongLoginAttemptModel } from "../orm/schemas/WrongLoginAttemptSchemas";
 import { validateTokenAndGetUser, validatePasswordResetTokenAndGetUser } from "../utils/auth";
+import { ComputeResourcePlanModel } from "../orm/schemas/ComputeResourcePlanSchemas";
 
 
 export class AuthService extends Service {
@@ -121,12 +122,21 @@ export class AuthService extends Service {
             }
             const hashedPassword = await generateHashedPassword(password);
 
+            // 查詢 standard 計算資源方案
+            const standardPlan = await this.getStandardComputeResourcePlan();
+            if (!standardPlan) {
+                logger.error("Standard compute resource plan not found or error occurred");
+                return createResponse(500, "Default compute resource plan not available");
+            }
+            logger.info(`Assigning standard compute resource plan (ID: ${standardPlan._id}) to user: ${username}`);
+
             const newRegisterUser = new UsersModel({
                 username,
                 password_hash: hashedPassword,
                 email,
                 isVerified: false,
                 registeredAt: new Date(),
+                compute_resource_plan_id: standardPlan._id
             });
 
             await newRegisterUser.save();
@@ -334,6 +344,20 @@ export class AuthService extends Service {
         }
         else {
             return createResponse(400, "invalid method");
+        }
+    }
+
+    /**
+     * 取得預設的計算資源方案 (standard)
+     * @returns 返回 standard 計算資源方案，如果不存在則返回 null
+     */
+    private async getStandardComputeResourcePlan(): Promise<any> {
+        try {
+            const standardPlan = await ComputeResourcePlanModel.findOne({ name: "standard" }).exec();
+            return standardPlan;
+        } catch (error) {
+            logger.error("Error fetching standard compute resource plan:", error);
+            return null;
         }
     }
 }
