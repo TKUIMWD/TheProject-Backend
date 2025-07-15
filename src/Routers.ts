@@ -7,8 +7,11 @@ import { PVERoute } from "./routers/PVERoute";
 import { UserRoute } from "./routers/UserRoute";
 import { VMRoute } from "./routers/VMRoute";
 import { TemplateRoute } from "./routers/TemplateRoute";
+import { VMManageRoute } from "./routers/VMManageRoute";
 
 export const router: Array<Route> = [
-    new PageRoute(),new UserRoute(),new AuthRoute(),new PVERoute(),new CourseRoute(),new ChapterRoute(),new VMRoute(),new TemplateRoute()
+    new PageRoute(),new UserRoute(),new AuthRoute(),
+    new PVERoute(),new CourseRoute(),new ChapterRoute(),
+    new VMRoute(),new TemplateRoute(),new VMManageRoute()
 ];
 

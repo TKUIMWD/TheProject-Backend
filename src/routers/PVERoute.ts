@@ -38,6 +38,12 @@ export class PVERoute extends Route{
         this.router.post(`${this.url}cleanupTasks`, (req, res) => {
             this.Controller.cleanupTasks(req, res);
         });
+
+        // 這個路由會返回用戶最近的任務狀態，
+        // 包括任務 ID 以便前端可以查詢即時狀態
+        this.router.get(`${this.url}getUserLatestTaskStatus`, (req, res) => {
+            this.Controller.getUserLatestTaskStatus(req, res);
+        });
     }
 
 }

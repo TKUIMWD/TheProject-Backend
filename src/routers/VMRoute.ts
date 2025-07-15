@@ -13,14 +13,6 @@ export class VMRoute extends Route{
     }
 
     protected setRoutes(): void {
-        this.router.post(`${this.url}createFromTemplate`, (req, res) => {
-            this.Controller.createVMFromTemplate(req, res);
-        });
-
-        this.router.delete(`${this.url}delete`, (req, res) => {
-            this.Controller.deleteUserVM(req, res);
-        });
-
         // superadmin get all vms
         this.router.get(`${this.url}getAll`, (req, res) => {
             this.Controller.getAllVMs(req, res);
