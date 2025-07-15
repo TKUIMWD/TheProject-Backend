@@ -19,6 +19,7 @@ import {logger} from "../middlewares/log";
 import { VMConfig, VMDetailedConfig, VMDetailWithConfig, VMBasicConfig, VMDetailWithBasicConfig, VMCreationParams } from "../interfaces/VM/VM";
 import { VMDeletionResponse, VMDeletionUserValidation } from "../interfaces/Response/VMResp";
 import { DeleteResult, UpdateResult } from "mongodb";
+import { VMUtils } from "../utils/VMUtils";
 import { PVEUtils } from "../utils/PVEUtils";
 
 const PVE_API_USERMODE_TOKEN = process.env.PVE_API_USERMODE_TOKEN;
@@ -48,13 +49,13 @@ export class VMService extends Service {
             
             logger.info(`User ${user.username} (${user._id}) starting VM creation from template ${template_id}`);
 
-            const validationResult = await this._validateVMCreationParams({ template_id, name, target, cpuCores, memorySize, diskSize, ciuser: requestCiuser, cipassword: requestCipassword });
+            const validationResult = await VMUtils.validateVMCreationParams({ template_id, name, target, cpuCores, memorySize, diskSize, ciuser: requestCiuser, cipassword: requestCipassword });
             if (validationResult.code !== 200) {
                 logger.warn(`VM creation validation failed for user ${user.username}: ${validationResult.message}`);
                 return validationResult;
             }
 
-            const nextIdResult = await this._getNextVMId();
+            const nextIdResult = await VMUtils.getNextVMId();
             if (nextIdResult.code !== 200 || !nextIdResult.body) {
                 logger.error(`Failed to get next VM ID for user ${user.username}: ${nextIdResult.message}`);
                 return nextIdResult;
@@ -108,7 +109,7 @@ export class VMService extends Service {
             const task = await this._createVMTask(template_id, user._id.toString(), nextId, template_info.pve_vmid, target);
             logger.info(`Created VM task ${task.task_id} for user ${user.username}, VM ID: ${nextId}`);
 
-            const cloneResult = await this._cloneVM(template_info.pve_node, template_info.pve_vmid, nextId, sanitizedName, target, storage, full);
+            const cloneResult = await VMUtils.cloneVM(template_info.pve_node, template_info.pve_vmid, nextId, sanitizedName, target, storage, full);
             
             await this._updateTaskStatus(task.task_id, cloneResult.success ? VM_Task_Status.IN_PROGRESS : VM_Task_Status.FAILED, cloneResult.upid, cloneResult.errorMessage);
 
@@ -196,7 +197,7 @@ export class VMService extends Service {
             // 在刪除 VM 之前，先獲取其配置用於資源回收
             let vmConfig: VMConfig | null = null;
             try {
-                vmConfig = await this._getCurrentVMConfig(vm.pve_node, vm.pve_vmid);
+                vmConfig = await VMUtils.getCurrentVMConfig(vm.pve_node, vm.pve_vmid);
                 if (vmConfig) {
                     console.log(`[deleteUserVM] Retrieved VM config for resource reclaim: cores=${vmConfig.cores}, memory=${vmConfig.memory}, disk size=${PVEUtils.extractDiskSizeFromConfig(vmConfig.scsi0)}GB`);
                 }
@@ -386,34 +387,7 @@ export class VMService extends Service {
 
     // 私有輔助方法 - 獲取基本 QEMU 配置
     private async _getBasicQemuConfig(node: string, vmid: string): Promise<resp<VMBasicConfig | undefined>> {
-        try {
-            const qemuConfig: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(node, vmid), undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_USERMODE_TOKEN}`
-                }
-            });
-
-            if (!qemuConfig || !qemuConfig.data) {
-                return createResponse(404, "QEMU config not found");
-            }
-
-            // 只返回基本資訊：CPU、記憶體、磁碟
-            const basicConfig: VMBasicConfig = {
-                vmid: qemuConfig.data.vmid,
-                name: qemuConfig.data.name,
-                cores: qemuConfig.data.cores,
-                memory: qemuConfig.data.memory,
-                node: node,
-                status: qemuConfig.data.status || 'stopped',
-                // 只返回磁碟大小資訊，不包含詳細路徑
-                disk_size: PVEUtils.extractDiskSizeFromConfig(qemuConfig.data.scsi0)
-            };
-
-            return createResponse(200, "Basic QEMU config fetched successfully", basicConfig);
-        } catch (error) {
-            console.error("Error in _getBasicQemuConfig:", error);
-            return createResponse(500, "Internal Server Error");
-        }
+        return await VMUtils.getBasicQemuConfig(node, vmid);
     }
 
     // 私有輔助方法 - 獲取詳細 QEMU 配置
@@ -451,41 +425,14 @@ export class VMService extends Service {
         }
     }
 
+    // 使用 VMUtils 中的驗證方法
     private async _validateVMCreationParams(params: VMCreationParams): Promise<resp<string | undefined>> {
-        const { template_id, name, target, cpuCores, memorySize, diskSize, ciuser, cipassword } = params;
-
-        const missingFields = [];
-        if (!template_id) missingFields.push("template_id");
-        if (!name) missingFields.push("name");
-        if (!target) missingFields.push("target");
-        if (!cpuCores) missingFields.push("cpuCores");
-        if (!memorySize) missingFields.push("memorySize");
-        if (!diskSize) missingFields.push("diskSize");
-
-        if (missingFields.length > 0) {
-            return createResponse(400, `Missing required fields: ${missingFields.join(", ")}`);
-        }
-
-        // 檢查 ci user 和 ci password 是否同時存在（如果提供的話）
-        if ((ciuser && !cipassword) || (!ciuser && cipassword)) {
-            return createResponse(400, "Both ciuser and cipassword must be provided together if specified");
-        }
-
-        return createResponse(200, "Validation passed");
+        return await VMUtils.validateVMCreationParams(params);
     }
 
+    // 使用 VMUtils 中的方法
     private async _getNextVMId(): Promise<resp<PVEResp | undefined>> {
-        try {
-            const nextId: PVEResp = await callWithUnauthorized('GET', pve_api.cluster_next_id, undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_USERMODE_TOKEN}`
-                }
-            });
-            return createResponse(200, "Next ID fetched successfully", nextId);
-        } catch (error) {
-            console.error("Error in _getNextVMId:", error);
-            return createResponse(500, "Internal Server Error");
-        }
+        return await VMUtils.getNextVMId();
     }
 
     private async _getTemplateDetails(templateId: string): Promise<resp<{ template_info: VM_Template, qemuConfig: PVE_qemu_config } | undefined>> {
@@ -498,7 +445,7 @@ export class VMService extends Service {
         logger.info(`Template ${templateId} - ciuser: "${template_info.ciuser}", cipassword: "${template_info.cipassword ? '[PROVIDED]' : '[NOT PROVIDED]'}"`);
         logger.info(`Template ${templateId} - ciuser type: ${typeof template_info.ciuser}, cipassword type: ${typeof template_info.cipassword}`);
 
-        const qemuConfigResp = await this._getTemplateInfo(template_info.pve_node, template_info.pve_vmid);
+        const qemuConfigResp = await VMUtils.getTemplateInfo(template_info.pve_node, template_info.pve_vmid);
         if (qemuConfigResp.code !== 200 || !qemuConfigResp.body) {
             console.error(`Failed to get qemu config for template ${templateId}: ${qemuConfigResp.message}`);
             return createResponse(qemuConfigResp.code, qemuConfigResp.message);
@@ -510,24 +457,9 @@ export class VMService extends Service {
         });
     }
 
+    // 使用 VMUtils 中的方法
     private async _getTemplateInfo(node: string, vmid: string): Promise<resp<PVE_qemu_config | undefined>> {
-        try {
-            const apiResponse: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(node, vmid), undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_USERMODE_TOKEN}`
-                }
-            });
-            const templateInfo = apiResponse.data as PVE_qemu_config;
-
-            if (!templateInfo) {
-                throw new Error(`No qemu config data found in API response for node ${node}, vmid ${vmid}`);
-            }
-
-            return createResponse(200, "Template info fetched successfully", templateInfo);
-        } catch (error) {
-            console.error(`Error in _getTemplateInfo for node ${node}, vmid ${vmid}:`, error);
-            return createResponse(500, "Internal Server Error");
-        }
+        return await VMUtils.getTemplateInfo(node, vmid);
     }
 
     private async _checkResourceLimits(user: User, cpuCores: number, memorySize: number, diskSize: number): Promise<resp<any>> {
@@ -903,39 +835,24 @@ export class VMService extends Service {
         try {
             await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.IN_PROGRESS);
 
-            const configResp: PVEResp = await callWithUnauthorized('PUT', pve_api.nodes_qemu_config(node, vmid), {
-                cores: cpuCores
-            }, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+            const configResult = await VMUtils.configureVMCPU(node, vmid, cpuCores);
+            
+            if (configResult.success) {
+                if (configResult.upid) {
+                    // 有 UPID，等待任務完成
+                    const waitResult = await VMUtils.waitForTaskCompletion(node, configResult.upid, 'CPU configuration');
+                    if (!waitResult.success) {
+                        await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, waitResult.errorMessage);
+                        return { success: false, errorMessage: waitResult.errorMessage };
+                    }
                 }
-            });
-
-            // CPU 配置通常是立即執行，不返回 UPID
-            // 如果返回 null，表示配置成功完成
-            if (configResp && configResp.data === null) {
+                
                 await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.COMPLETED, "CPU configuration completed");
                 return { success: true };
+            } else {
+                await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, configResult.errorMessage);
+                return { success: false, errorMessage: configResult.errorMessage };
             }
-
-            // 如果返回 UPID（字符串），則需要等待任務完成
-            if (configResp && configResp.data && typeof configResp.data === 'string') {
-                const upid = configResp.data;
-                console.log(`CPU configuration task initiated with UPID: ${upid}`);
-
-                const waitResult = await this._waitForTaskCompletion(node, upid, taskId, stepIndex);
-                if (!waitResult.success) {
-                    await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, waitResult.errorMessage);
-                    return { success: false, errorMessage: waitResult.errorMessage };
-                }
-
-                await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.COMPLETED, "CPU configuration completed");
-                return { success: true };
-            }
-
-            // 如果沒有返回任何數據，視為失敗
-            await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, "Failed to configure CPU cores - no response data");
-            return { success: false, errorMessage: "Failed to configure CPU cores - no response data" };
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : "Unknown error";
             await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, errorMsg);
@@ -947,39 +864,24 @@ export class VMService extends Service {
         try {
             await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.IN_PROGRESS);
 
-            const configResp: PVEResp = await callWithUnauthorized('PUT', pve_api.nodes_qemu_config(node, vmid), {
-                memory: memorySize
-            }, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+            const configResult = await VMUtils.configureVMMemory(node, vmid, memorySize);
+            
+            if (configResult.success) {
+                if (configResult.upid) {
+                    // 有 UPID，等待任務完成
+                    const waitResult = await VMUtils.waitForTaskCompletion(node, configResult.upid, 'Memory configuration');
+                    if (!waitResult.success) {
+                        await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, waitResult.errorMessage);
+                        return { success: false, errorMessage: waitResult.errorMessage };
+                    }
                 }
-            });
-
-            // Memory 配置通常是立即執行，不返回 UPID
-            // 如果返回 null，表示配置成功完成
-            if (configResp && configResp.data === null) {
+                
                 await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.COMPLETED, "Memory configuration completed");
                 return { success: true };
+            } else {
+                await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, configResult.errorMessage);
+                return { success: false, errorMessage: configResult.errorMessage };
             }
-
-            // 如果返回 UPID（字符串），則需要等待任務完成
-            if (configResp && configResp.data && typeof configResp.data === 'string') {
-                const upid = configResp.data;
-                console.log(`Memory configuration task initiated with UPID: ${upid}`);
-
-                const waitResult = await this._waitForTaskCompletion(node, upid, taskId, stepIndex);
-                if (!waitResult.success) {
-                    await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, waitResult.errorMessage);
-                    return { success: false, errorMessage: waitResult.errorMessage };
-                }
-
-                await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.COMPLETED, "Memory configuration completed");
-                return { success: true };
-            }
-
-            // 如果沒有返回任何數據，視為失敗
-            await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, "Failed to configure memory - no response data");
-            return { success: false, errorMessage: "Failed to configure memory - no response data" };
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : "Unknown error";
             await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, errorMsg);
@@ -1004,40 +906,24 @@ export class VMService extends Service {
             logger.info(`Waiting additional time for VM ${vmid} disk to stabilize before resize...`);
             await new Promise(resolve => setTimeout(resolve, 5000));
 
-            const resizeResp: PVEResp = await callWithUnauthorized('PUT', pve_api.nodes_qemu_resize(node, vmid), {
-                disk: 'scsi0',
-                size: `${diskSize}G`
-            }, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+            const resizeResult = await VMUtils.resizeVMDisk(node, vmid, diskSize);
+            
+            if (resizeResult.success) {
+                if (resizeResult.upid) {
+                    // 有 UPID，等待任務完成
+                    const waitResult = await VMUtils.waitForTaskCompletion(node, resizeResult.upid, 'Disk resize');
+                    if (!waitResult.success) {
+                        await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, waitResult.errorMessage);
+                        return { success: false, errorMessage: waitResult.errorMessage };
+                    }
                 }
-            });
-
-            // Disk resize 通常是立即執行，不返回 UPID
-            // 如果返回 null，表示配置成功完成
-            if (resizeResp && resizeResp.data === null) {
+                
                 await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.COMPLETED, "Disk resize completed");
                 return { success: true };
+            } else {
+                await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, resizeResult.errorMessage);
+                return { success: false, errorMessage: resizeResult.errorMessage };
             }
-
-            // 如果返回 UPID（字符串），則需要等待任務完成
-            if (resizeResp && resizeResp.data && typeof resizeResp.data === 'string') {
-                const upid = resizeResp.data;
-                console.log(`Disk resize task initiated with UPID: ${upid}`);
-
-                const waitResult = await this._waitForTaskCompletion(node, upid, taskId, stepIndex);
-                if (!waitResult.success) {
-                    await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, waitResult.errorMessage);
-                    return { success: false, errorMessage: waitResult.errorMessage };
-                }
-
-                await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.COMPLETED, "Disk resize completed");
-                return { success: true };
-            }
-
-            // 如果沒有返回任何數據，視為失敗
-            await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, "Failed to resize disk - no response data");
-            return { success: false, errorMessage: "Failed to resize disk - no response data" };
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : "Unknown error";
             await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, errorMsg);
@@ -1049,50 +935,24 @@ export class VMService extends Service {
         try {
             await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.IN_PROGRESS);
 
-            const configData: any = {};
-            if (ciuser) {
-                configData.ciuser = ciuser;
-            }
-            if (cipassword) {
-                configData.cipassword = cipassword;
-            }
-
-            if (Object.keys(configData).length === 0) {
-                await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.COMPLETED, undefined, "No cloud-init configuration needed");
-                return { success: true };
-            }
-
-            const configResp: PVEResp = await callWithUnauthorized('PUT', pve_api.nodes_qemu_config(node, vmid), configData, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+            const configResult = await VMUtils.configureCloudInit(node, vmid, ciuser, cipassword);
+            
+            if (configResult.success) {
+                if (configResult.upid) {
+                    // 有 UPID，等待任務完成
+                    const waitResult = await VMUtils.waitForTaskCompletion(node, configResult.upid, 'Cloud-Init configuration');
+                    if (!waitResult.success) {
+                        await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, waitResult.errorMessage);
+                        return { success: false, errorMessage: waitResult.errorMessage };
+                    }
                 }
-            });
-
-            // Cloud-Init 配置通常是立即執行，不返回 UPID
-            // 如果返回 null，表示配置成功完成
-            if (configResp && configResp.data === null) {
+                
                 await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.COMPLETED, "Cloud-Init configuration completed");
                 return { success: true };
+            } else {
+                await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, configResult.errorMessage);
+                return { success: false, errorMessage: configResult.errorMessage };
             }
-
-            // 如果返回 UPID（字符串），則需要等待任務完成
-            if (configResp && configResp.data && typeof configResp.data === 'string') {
-                const upid = configResp.data;
-                console.log(`Cloud-Init configuration task initiated with UPID: ${upid}`);
-
-                const waitResult = await this._waitForTaskCompletion(node, upid, taskId, stepIndex);
-                if (!waitResult.success) {
-                    await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, waitResult.errorMessage);
-                    return { success: false, errorMessage: waitResult.errorMessage };
-                }
-
-                await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.COMPLETED, "Cloud-Init configuration completed");
-                return { success: true };
-            }
-
-            // 如果沒有返回任何數據，視為失敗
-            await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, "Failed to configure cloud-init - no response data");
-            return { success: false, errorMessage: "Failed to configure cloud-init - no response data" };
         } catch (error) {
             const errorMsg = error instanceof Error ? error.message : "Unknown error";
             await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, errorMsg);
