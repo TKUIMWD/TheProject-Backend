@@ -1786,6 +1786,18 @@ export class PVEService extends Service {
                 return createResponse(404, "VM not found");
             }
 
+            // 在刪除 VM 之前，先獲取其配置用於資源回收
+            let vmConfig: VMConfig | null = null;
+            try {
+                vmConfig = await this._getCurrentVMConfig(vm.pve_node, vm.pve_vmid);
+                if (vmConfig) {
+                    console.log(`[deleteUserVM] Retrieved VM config for resource reclaim: cores=${vmConfig.cores}, memory=${vmConfig.memory}, disk size=${this._extractDiskSizeFromConfig(vmConfig.scsi0)}GB`);
+                }
+            } catch (configError) {
+                logger.warn(`[deleteUserVM] Failed to get VM config for resource reclaim: ${configError}`);
+                // 繼續執行刪除流程，但無法進行資源回收
+            }
+
             try {
                 // 嘗試從 PVE 刪除 VM
                 console.log(`[deleteUserVM] Attempting to delete VM from PVE: node=${vm.pve_node}, vmid=${vm.pve_vmid}`);
@@ -1818,17 +1830,25 @@ export class PVEService extends Service {
                     return createResponse(500, deletionResult.errorMessage || "VM deletion failed");
                 }
 
+                // 回收資源 - 使用之前獲取的配置
+                if (vmConfig) {
+                    try {
+                        await this._reclaimVMResourcesWithConfig(user._id.toString(), vmConfig);
+                        logger.info(`[deleteUserVM] Successfully reclaimed resources for user ${user._id}`);
+                    } catch (resourceError) {
+                        logger.error(`[deleteUserVM] Error reclaiming resources for user ${user._id}:`, resourceError);
+                        // 不影響刪除流程，繼續執行
+                    }
+                } else {
+                    logger.warn(`[deleteUserVM] No VM config available for resource reclaim`);
+                }
+
                 // 確認 VM 已被刪除後才清理資料庫
                 console.log(`[deleteUserVM] Deletion success, cleaning up database for vm_id: ${vm_id}`);
                 
-                // 對於 superadmin，需要找到所有擁有該 VM 的用戶並清理
-                if (token_role === 'superadmin') {
-                    await this._cleanupVMFromAllUsers(vm_id);
-                    console.log(`[deleteUserVM] _cleanupVMFromAllUsers called for vm_id: ${vm_id}`);
-                } else {
-                    await this._cleanupVMFromDatabase(user._id.toString(), vm_id);
-                    console.log(`[deleteUserVM] _cleanupVMFromDatabase called for user: ${user._id}, vm_id: ${vm_id}`);
-                }
+                // 清理資料庫記錄 - 跳過資源回收因為已經在上面做過了
+                await this._cleanupVMFromDatabase(user._id.toString(), vm_id, vmConfig, true);
+                console.log(`[deleteUserVM] _cleanupVMFromDatabase called for user: ${user._id}, vm_id: ${vm_id}`);
 
                 const response: VMDeletionResponse = {
                     vm_id: vm_id,
@@ -1937,18 +1957,31 @@ export class PVEService extends Service {
     }
 
     // 從資料庫中清理 VM 記錄
-    private async _cleanupVMFromDatabase(userId: string, vmId: string): Promise<void> {
+    private async _cleanupVMFromDatabase(userId: string, vmId: string, vmConfig?: VMConfig | null, skipResourceReclaim: boolean = false): Promise<void> {
         try {
-            // 在清理之前先獲取 VM 資訊以計算資源回收
-            const vm = await VMModel.findById(vmId).exec();
-            if (vm) {
-                // 嘗試獲取 VM 的資源配置並回收資源
-                try {
-                    await this._reclaimVMResources(userId, vm.pve_node, vm.pve_vmid);
-                } catch (resourceError) {
-                    logger.error(`Error reclaiming resources for VM ${vmId}:`, resourceError);
-                    // 不拋出錯誤，繼續清理流程
+            // 只有在沒有跳過資源回收的情況下才回收資源
+            if (!skipResourceReclaim) {
+                // 如果有預先獲取的 VM 配置，使用它進行資源回收
+                if (vmConfig) {
+                    await this._reclaimVMResourcesWithConfig(userId, vmConfig);
+                    logger.info(`Reclaimed resources using provided config for user ${userId}`);
+                } else {
+                    // 否則，先獲取 VM 資訊並回收資源
+                    const vm = await VMModel.findById(vmId).exec();
+                    if (vm) {
+                        try {
+                            await this._reclaimVMResources(userId, vm.pve_node, vm.pve_vmid);
+                            logger.info(`Reclaimed resources for user ${userId} using VM lookup`);
+                        } catch (resourceError) {
+                            logger.error(`Error reclaiming resources for user ${userId}:`, resourceError);
+                            // 不拋出錯誤，繼續清理流程
+                        }
+                    } else {
+                        logger.warn(`VM ${vmId} not found for resource reclaim`);
+                    }
                 }
+            } else {
+                logger.info(`Skipping resource reclaim for user ${userId} as requested`);
             }
 
             // 從用戶的 owned_vms 中移除 VM
@@ -1958,16 +1991,9 @@ export class PVEService extends Service {
             );
             logger.info(`Removed VM ${vmId} from user ${userId} owned_vms list`);
 
-            // 檢查是否有其他用戶擁有此 VM
-            const otherOwners = await UsersModel.find({ 
-                owned_vms: vmId 
-            }).exec();
-
-            // 如果沒有其他用戶擁有此 VM，從 VM table 中刪除
-            if (otherOwners.length === 0) {
-                await VMModel.deleteOne({ _id: vmId });
-                logger.info(`Deleted VM ${vmId} from VM table (no other owners)`);
-            }
+            // 由於一台 VM 只有一個 owner，直接從 VM table 中刪除
+            await VMModel.deleteOne({ _id: vmId });
+            logger.info(`Deleted VM ${vmId} from VM table`);
         } catch (error) {
             logger.error(`Error cleaning up VM ${vmId} from database:`, error);
             throw error;
@@ -1980,23 +2006,26 @@ export class PVEService extends Service {
             // 在清理之前先獲取 VM 資訊以計算資源回收
             const vm = await VMModel.findById(vmId).exec();
             if (vm) {
-                // 找到所有擁有此 VM 的用戶
-                const vmOwners = await UsersModel.find({ 
+                // 找到擁有此 VM 的用戶（一台 VM 只有一個 owner）
+                const vmOwner = await UsersModel.findOne({ 
                     owned_vms: vmId 
                 }).exec();
 
-                // 為每個擁有此 VM 的用戶回收資源
-                for (const owner of vmOwners) {
+                // 為該用戶回收資源
+                if (vmOwner) {
                     try {
-                        await this._reclaimVMResources(owner._id.toString(), vm.pve_node, vm.pve_vmid);
+                        await this._reclaimVMResources(vmOwner._id.toString(), vm.pve_node, vm.pve_vmid);
+                        logger.info(`Reclaimed resources for VM owner ${vmOwner._id}`);
                     } catch (resourceError) {
-                        logger.error(`Error reclaiming resources for user ${owner._id}:`, resourceError);
-                        // 不拋出錯誤，繼續為其他用戶回收資源
+                        logger.error(`Error reclaiming resources for user ${vmOwner._id}:`, resourceError);
+                        // 不拋出錯誤，繼續清理流程
                     }
+                } else {
+                    logger.warn(`No owner found for VM ${vmId}`);
                 }
             }
 
-            // 從所有用戶的 owned_vms 中移除該 VM
+            // 從所有用戶的 owned_vms 中移除該 VM（清理任何可能的重複記錄）
             await UsersModel.updateMany(
                 { owned_vms: vmId },
                 { $pull: { owned_vms: vmId } }
@@ -2160,6 +2189,66 @@ export class PVEService extends Service {
         }
     }
 
+    // 使用預先獲取的配置回收 VM 資源
+    private async _reclaimVMResourcesWithConfig(userId: string, vmConfig: VMConfig): Promise<void> {
+        try {
+            // 提取要回收的資源配置
+            const cpuCores = vmConfig.cores || 0;
+            const memoryMB = parseInt(vmConfig.memory) || 0;
+            const diskSizeGB = this._extractDiskSizeFromConfig(vmConfig.scsi0) || 0;
+            
+            if (cpuCores > 0 || memoryMB > 0 || diskSizeGB > 0) {
+                // 獲取用戶資訊
+                const user = await UsersModel.findById(userId).exec();
+                if (!user) {
+                    throw new Error(`User with ID ${userId} not found`);
+                }
+
+                let usedResourceId = user.used_compute_resource_id;
+                if (!usedResourceId) {
+                    logger.warn(`No used compute resource record found for user ${userId}, cannot reclaim resources`);
+                    return;
+                }
+
+                // 獲取當前使用的資源
+                const currentUsedResource = await UsedComputeResourceModel.findById(usedResourceId).exec();
+                if (!currentUsedResource) {
+                    logger.warn(`Used compute resource record ${usedResourceId} not found, cannot reclaim resources`);
+                    return;
+                }
+
+                // 計算回收後的資源使用量（確保不會低於 0）
+                const newCpuCores = Math.max(0, currentUsedResource.cpu_cores - cpuCores);
+                const newMemory = Math.max(0, currentUsedResource.memory - memoryMB);
+                const newStorage = Math.max(0, currentUsedResource.storage - diskSizeGB);
+
+                // 更新資源使用量
+                const result = await UsedComputeResourceModel.updateOne(
+                    { _id: usedResourceId },
+                    {
+                        $set: {
+                            cpu_cores: newCpuCores,
+                            memory: newMemory,
+                            storage: newStorage
+                        }
+                    }
+                );
+
+                if (result.matchedCount > 0) {
+                    logger.info(`Reclaimed resources for user ${userId}: ${cpuCores} CPU cores, ${memoryMB} MB memory, ${diskSizeGB} GB storage`);
+                    logger.info(`Updated resource usage for user ${userId}: ${newCpuCores} CPU cores, ${newMemory} MB memory, ${newStorage} GB storage`);
+                } else {
+                    throw new Error(`Failed to update compute resources for user ${userId}: resource record not found`);
+                }
+            } else {
+                logger.warn(`No resources to reclaim for user ${userId}: cores=${cpuCores}, memory=${memoryMB}, disk=${diskSizeGB}`);
+            }
+        } catch (error) {
+            logger.error(`Error reclaiming VM resources for user ${userId}:`, error);
+            throw error;
+        }
+    }
+
     // 回收 VM 資源（從用戶的已使用資源中扣除）
     private async _reclaimVMResources(userId: string, pve_node: string, pve_vmid: string): Promise<void> {
         try {
@@ -2170,16 +2259,8 @@ export class PVEService extends Service {
                 return;
             }
 
-            // 提取資源配置
-            const cpuCores = vmConfig.cores || 0;
-            const memoryMB = parseInt(vmConfig.memory) || 0;
-            const diskSizeGB = this._extractDiskSizeFromConfig(vmConfig.scsi0) || 0;
-
-            if (cpuCores > 0 || memoryMB > 0 || diskSizeGB > 0) {
-                // 從用戶的已使用資源中扣除這些資源
-                await this._updateUsedComputeResources(userId, -cpuCores, -memoryMB, -diskSizeGB);
-                logger.info(`Reclaimed resources for user ${userId}: ${cpuCores} CPU cores, ${memoryMB} MB memory, ${diskSizeGB} GB storage`);
-            }
+            // 使用相同的邏輯回收資源
+            await this._reclaimVMResourcesWithConfig(userId, vmConfig);
         } catch (error) {
             logger.error(`Error reclaiming VM resources for user ${userId}:`, error);
             throw error;
