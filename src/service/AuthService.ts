@@ -42,12 +42,12 @@ export class AuthService extends Service {
         const now = new Date();
         const intervalMs = intervalMinutes * 60 * 1000;
         let wrongLoginAttempt = user.wrongLoginAttemptId
-            ? await WrongLoginAttemptModel.findById(user.wrongLoginAttemptId)
+            ? await WrongLoginAttemptModel.findOne({ user_id: user._id })
             : null;
 
         if (!wrongLoginAttempt) {
             wrongLoginAttempt = new WrongLoginAttemptModel({
-                _id: user._id,
+                user_id: user._id,
                 wrongLoginAttemptStartTime: now,
                 wrongLoginAttemptCount: 1,
                 lockUntil: null,
@@ -201,7 +201,7 @@ export class AuthService extends Service {
 
             // 檢查是否鎖定
             let wrongLoginAttempt = user.wrongLoginAttemptId
-                ? await WrongLoginAttemptModel.findById(user.wrongLoginAttemptId)
+                ? await WrongLoginAttemptModel.findOne({ user_id: user._id })
                 : null;
 
             if (wrongLoginAttempt && wrongLoginAttempt.lockUntil && wrongLoginAttempt.lockUntil > new Date()) {
@@ -228,7 +228,7 @@ export class AuthService extends Service {
                 await this.handleWrongLoginAttempt(user, 5, 10);
                 // 重新檢查鎖定狀態
                 wrongLoginAttempt = user.wrongLoginAttemptId
-                    ? await WrongLoginAttemptModel.findById(user.wrongLoginAttemptId)
+                    ? await WrongLoginAttemptModel.findOne({ user_id: user._id })
                     : null;
                 if (wrongLoginAttempt && wrongLoginAttempt.lockUntil && wrongLoginAttempt.lockUntil > new Date()) {
                     const minutesLeft = Math.ceil((wrongLoginAttempt.lockUntil.getTime() - new Date().getTime()) / 60000);
@@ -245,14 +245,14 @@ export class AuthService extends Service {
                 // 自動解鎖並清除錯誤記錄
                 if (wrongLoginAttempt && wrongLoginAttempt.lockUntil && wrongLoginAttempt.lockUntil <= new Date()) {
                     user.isLocked = false;
-                    await WrongLoginAttemptModel.deleteOne({ _id: user._id });
+                    await WrongLoginAttemptModel.deleteOne({ user_id: user._id });
                     user.wrongLoginAttemptId = undefined;
                     logger.info(`user ${user.email} is unlocked`);
                     await user.save();
                 }
                 // 登入成功，清除錯誤記錄
                 if (wrongLoginAttempt) {
-                    await WrongLoginAttemptModel.deleteOne({ _id: user._id });
+                    await WrongLoginAttemptModel.deleteOne({ user_id: user._id });
                     user.wrongLoginAttemptId = undefined;
                     await user.save();
                 }
