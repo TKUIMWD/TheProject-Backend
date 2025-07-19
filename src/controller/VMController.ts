@@ -21,4 +21,9 @@ export class VMController extends Controller {
     const resp = await this.service.getUserOwnedVMs(Request);
     Response.status(resp.code).send(resp);
   }
+
+  public async getVMStatus(Request: Request, Response: Response) {
+    const resp = await this.service.getVMStatus(Request);
+    Response.status(resp.code).send(resp);
+  }
 }
