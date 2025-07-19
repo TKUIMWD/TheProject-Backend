@@ -33,6 +33,13 @@ export class VMManageService extends Service {
         CLOUD_INIT: 4
     };
 
+    private readonly VM_UPDATE_CONFIG_STEP_INDICES = {
+        CPU: 0,
+        MEMORY: 1,
+        DISK: 2,
+        CLOUD_INIT: 3
+    };
+
     private async _createVMTask(templateId: string, userId: string, vmid: string, templateVmid: string, targetNode: string): Promise<VM_Task> {
         const task: VM_Task = {
             task_id: `clone-${templateId}-${new Date().getTime()}-${userId}`,
@@ -96,6 +103,9 @@ export class VMManageService extends Service {
         await VM_TaskModel.create(task);
         return task;
     }
+
+
+    
 
     // 創建 VM 從範本
     public async createVMFromTemplate(Request: Request): Promise<resp<PVEResp | undefined>> {
@@ -503,7 +513,7 @@ export class VMManageService extends Service {
             logger.error(`Error updating task status for ${taskId}:`, error);
         }
     }
-
+    
     // 刪除用戶擁有的 VM
     public async deleteUserVM(Request: Request): Promise<resp<VMDeletionResponse | undefined>> {
         try {
@@ -772,7 +782,7 @@ export class VMManageService extends Service {
                 console.log(`[deleteUserVM] Waiting for deletion task to complete, UPID: ${taskId}`);
 
                 // 等待刪除任務完成，此時 taskId 已確定是 string
-                const waitResult = await this._waitForDeletionTaskCompletion(vm.pve_node, taskId as string, 'VM deletion');
+                const waitResult = await VMUtils.waitForTaskCompletion(vm.pve_node, taskId as string, 'VM deletion');
                 deletionSuccess = waitResult.success;
 
                 if (!deletionSuccess) {
@@ -978,44 +988,334 @@ export class VMManageService extends Service {
         }
     }
 
-    // 等待任務完成的重載版本（用於刪除操作）
-    private async _waitForDeletionTaskCompletion(node: string, upid: string, operationType: string): Promise<{ success: boolean, errorMessage?: string }> {
-        const maxRetries = 300; // 最多等待 5 分鐘
-        let retries = 0;
+    // 更新 VM 配置
+    public async updateVMConfig(Request: Request): Promise<resp<PVEResp | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser<User>(Request);
+            if (error) {
+                logger.error("Error validating token for updateVMConfig:", error);
+                return createResponse(error.code, error.message);
+            }
 
-        while (retries < maxRetries) {
-            try {
-                const taskStatus: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_tasks_status(node, upid), undefined, {
-                    headers: {
-                        'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+            const { vm_id, cpuCores, memorySize, diskSize, ciuser: requestCiuser, cipassword: requestCipassword } = Request.body;
+
+            logger.info(`User ${user.username} (${user._id}) starting VM config update for VM ${vm_id}`);
+
+            // 驗證輸入參數
+            if (!vm_id) {
+                return createResponse(400, "vm_id is required");
+            }
+
+            // 檢查至少有一個要更新的配置
+            if (!cpuCores && !memorySize && !diskSize && requestCiuser === undefined && requestCipassword === undefined) {
+                return createResponse(400, "At least one configuration parameter must be provided (cpuCores, memorySize, diskSize, or cloud-init settings)");
+            }
+
+            // 檢查 ci user 和 ci password 是否同時存在或同時為空（如果提供的話）
+            if (requestCiuser !== undefined || requestCipassword !== undefined) {
+                const ciuserProvided = requestCiuser !== undefined && requestCiuser !== '';
+                const cipasswordProvided = requestCipassword !== undefined && requestCipassword !== '';
+                const ciuserEmpty = requestCiuser !== undefined && requestCiuser === '';
+                const cipasswordEmpty = requestCipassword !== undefined && requestCipassword === '';
+                
+                // 必須兩者都有值，任一為 undefined 或空字串都不允許
+                if (!(requestCiuser && requestCipassword)) {
+                    return createResponse(400, "Both ciuser and cipassword must be provided and non-empty");
+                }
+                if (!((ciuserProvided && cipasswordProvided) || (ciuserEmpty && cipasswordEmpty))) {
+                    return createResponse(400, "Both ciuser and cipassword must be provided together with values, or both must be empty strings");
+                }
+            }
+
+            // 檢查 VM 是否屬於該用戶
+            if (!user.owned_vms.includes(vm_id)) {
+                return createResponse(403, "Access denied: VM not owned by user");
+            }
+
+            // 獲取 VM 資訊
+            const vm = await VMModel.findById(vm_id).exec();
+            if (!vm) {
+                return createResponse(404, "VM not found");
+            }
+
+            // 獲取當前 VM 配置
+            const currentVMConfig = await VMUtils.getCurrentVMConfig(vm.pve_node, vm.pve_vmid);
+            if (!currentVMConfig) {
+                return createResponse(404, "Cannot get current VM configuration");
+            }
+
+            // 檢查 VM 狀態，確保處於關機狀態才能更新配置
+            const vmStatus = await VMUtils.getVMStatus(vm.pve_node, vm.pve_vmid);
+            if (!vmStatus || vmStatus.status !== 'stopped') {
+                logger.warn(`VM ${vm.pve_vmid} is not stopped (current status: ${vmStatus?.status || 'unknown'}), cannot update configuration`);
+                return createResponse(400, "VM must be stopped before updating configuration. Please shut down the VM first.");
+            }
+
+            logger.info(`Current VM config - CPU: ${currentVMConfig.cores}, Memory: ${currentVMConfig.memory}MB, Disk: ${PVEUtils.extractDiskSizeFromConfig(currentVMConfig.scsi0)}GB, Status: ${vmStatus.status}`);
+
+            // 計算資源變化
+            const currentCpuCores = currentVMConfig.cores || 0;
+            const currentMemorySize = currentVMConfig.memory || 0;
+            const currentDiskSize = PVEUtils.extractDiskSizeFromConfig(currentVMConfig.scsi0) || 0;
+
+            const newCpuCores = cpuCores || currentCpuCores;
+            const newMemorySize = memorySize || currentMemorySize;
+            const newDiskSize = diskSize || currentDiskSize;
+
+            // 計算資源增加量
+            const cpuDelta = newCpuCores - currentCpuCores;
+            const memoryDelta = newMemorySize - currentMemorySize;
+            const diskDelta = newDiskSize - currentDiskSize;
+
+            logger.info(`Resource deltas - CPU: ${cpuDelta}, Memory: ${memoryDelta}MB, Disk: ${diskDelta}GB`);
+
+            // 如果有資源增加，檢查資源限制
+            if (cpuDelta > 0 || memoryDelta > 0 || diskDelta > 0) {
+                const resourceCheckResult = await this._checkResourceLimitsForUpdate(user, cpuDelta, memoryDelta, diskDelta, newCpuCores, newMemorySize, newDiskSize);
+                if (resourceCheckResult.code !== 200) {
+                    logger.warn(`VM config update resource limits exceeded for user ${user.username}: CPU=${cpuDelta}, Memory=${memoryDelta}MB, Disk=${diskDelta}GB`);
+                    return resourceCheckResult;
+                }
+            }
+
+            // 創建配置更新任務
+            const task = await this._createVMUpdateTask(vm_id, user._id.toString(), vm.pve_vmid, vm.pve_node);
+            logger.info(`Created VM config update task ${task.task_id} for user ${user.username}, VM ID: ${vm.pve_vmid}`);
+
+            // 執行配置更新
+            const configResult = await this._updateVMConfiguration(
+                vm.pve_node, 
+                vm.pve_vmid, 
+                currentCpuCores,
+                currentMemorySize,
+                currentDiskSize,
+                newCpuCores, 
+                newMemorySize, 
+                newDiskSize, 
+                task.task_id, 
+                requestCiuser, 
+                requestCipassword
+            );
+
+            if (configResult.success) {
+                // 只要有資源變化就更新資源使用量（包括增加和減少）
+                if (cpuDelta !== 0 || memoryDelta !== 0 || diskDelta !== 0) {
+                    await this._updateUsedComputeResources(user._id.toString(), cpuDelta, memoryDelta, diskDelta);
+                    logger.info(`Updated user resource usage - CPU delta: ${cpuDelta}, Memory delta: ${memoryDelta}MB, Disk delta: ${diskDelta}GB`);
+                }
+                
+                await this._updateTaskStatus(task.task_id, VM_Task_Status.COMPLETED, undefined);
+
+                logger.info(`VM ${vm.pve_vmid} configuration updated successfully for user ${user.username}, task ${task.task_id}`);
+
+                return createResponse(200, "VM configuration updated successfully", {
+                    task_id: task.task_id,
+                    vm_id: vm_id,
+                    pve_vmid: vm.pve_vmid,
+                    updated_config: {
+                        cpu_cores: newCpuCores,
+                        memory_size: newMemorySize,
+                        disk_size: newDiskSize
                     }
                 });
+            } else {
+                // 配置失敗
+                await this._updateTaskStatus(task.task_id, VM_Task_Status.FAILED, undefined, configResult.errorMessage);
 
-                if (taskStatus && taskStatus.data) {
-                    const status = taskStatus.data as PVE_Task_Status_Response;
+                logger.error(`VM configuration update failed for user ${user.username}, task ${task.task_id}: ${configResult.errorMessage}`);
 
-                    if (status.status === PVE_TASK_STATUS.STOPPED) {
-                        if (status.exitstatus === PVE_TASK_EXIT_STATUS.OK) {
-                            logger.info(`${operationType} task ${upid} completed successfully`);
-                            return { success: true };
-                        } else {
-                            logger.error(`${operationType} task ${upid} failed with exit status: ${status.exitstatus}`);
-                            return { success: false, errorMessage: `${operationType} task failed with exit status: ${status.exitstatus}` };
-                        }
-                    }
+                return createResponse(500, "VM configuration update failed: " + configResult.errorMessage);
+            }
+        } catch (error) {
+            logger.error("Error in updateVMConfig:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
 
-                    // 任務仍在運行，等待 1 秒後重試
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                    retries++;
-                } else {
-                    return { success: false, errorMessage: "Failed to get task status" };
-                }
-            } catch (error) {
-                logger.error(`Error checking ${operationType} task status for ${upid}:`, error);
-                return { success: false, errorMessage: error instanceof Error ? error.message : "Unknown error" };
+    // 檢查資源限制（用於更新配置）
+    private async _checkResourceLimitsForUpdate(
+        user: User, 
+        cpuDelta: number, 
+        memoryDelta: number, 
+        diskDelta: number,
+        newCpuCores: number,
+        newMemorySize: number, 
+        newDiskSize: number
+    ): Promise<resp<any>> {
+        const computeResourcePlan = await ComputeResourcePlanModel.findOne({ _id: user.compute_resource_plan_id }).exec();
+        if (!computeResourcePlan) {
+            return createResponse(404, "Compute resource plan not found");
+        }
+
+        // 檢查新配置是否超過 per VM 限制
+        if (newCpuCores > computeResourcePlan.max_cpu_cores_per_vm ||
+            newMemorySize > computeResourcePlan.max_memory_per_vm ||
+            newDiskSize > computeResourcePlan.max_storage_per_vm) {
+            return createResponse(400, "New configuration exceeds the per VM limits of your compute resource plan");
+        }
+
+        // 如果有資源增加，檢查總限制
+        if (cpuDelta > 0 || memoryDelta > 0 || diskDelta > 0) {
+            let usedResources = null;
+            if (user.used_compute_resource_id) {
+                usedResources = await UsedComputeResourceModel.findById(user.used_compute_resource_id).exec();
+            }
+
+            if (!usedResources) {
+                // 如果沒有資源使用記錄，則創建一個新的
+                usedResources = await UsedComputeResourceModel.create({
+                    cpu_cores: 0,
+                    memory: 0,
+                    storage: 0
+                });
+
+                // 更新用戶記錄，將資源使用記錄的 ID 存儲到用戶資料表
+                await UsersModel.updateOne(
+                    { _id: user._id },
+                    { used_compute_resource_id: usedResources._id.toString() }
+                );
+            }
+
+            const availableCpu = computeResourcePlan.max_cpu_cores_sum - usedResources.cpu_cores;
+            const availableMemory = computeResourcePlan.max_memory_sum - usedResources.memory;
+            const availableStorage = computeResourcePlan.max_storage_sum - usedResources.storage;
+
+            if (cpuDelta > availableCpu || memoryDelta > availableMemory || diskDelta > availableStorage) {
+                return createResponse(400, "Requested resource increases exceed the available limits of your compute resource plan");
             }
         }
 
-        return { success: false, errorMessage: `${operationType} task timeout` };
+        return createResponse(200, "Resource limits check passed");
+    }
+
+    // 創建 VM 配置更新任務
+    private async _createVMUpdateTask(vmId: string, userId: string, pve_vmid: string, pve_node: string): Promise<VM_Task> {
+        const task: VM_Task = {
+            task_id: `update-${vmId}-${new Date().getTime()}-${userId}`,
+            user_id: userId,
+            vmid: pve_vmid,
+            // template_vmid 對於更新任務是可選的，這裡不設置
+            target_node: pve_node,
+            status: VM_Task_Status.PENDING,
+            progress: 0,
+            created_at: new Date(),
+            updated_at: new Date(),
+            steps: [
+                {
+                    step_name: "Configure CPU Cores",
+                    pve_upid: "PENDING",
+                    step_status: VM_Task_Status.PENDING,
+                    step_message: "",
+                    step_start_time: new Date(),
+                    step_end_time: undefined,
+                    error_message: ""
+                },
+                {
+                    step_name: "Configure Memory",
+                    pve_upid: "PENDING",
+                    step_status: VM_Task_Status.PENDING,
+                    step_message: "",
+                    step_start_time: undefined,
+                    step_end_time: undefined,
+                    error_message: ""
+                },
+                {
+                    step_name: "Resize Disk",
+                    pve_upid: "PENDING",
+                    step_status: VM_Task_Status.PENDING,
+                    step_message: "",
+                    step_start_time: undefined,
+                    step_end_time: undefined,
+                    error_message: ""
+                },
+                {
+                    step_name: "Configure Cloud-Init",
+                    pve_upid: "PENDING",
+                    step_status: VM_Task_Status.PENDING,
+                    step_message: "",
+                    step_start_time: undefined,
+                    step_end_time: undefined,
+                    error_message: ""
+                }
+            ]
+        };
+
+        await VM_TaskModel.create(task);
+        return task;
+    }
+
+    // 更新 VM 配置
+    private async _updateVMConfiguration(
+        node: string, 
+        vmid: string, 
+        currentCpuCores: number,
+        currentMemorySize: number,
+        currentDiskSize: number,
+        newCpuCores: number, 
+        newMemorySize: number, 
+        newDiskSize: number, 
+        taskId: string, 
+        ciuser: string | undefined, 
+        cipassword: string | undefined
+    ): Promise<{ success: boolean, errorMessage?: string }> {
+        try {
+            // 等待 VM 磁碟準備就緒
+            logger.info(`Waiting for VM ${vmid} disk to be ready before configuration update...`);
+            const diskReadyResult = await VMUtils.waitForVMDiskReady(node, vmid, 20);
+            if (!diskReadyResult.success) {
+                logger.error(`VM ${vmid} disk not ready: ${diskReadyResult.errorMessage}`);
+                return { success: false, errorMessage: diskReadyResult.errorMessage };
+            }
+
+            // 配置 CPU 核心數 (如果有變化)
+            if (newCpuCores !== currentCpuCores) {
+                const cpuConfigResult = await this._configureVMCPU(node, vmid, newCpuCores, taskId, this.VM_UPDATE_CONFIG_STEP_INDICES.CPU);
+                if (!cpuConfigResult.success) {
+                    return { success: false, errorMessage: `CPU configuration failed: ${cpuConfigResult.errorMessage}` };
+                }
+            }
+
+            // 配置記憶體 (如果有變化)
+            if (newMemorySize !== currentMemorySize) {
+                const memoryConfigResult = await this._configureVMMemory(node, vmid, newMemorySize, taskId, this.VM_UPDATE_CONFIG_STEP_INDICES.MEMORY);
+                if (!memoryConfigResult.success) {
+                    return { success: false, errorMessage: `Memory configuration failed: ${memoryConfigResult.errorMessage}` };
+                }
+            }
+
+            // 調整磁碟大小 (如果有增加)
+            if (newDiskSize > currentDiskSize) {
+                const diskConfigResult = await this._resizeVMDisk(node, vmid, newDiskSize, taskId, this.VM_UPDATE_CONFIG_STEP_INDICES.DISK);
+                if (!diskConfigResult.success) {
+                    return { success: false, errorMessage: `Disk resize failed: ${diskConfigResult.errorMessage}` };
+                }
+            } else if (newDiskSize < currentDiskSize) {
+                logger.warn(`Disk size reduction not supported: current=${currentDiskSize}GB, requested=${newDiskSize}GB`);
+                return { success: false, errorMessage: "Disk size reduction is not supported" };
+            }
+
+            // 配置 Cloud-Init (如果明確提供了參數)
+            if (ciuser !== undefined && cipassword !== undefined) {
+                const cloudInitResult = await this._configureCloudInit(node, vmid, ciuser, cipassword, taskId, this.VM_UPDATE_CONFIG_STEP_INDICES.CLOUD_INIT);
+                if (!cloudInitResult.success) {
+                    return { success: false, errorMessage: `Cloud-Init configuration failed: ${cloudInitResult.errorMessage}` };
+                }
+
+                // 配置完 Cloud-Init 後自動重新生成
+                logger.info(`Regenerating cloud-init for VM ${vmid} after configuration update`);
+                const regenResult = await VMUtils.regenerateCloudInit(node, vmid);
+                if (!regenResult.success) {
+                    logger.warn(`Cloud-Init regeneration failed for VM ${vmid}: ${regenResult.errorMessage}`);
+                    // 不返回錯誤，因為配置已經成功，重新生成失敗不是致命錯誤
+                } else {
+                    logger.info(`Cloud-Init regeneration completed for VM ${vmid}, UPID: ${regenResult.upid}`);
+                }
+            }
+
+            return { success: true };
+        } catch (error) {
+            logger.error(`Error during VM configuration update:`, error);
+            return { success: false, errorMessage: error instanceof Error ? error.message : "Unknown error during configuration update" };
+        }
     }
 }

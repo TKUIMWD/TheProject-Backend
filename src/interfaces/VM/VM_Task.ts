@@ -13,7 +13,7 @@ export interface VM_Task {
     task_id: string; // Unique identifier for the task
     user_id: string;
     vmid: string;
-    template_vmid: string;
+    template_vmid?: string; // Optional for update operations
     target_node: string;
     status: VM_Task_Status; 
     progress: number;
@@ -47,7 +47,7 @@ export interface VM_Task_Step_Update {
 export interface VM_Task_With_PVE_Status {
     task_id: string;
     vmid: string;
-    template_vmid: string;
+    template_vmid?: string; // Optional for update operations
     target_node: string;
     status: VM_Task_Status;
     progress: number;

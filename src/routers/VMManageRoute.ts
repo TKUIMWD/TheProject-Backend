@@ -2,7 +2,7 @@ import { Route } from "../abstract/Route"
 import { VMManageController } from "../controller/VMManageController";
 
 export class VMManageRoute extends Route {
-    
+
     protected url: string;
     protected Controller = new VMManageController();
 
@@ -13,13 +13,17 @@ export class VMManageRoute extends Route {
     }
 
     protected setRoutes(): void {
-        
+
         this.router.post(`${this.url}createFromTemplate`, (req, res) => {
             this.Controller.createVMFromTemplate(req, res);
         });
 
         this.router.delete(`${this.url}delete`, (req, res) => {
             this.Controller.deleteUserVM(req, res);
+        });
+
+        this.router.post(`${this.url}updateConfig`, (req, res) => {
+            this.Controller.updateVMConfig(req, res);
         });
     }
 }

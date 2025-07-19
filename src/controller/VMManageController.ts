@@ -21,4 +21,8 @@ export class VMManageController extends Controller {
         Response.status(resp.code).send(resp);
     }
 
+    public async updateVMConfig(Request: Request, Response: Response) {
+        const resp = await this.service.updateVMConfig(Request);
+        Response.status(resp.code).send(resp);
+    }
 }

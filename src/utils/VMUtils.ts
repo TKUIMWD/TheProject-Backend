@@ -21,6 +21,8 @@ export const PVE_API_USERMODE_TOKEN = process.env.PVE_API_USERMODE_TOKEN;
  * - configureCloudInit: 配置Cloud-Init
  * - waitForTaskCompletion: 等待任務完成
  * - getCurrentVMConfig: 獲取VM當前配置
+ * - getVMStatus: 獲取VM狀態
+ * - getVMNetworkInfo: 獲取VM網路信息
  * - getBasicQemuConfig: 獲取基本QEMU配置
  * - getDetailedQemuConfig: 獲取詳細QEMU配置
  * - getNextVMId: 獲取下一個可用VM ID
@@ -29,7 +31,12 @@ export const PVE_API_USERMODE_TOKEN = process.env.PVE_API_USERMODE_TOKEN;
  * - forceCleanupVMDisks: 強制清理VM磁碟
  * - waitForVMDiskReady: 等待VM磁碟準備就緒
  * - deleteVMWithDiskCleanup: 刪除VM並清理磁碟
- * - extractDiskSizeFromConfig: 從配置中提取磁碟大小
+ * - regenerateCloudInit: 重新生成Cloud-Init
+ * - startVM: 啟動VM
+ * - shutdownVM: 正常關機VM
+ * - stopVM: 強制停止VM
+ * - rebootVM: 重啟VM
+ * - resetVM: 重置VM
  */
 
 
@@ -590,6 +597,251 @@ export class VMUtils {
         } catch (error) {
             logger.error(`Error getting VM config for node ${node}, vmid ${vmid}:`, error);
             return null;
+        }
+    }
+
+    /**
+     * 獲取 VM 狀態
+     */
+    static async getVMStatus(node: string, vmid: string): Promise<{ status: string; uptime?: number } | null> {
+        try {
+            const statusResp: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_status(node, vmid), undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+                }
+            });
+
+            if (statusResp && statusResp.data) {
+                return {
+                    status: statusResp.data.status,
+                    uptime: statusResp.data.uptime
+                };
+            }
+            return null;
+        } catch (error) {
+            logger.error(`Error getting VM status for node ${node}, vmid ${vmid}:`, error);
+            return null;
+        }
+    }
+
+    /**
+     * 重新生成 VM 的 Cloud-Init 配置
+     */
+    static async regenerateCloudInit(node: string, vmid: string): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
+        try {
+            logger.info(`Regenerating cloud-init for VM ${vmid} on node ${node}`);
+            
+            // 使用 PUT 請求觸發 cloud-init 重新生成
+            const regenResp: PVEResp = await callWithUnauthorized('PUT', pve_api.nodes_qemu_cloudinit(node, vmid), undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            });
+
+            // Cloud-init 重新生成成功時可能返回空 data，這是正常的
+            if (regenResp) {
+                if (regenResp.data) {
+                    logger.info(`Cloud-init regeneration initiated for VM ${vmid}, UPID: ${regenResp.data}`);
+                    return { success: true, upid: regenResp.data };
+                } else {
+                    logger.info(`Cloud-init regeneration completed successfully for VM ${vmid} (no UPID returned)`);
+                    return { success: true };
+                }
+            } else {
+                logger.error(`Failed to regenerate cloud-init for VM ${vmid}: No response received`);
+                return { success: false, errorMessage: "No response received from cloud-init regeneration request" };
+            }
+        } catch (error) {
+            logger.error(`Error regenerating cloud-init for VM ${vmid}:`, error);
+            return { success: false, errorMessage: error instanceof Error ? error.message : "Unknown error during cloud-init regeneration" };
+        }
+    }
+
+    /**
+     * 獲取 VM 的網路信息 (透過 QEMU Guest Agent)
+     */
+    static async getVMNetworkInfo(node: string, vmid: string): Promise<{ success: boolean, interfaces?: any[], errorMessage?: string }> {
+        try {
+            logger.info(`Getting network interfaces for VM ${vmid} on node ${node} via QEMU Guest Agent`);
+            
+            const networkResp: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_agent_network(node, vmid), undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+                }
+            });
+
+            if (networkResp && networkResp.data) {
+                logger.info(`Successfully retrieved network interfaces for VM ${vmid}`);
+                return { success: true, interfaces: networkResp.data };
+            } else {
+                logger.warn(`No network interface data available for VM ${vmid} (Guest Agent may not be running)`);
+                return { success: true, interfaces: [] };
+            }
+        } catch (error) {
+            logger.error(`Error getting network info for VM ${vmid}:`, error);
+            return { success: false, errorMessage: error instanceof Error ? error.message : "Unknown error getting network info" };
+        }
+    }
+
+    /**
+     * 提取 IP 地址從網路接口信息
+     */
+    static extractIPAddresses(interfaces: any[]): string[] {
+        const ipAddresses: string[] = [];
+        
+        if (!interfaces || !Array.isArray(interfaces)) {
+            return ipAddresses;
+        }
+
+        interfaces.forEach(iface => {
+            if (iface['ip-addresses'] && Array.isArray(iface['ip-addresses'])) {
+                iface['ip-addresses'].forEach((ip: any) => {
+                    if (ip['ip-address'] && ip['ip-address-type'] === 'ipv4') {
+                        // 排除回環地址
+                        if (!ip['ip-address'].startsWith('127.')) {
+                            ipAddresses.push(ip['ip-address']);
+                        }
+                    }
+                });
+            }
+        });
+
+        return ipAddresses;
+    }
+
+    /**
+     * 啟動 VM
+     */
+    static async startVM(node: string, vmid: string): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
+        try {
+            logger.info(`Starting VM ${vmid} on node ${node}`);
+            
+            const startResp: PVEResp = await callWithUnauthorized('POST', pve_api.nodes_qemu_start(node, vmid), undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            });
+
+            if (startResp && startResp.data) {
+                logger.info(`VM ${vmid} start command executed, UPID: ${startResp.data}`);
+                return { success: true, upid: startResp.data };
+            } else {
+                logger.error(`Failed to start VM ${vmid}: No response data`);
+                return { success: false, errorMessage: "No response data from start command" };
+            }
+        } catch (error) {
+            logger.error(`Error starting VM ${vmid}:`, error);
+            return { success: false, errorMessage: error instanceof Error ? error.message : "Unknown error starting VM" };
+        }
+    }
+
+    /**
+     * 正常關機 VM (shutdown)
+     */
+    static async shutdownVM(node: string, vmid: string): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
+        try {
+            logger.info(`Shutting down VM ${vmid} on node ${node}`);
+            
+            const shutdownResp: PVEResp = await callWithUnauthorized('POST', pve_api.nodes_qemu_shutdown(node, vmid), undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            });
+
+            if (shutdownResp && shutdownResp.data) {
+                logger.info(`VM ${vmid} shutdown command executed, UPID: ${shutdownResp.data}`);
+                return { success: true, upid: shutdownResp.data };
+            } else {
+                logger.error(`Failed to shutdown VM ${vmid}: No response data`);
+                return { success: false, errorMessage: "No response data from shutdown command" };
+            }
+        } catch (error) {
+            logger.error(`Error shutting down VM ${vmid}:`, error);
+            return { success: false, errorMessage: error instanceof Error ? error.message : "Unknown error shutting down VM" };
+        }
+    }
+
+    /**
+     * 強制停止 VM (stop/poweroff)
+     */
+    static async stopVM(node: string, vmid: string): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
+        try {
+            logger.info(`Stopping VM ${vmid} on node ${node} (force)`);
+            
+            const stopResp: PVEResp = await callWithUnauthorized('POST', pve_api.nodes_qemu_stop(node, vmid), undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            });
+
+            if (stopResp && stopResp.data) {
+                logger.info(`VM ${vmid} stop command executed, UPID: ${stopResp.data}`);
+                return { success: true, upid: stopResp.data };
+            } else {
+                logger.error(`Failed to stop VM ${vmid}: No response data`);
+                return { success: false, errorMessage: "No response data from stop command" };
+            }
+        } catch (error) {
+            logger.error(`Error stopping VM ${vmid}:`, error);
+            return { success: false, errorMessage: error instanceof Error ? error.message : "Unknown error stopping VM" };
+        }
+    }
+
+    /**
+     * 重啟 VM (reboot)
+     */
+    static async rebootVM(node: string, vmid: string): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
+        try {
+            logger.info(`Rebooting VM ${vmid} on node ${node}`);
+            
+            const rebootResp: PVEResp = await callWithUnauthorized('POST', pve_api.nodes_qemu_reboot(node, vmid), undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            });
+
+            if (rebootResp && rebootResp.data) {
+                logger.info(`VM ${vmid} reboot command executed, UPID: ${rebootResp.data}`);
+                return { success: true, upid: rebootResp.data };
+            } else {
+                logger.error(`Failed to reboot VM ${vmid}: No response data`);
+                return { success: false, errorMessage: "No response data from reboot command" };
+            }
+        } catch (error) {
+            logger.error(`Error rebooting VM ${vmid}:`, error);
+            return { success: false, errorMessage: error instanceof Error ? error.message : "Unknown error rebooting VM" };
+        }
+    }
+
+    /**
+     * 重置 VM (reset)
+     */
+    static async resetVM(node: string, vmid: string): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
+        try {
+            logger.info(`Resetting VM ${vmid} on node ${node}`);
+            
+            const resetResp: PVEResp = await callWithUnauthorized('POST', pve_api.nodes_qemu_reset(node, vmid), undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            });
+
+            if (resetResp && resetResp.data) {
+                logger.info(`VM ${vmid} reset command executed, UPID: ${resetResp.data}`);
+                return { success: true, upid: resetResp.data };
+            } else {
+                logger.error(`Failed to reset VM ${vmid}: No response data`);
+                return { success: false, errorMessage: "No response data from reset command" };
+            }
+        } catch (error) {
+            logger.error(`Error resetting VM ${vmid}:`, error);
+            return { success: false, errorMessage: error instanceof Error ? error.message : "Unknown error resetting VM" };
         }
     }
 }

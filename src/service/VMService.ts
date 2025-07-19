@@ -11,6 +11,8 @@ import { VMDetailedConfig, VMDetailWithConfig, VMBasicConfig, VMDetailWithBasicC
 import { VMUtils } from "../utils/VMUtils";
 import { PVEUtils } from "../utils/PVEUtils";
 import { PVE_API_USERMODE_TOKEN, PVE_API_ADMINMODE_TOKEN, PVE_API_SUPERADMINMODE_TOKEN } from "../utils/VMUtils";
+import { logger } from "../middlewares/log";
+import Roles from "../enum/role";
 
 
 export class VMService extends Service {
@@ -33,16 +35,39 @@ export class VMService extends Service {
                 _id: { $in: user.owned_vms } 
             }).exec();
 
-            // 為每個 VM 獲取基本狀態資訊
+            // 為每個 VM 獲取基本狀態資訊和實時狀態
             const vmDetails: VMDetailWithBasicConfig[] = await Promise.all(
                 vms.map(async (vm): Promise<VMDetailWithBasicConfig> => {
                     try {
+                        // 獲取基本配置
                         const basicConfig = await this._getBasicQemuConfig(vm.pve_node, vm.pve_vmid);
+                        
+                        // 獲取實時狀態
+                        const vmStatus = await VMUtils.getVMStatus(vm.pve_node, vm.pve_vmid);
+                        
+                        // 如果 VM 是開機狀態，嘗試獲取網路信息
+                        let networkInfo = null;
+                        if (vmStatus && vmStatus.status === 'running') {
+                            const networkResult = await VMUtils.getVMNetworkInfo(vm.pve_node, vm.pve_vmid);
+                            if (networkResult.success && networkResult.interfaces) {
+                                const ipAddresses = VMUtils.extractIPAddresses(networkResult.interfaces);
+                                networkInfo = {
+                                    ip_addresses: ipAddresses,
+                                    interfaces: networkResult.interfaces
+                                };
+                            }
+                        }
+                        
                         return {
                             _id: vm._id,
                             pve_vmid: vm.pve_vmid,
                             pve_node: vm.pve_node,
                             config: basicConfig.code === 200 ? (basicConfig.body || null) : null,
+                            status: vmStatus ? {
+                                current_status: vmStatus.status,
+                                uptime: vmStatus.uptime
+                            } : null,
+                            network: networkInfo,
                             error: basicConfig.code !== 200 ? basicConfig.message : null
                         };
                     } catch (error) {
@@ -51,7 +76,9 @@ export class VMService extends Service {
                             pve_vmid: vm.pve_vmid,
                             pve_node: vm.pve_node,
                             config: null,
-                            error: "Failed to fetch VM config"
+                            status: null,
+                            network: null,
+                            error: "Failed to fetch VM config or status"
                         };
                     }
                 })
@@ -76,17 +103,40 @@ export class VMService extends Service {
             // 獲取所有 VM 的詳細資訊
             const vms = await VMModel.find({}).exec();
 
-            // 為每個 VM 獲取詳細狀態資訊
+            // 為每個 VM 獲取詳細狀態資訊和實時狀態
             const vmDetails: VMDetailWithConfig[] = await Promise.all(
                 vms.map(async (vm): Promise<VMDetailWithConfig> => {
                     try {
+                        // 獲取詳細配置
                         const detailedConfig = await this._getDetailedQemuConfig(vm.pve_node, vm.pve_vmid);
+                        
+                        // 獲取實時狀態
+                        const vmStatus = await VMUtils.getVMStatus(vm.pve_node, vm.pve_vmid);
+                        
+                        // 如果 VM 是開機狀態，嘗試獲取網路信息
+                        let networkInfo = null;
+                        if (vmStatus && vmStatus.status === 'running') {
+                            const networkResult = await VMUtils.getVMNetworkInfo(vm.pve_node, vm.pve_vmid);
+                            if (networkResult.success && networkResult.interfaces) {
+                                const ipAddresses = VMUtils.extractIPAddresses(networkResult.interfaces);
+                                networkInfo = {
+                                    ip_addresses: ipAddresses,
+                                    interfaces: networkResult.interfaces
+                                };
+                            }
+                        }
+                        
                         return {
                             _id: vm._id,
                             pve_vmid: vm.pve_vmid,
                             pve_node: vm.pve_node,
                             owner: vm.owner,
                             config: detailedConfig.code === 200 ? (detailedConfig.body || null) : null,
+                            status: vmStatus ? {
+                                current_status: vmStatus.status,
+                                uptime: vmStatus.uptime
+                            } : null,
+                            network: networkInfo,
                             error: detailedConfig.code !== 200 ? detailedConfig.message : null
                         };
                     } catch (error) {
@@ -96,7 +146,9 @@ export class VMService extends Service {
                             pve_node: vm.pve_node,
                             owner: vm.owner,
                             config: null,
-                            error: "Failed to fetch VM config"
+                            status: null,
+                            network: null,
+                            error: "Failed to fetch VM config or status"
                         };
                     }
                 })
@@ -106,6 +158,60 @@ export class VMService extends Service {
         } catch (error) {
             console.error("Error in getAllVMs:", error);
             return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    // 獲取 VM 當前狀態
+    public async getVMStatus(Request: Request): Promise<resp<{ status: string, uptime?: number } | undefined>> {
+        try {
+            // 首先嘗試驗證為 superadmin
+            const { user: superAdminUser, error: superAdminError } = await validateTokenAndGetSuperAdminUser<User>(Request);
+            let user: User;
+            let isSuperAdmin = false;
+
+            if (!superAdminError && superAdminUser && superAdminUser.role === Roles.SuperAdmin) {
+                user = superAdminUser;
+                isSuperAdmin = true;
+            } else {
+                // 如果不是 superadmin，則驗證為普通用戶
+                const { user: normalUser, error } = await validateTokenAndGetUser<User>(Request);
+                if (error) {
+                    console.error("Error validating token:", error);
+                    return createResponse(error.code, error.message);
+                }
+                user = normalUser;
+            }
+
+            const { vm_id } = Request.query;
+            if (!vm_id) {
+                return createResponse(400, "VM ID is required");
+            }
+
+            // 檢查 VM 是否存在
+            const vm = await VMModel.findOne({ _id: vm_id });
+            if (!vm) {
+                return createResponse(404, "VM not found");
+            }
+
+            // 權限檢查：superadmin 可以檢視任何機器，普通用戶只能檢視自己的
+            if (!isSuperAdmin && vm.owner !== user._id?.toString()) {
+                return createResponse(403, "You don't have permission to access this VM");
+            }
+
+            // 獲取 VM 狀態
+            const result = await VMUtils.getVMStatus(vm.pve_node, vm.pve_vmid);
+            if (!result) {
+                return createResponse(500, "Failed to get VM status");
+            }
+
+            return createResponse(200, "VM status retrieved successfully", {
+                status: result.status,
+                uptime: result.uptime
+            });
+
+        } catch (error) {
+            logger.error("Error in getVMStatus:", error);
+            return createResponse(500, "Internal server error");
         }
     }
 

@@ -56,6 +56,14 @@ export interface VMDetailWithConfig {
     pve_node: string;
     owner: string;
     config: VMDetailedConfig | null;
+    status?: {
+        current_status: string;
+        uptime?: number;
+    } | null;
+    network?: {
+        ip_addresses: string[];
+        interfaces?: any[];
+    } | null;
     error: string | null;
 }
 
@@ -64,5 +72,13 @@ export interface VMDetailWithBasicConfig {
     pve_vmid: string;
     pve_node: string;
     config: VMBasicConfig | null;
+    status?: {
+        current_status: string;
+        uptime?: number;
+    } | null;
+    network?: {
+        ip_addresses: string[];
+        interfaces?: any[];
+    } | null;
     error: string | null;
 }
