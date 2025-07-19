@@ -592,4 +592,62 @@ export class VMUtils {
             return null;
         }
     }
+
+    /**
+     * 獲取 VM 狀態
+     */
+    static async getVMStatus(node: string, vmid: string): Promise<{ status: string; uptime?: number } | null> {
+        try {
+            const statusResp: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_status(node, vmid), undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+                }
+            });
+
+            if (statusResp && statusResp.data) {
+                return {
+                    status: statusResp.data.status,
+                    uptime: statusResp.data.uptime
+                };
+            }
+            return null;
+        } catch (error) {
+            logger.error(`Error getting VM status for node ${node}, vmid ${vmid}:`, error);
+            return null;
+        }
+    }
+
+    /**
+     * 重新生成 VM 的 Cloud-Init 配置
+     */
+    static async regenerateCloudInit(node: string, vmid: string): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
+        try {
+            logger.info(`Regenerating cloud-init for VM ${vmid} on node ${node}`);
+            
+            // 使用 PUT 請求觸發 cloud-init 重新生成
+            const regenResp: PVEResp = await callWithUnauthorized('PUT', pve_api.nodes_qemu_cloudinit(node, vmid), undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            });
+
+            // Cloud-init 重新生成成功時可能返回空 data，這是正常的
+            if (regenResp) {
+                if (regenResp.data) {
+                    logger.info(`Cloud-init regeneration initiated for VM ${vmid}, UPID: ${regenResp.data}`);
+                    return { success: true, upid: regenResp.data };
+                } else {
+                    logger.info(`Cloud-init regeneration completed successfully for VM ${vmid} (no UPID returned)`);
+                    return { success: true };
+                }
+            } else {
+                logger.error(`Failed to regenerate cloud-init for VM ${vmid}: No response received`);
+                return { success: false, errorMessage: "No response received from cloud-init regeneration request" };
+            }
+        } catch (error) {
+            logger.error(`Error regenerating cloud-init for VM ${vmid}:`, error);
+            return { success: false, errorMessage: error instanceof Error ? error.message : "Unknown error during cloud-init regeneration" };
+        }
+    }
 }

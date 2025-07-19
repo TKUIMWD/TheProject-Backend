@@ -8,6 +8,8 @@ export const pve_api: PVEApiEndPoints = {
     nodes: `${pve_api_base}/nodes`,
     nodes_qemu: (node: string) => `${pve_api_base}/nodes/${node}/qemu`,
     nodes_qemu_config: (node: string, vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${vmid}/config`,
+    nodes_qemu_status: (node: string, vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${vmid}/status/current`,
+    nodes_qemu_cloudinit: (node: string, vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${vmid}/cloudinit`,
     cluster_next_id: `${pve_api_base}/cluster/nextid`,
     nodes_qemu_clone: (node: string, template_vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${template_vmid}/clone`,
     nodes_tasks_status: (node: string, upid: string) => `${pve_api_base}/nodes/${node}/tasks/${upid}/status`,

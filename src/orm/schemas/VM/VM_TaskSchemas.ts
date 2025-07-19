@@ -6,7 +6,7 @@ export const VM_TaskSchemas = new Schema<VM_Task>({
     task_id: { type: String, required: true },
     user_id: { type: String, required: true },
     vmid: { type: String, required: true },
-    template_vmid: { type: String, required: true },
+    template_vmid: { type: String, required: false }, // 改為可選字段
     target_node: { type: String, required: true },
     status: { type: String, enum: Object.values(VM_Task_Status), default: VM_Task_Status.PENDING },
     progress: { type: Number, default: 0 },
