@@ -23,4 +23,5 @@ export const pve_api: PVEApiEndPoints = {
     nodes_qemu_resize: (node: string, vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${vmid}/resize`,
     nodes_qemu_vm: (node: string, vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${vmid}`,
     nodes_storage_content: (node: string, storage: string, volume: string) => `${pve_api_base}/nodes/${node}/storage/${storage}/content/${volume}`,
+    nodes_qemu_rrddata: (node: string, vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${vmid}/rrddata`,
 };

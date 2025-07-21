@@ -2,7 +2,7 @@ import { callWithUnauthorized } from "./fetch";
 import { pve_api } from "../enum/PVE_API";
 import { PVEResp } from "../interfaces/Response/PVEResp";
 import { resp, createResponse } from "./resp";
-import { VMBasicConfig, VMDetailedConfig } from "../interfaces/VM/VM";
+import { VMBasicConfig, VMDetailedConfig, NetworkInterface, NetworkInterfacesResponse, NetworkIPAddress, NetworkStatistics } from "../interfaces/VM/VM";
 import { PVE_qemu_config, PVE_Task_Status_Response, PVE_TASK_STATUS, PVE_TASK_EXIT_STATUS } from "../interfaces/PVE";
 import { logger } from "../middlewares/log";
 import { PVEUtils } from "./PVEUtils";
@@ -661,7 +661,7 @@ export class VMUtils {
     /**
      * 獲取 VM 的網路信息 (透過 QEMU Guest Agent)
      */
-    static async getVMNetworkInfo(node: string, vmid: string): Promise<{ success: boolean, interfaces?: any[], errorMessage?: string }> {
+    static async getVMNetworkInfo(node: string, vmid: string): Promise<{ success: boolean, interfaces?: NetworkInterface[], errorMessage?: string }> {
         try {
             logger.info(`Getting network interfaces for VM ${vmid} on node ${node} via QEMU Guest Agent`);
             
@@ -687,7 +687,7 @@ export class VMUtils {
     /**
      * 提取 IP 地址從網路接口信息
      */
-    static extractIPAddresses(interfaces: any[]): string[] {
+    static extractIPAddresses(interfaces: NetworkInterface[]): string[] {
         const ipAddresses: string[] = [];
         
         if (!interfaces || !Array.isArray(interfaces)) {
@@ -696,7 +696,7 @@ export class VMUtils {
 
         interfaces.forEach(iface => {
             if (iface['ip-addresses'] && Array.isArray(iface['ip-addresses'])) {
-                iface['ip-addresses'].forEach((ip: any) => {
+                iface['ip-addresses'].forEach((ip: NetworkIPAddress) => {
                     if (ip['ip-address'] && ip['ip-address-type'] === 'ipv4') {
                         // 排除回環地址
                         if (!ip['ip-address'].startsWith('127.')) {
@@ -842,6 +842,60 @@ export class VMUtils {
         } catch (error) {
             logger.error(`Error resetting VM ${vmid}:`, error);
             return { success: false, errorMessage: error instanceof Error ? error.message : "Unknown error resetting VM" };
+        }
+    }
+
+    /**
+     * 獲取 VM 資源使用情況（CPU、記憶體使用率）
+     */
+    static async getVMResourceUsage(node: string, vmid: string): Promise<{ success: boolean, cpu?: number, memory?: number, errorMessage?: string }> {
+        try {
+            // 首先嘗試獲取當前狀態，這會提供實時的資源使用情況
+            const statusResp: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_status(node, vmid), undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+                }
+            });
+
+            if (statusResp && statusResp.data) {
+                // 從狀態 API 獲取實時資源使用情況
+                const cpuUsage = statusResp.data.cpu ? (statusResp.data.cpu * 100) : 0; // 轉換為百分比
+                const memoryUsage = statusResp.data.mem && statusResp.data.maxmem 
+                    ? (statusResp.data.mem / (1024 * 1024 * 1024)) : 0; // 轉換為 GB
+
+                return { 
+                    success: true, 
+                    cpu: Math.round(cpuUsage * 100) / 100, // 保留兩位小數
+                    memory: Math.round(memoryUsage * 100) / 100 // 保留兩位小數
+                };
+            }
+
+            // 如果狀態 API 沒有提供資源使用數據，則回退到 RRD 數據（最近 5 分鐘，最高解析度）
+            const rrdResp: PVEResp = await callWithUnauthorized('GET', `${pve_api.nodes_qemu_rrddata(node, vmid)}?timeframe=5min&cf=AVERAGE`, undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+                }
+            });
+
+            if (rrdResp && rrdResp.data && Array.isArray(rrdResp.data)) {
+                // 獲取最新的數據點
+                const latestData = rrdResp.data[rrdResp.data.length - 1];
+                if (latestData) {
+                    const cpuUsage = latestData.cpu ? (latestData.cpu * 100) : 0; // 轉換為百分比
+                    const memoryUsage = latestData.mem ? (latestData.mem / (1024 * 1024 * 1024)) : 0; // 轉換為 GB
+
+                    return { 
+                        success: true, 
+                        cpu: Math.round(cpuUsage * 100) / 100, // 保留兩位小數
+                        memory: Math.round(memoryUsage * 100) / 100 // 保留兩位小數
+                    };
+                }
+            }
+
+            return { success: false, errorMessage: "No resource usage data available" };
+        } catch (error) {
+            logger.error(`Error getting resource usage for VM ${vmid}:`, error);
+            return { success: false, errorMessage: error instanceof Error ? error.message : "Unknown error getting resource usage" };
         }
     }
 }

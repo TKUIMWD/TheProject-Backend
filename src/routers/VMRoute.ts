@@ -26,6 +26,11 @@ export class VMRoute extends Route{
         this.router.get(`${this.url}status`, (req, res) => {
             this.Controller.getVMStatus(req, res);
         });
+
+        // VM 網路資訊查詢 - VM ID在查詢參數中
+        this.router.get(`${this.url}network`, (req, res) => {
+            this.Controller.getVMNetworkInfo(req, res);
+        });
     }
 
 }
