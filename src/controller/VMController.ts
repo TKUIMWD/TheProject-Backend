@@ -26,4 +26,9 @@ export class VMController extends Controller {
     const resp = await this.service.getVMStatus(Request);
     Response.status(resp.code).send(resp);
   }
+
+  public async getVMNetworkInfo(Request: Request, Response: Response) {
+    const resp = await this.service.getVMNetworkInfo(Request);
+    Response.status(resp.code).send(resp);
+  }
 }

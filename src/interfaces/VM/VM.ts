@@ -71,14 +71,46 @@ export interface VMDetailWithBasicConfig {
     _id?: string;
     pve_vmid: string;
     pve_node: string;
-    config: VMBasicConfig | null;
+    owner?: string;
+    config?: VMBasicConfig | null;
     status?: {
         current_status: string;
         uptime?: number;
     } | null;
-    network?: {
-        ip_addresses: string[];
-        interfaces?: any[];
-    } | null;
     error: string | null;
+}
+
+// 網路介面類型定義
+export interface NetworkIPAddress {
+    'ip-address': string;
+    'ip-address-type': 'ipv4' | 'ipv6';
+    prefix: number;
+}
+
+export interface NetworkStatistics {
+    'rx-bytes'?: number;
+    'tx-bytes'?: number;
+    'rx-packets'?: number;
+    'tx-packets'?: number;
+    'rx-errors'?: number;
+    'tx-errors'?: number;
+    'rx-dropped'?: number;
+    'tx-dropped'?: number;
+}
+
+export interface NetworkInterface {
+    name: string;
+    'hardware-address': string;
+    'ip-addresses'?: NetworkIPAddress[];
+    statistics?: NetworkStatistics;
+}
+
+export interface NetworkInterfacesResponse {
+    result: NetworkInterface[];
+}
+
+export interface SimplifiedNetworkInterface {
+    name: string;
+    macAddress: string;
+    ipAddresses: string[];
 }
