@@ -15,7 +15,6 @@ const PVE_API_USERMODE_TOKEN = process.env.PVE_API_USERMODE_TOKEN;
 
 export class TemplateService extends Service {
 
-    // 獲取所有範本
     public async getAllTemplates(Request: Request): Promise<resp<VM_Template_Info[] | undefined>> {
         try {
             const { user, error } = await validateTokenAndGetSuperAdminUser<VM_Template_Info[]>(Request);
@@ -46,7 +45,8 @@ export class TemplateService extends Service {
                     name: qemuConfig.name,
                     description: template.description,
                     submitted_date: template.submitted_date,
-                    has_approved: template.has_approved,
+                    owner: template.owner,
+                    is_public: template.is_public,
                     submitter_user_info: {
                         username: submitterUser.username,
                         email: submitterUser.email
@@ -66,8 +66,7 @@ export class TemplateService extends Service {
         }
     }
 
-    // 獲取所有已批准的範本
-    public async getAllApprovedTemplates(Request: Request): Promise<resp<VM_Template_Info[] | undefined>> {
+    public async getAccessableTemplates(Request: Request): Promise<resp<VM_Template_Info[] | undefined>> {
         try {
             const { user, error } = await validateTokenAndGetUser<VM_Template_Info[]>(Request);
             if (error) {
@@ -75,8 +74,12 @@ export class TemplateService extends Service {
                 return error;
             }
 
-            // 僅查詢已審核通過的模板
-            const templates = await VMTemplateModel.find({ has_approved: true }).exec();
+            const templates = await VMTemplateModel.find({
+                $or: [
+                    { is_public: true },
+                    { owner: user._id }
+                ]
+            }).exec();
             if (templates.length === 0) {
                 return createResponse(200, "No approved templates found", []);
             }
@@ -98,7 +101,8 @@ export class TemplateService extends Service {
                     name: qemuConfig.name,
                     description: template.description,
                     submitted_date: template.submitted_date,
-                    has_approved: template.has_approved,
+                    owner: template.owner,
+                    is_public: template.is_public,
                     submitter_user_info: {
                         username: submitterUser.username,
                         email: submitterUser.email

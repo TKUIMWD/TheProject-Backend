@@ -17,8 +17,8 @@ export class TemplateController extends Controller {
     Response.status(resp.code).send(resp);
   }
 
-  public async getAllApprovedTemplates(Request: Request, Response: Response) {
-    const resp = await this.service.getAllApprovedTemplates(Request);
+  public async getAccessableTemplates(Request: Request, Response: Response) {
+    const resp = await this.service.getAccessableTemplates(Request);
     Response.status(resp.code).send(resp);
   }
 }

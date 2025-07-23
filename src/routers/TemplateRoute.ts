@@ -17,8 +17,8 @@ export class TemplateRoute extends Route{
             this.Controller.getAllTemplates(req, res);
         });
 
-        this.router.get(`${this.url}getAllApproved`, (req, res) => {
-            this.Controller.getAllApprovedTemplates(req, res);
+        this.router.get(`${this.url}getAccessable`, (req, res) => {
+            this.Controller.getAccessableTemplates(req, res);
         });
     }
 
