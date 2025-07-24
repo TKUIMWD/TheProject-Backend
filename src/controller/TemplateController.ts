@@ -21,4 +21,9 @@ export class TemplateController extends Controller {
     const resp = await this.service.getAccessableTemplates(Request);
     Response.status(resp.code).send(resp);
   }
+
+  public async convertVMtoTemplate(Request: Request, Response: Response) {
+    const resp = await this.service.convertVMtoTemplate(Request);
+    Response.status(resp.code).send(resp);
+  }
 }

@@ -20,6 +20,11 @@ export class TemplateRoute extends Route{
         this.router.get(`${this.url}getAccessable`, (req, res) => {
             this.Controller.getAccessableTemplates(req, res);
         });
+
+        // convert VM to Template
+        this.router.post(`${this.url}convert`, (req, res) => {
+            this.Controller.convertVMtoTemplate(req, res);
+        });
     }
 
 }

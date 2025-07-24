@@ -34,10 +34,11 @@ export class VMManageService extends Service {
     };
 
     private readonly VM_UPDATE_CONFIG_STEP_INDICES = {
-        CPU: 0,
-        MEMORY: 1,
-        DISK: 2,
-        CLOUD_INIT: 3
+        NAME: 0,
+        CPU: 1,
+        MEMORY: 2,
+        DISK: 3,
+        CLOUD_INIT: 4
     };
 
     private async _createVMTask(templateId: string, userId: string, vmid: string, templateVmid: string, targetNode: string): Promise<VM_Task> {
@@ -965,6 +966,35 @@ export class VMManageService extends Service {
         }
     }
 
+    private async _updateVMName(node: string, vmid: string, vmName: string, taskId: string, stepIndex: number): Promise<{ success: boolean, errorMessage?: string }> {
+        try {
+            await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.IN_PROGRESS);
+
+            const nameUpdateResult = await VMUtils.updateVMName(node, vmid, vmName);
+
+            if (nameUpdateResult.success) {
+                if (nameUpdateResult.upid) {
+                    // 有 UPID，等待任務完成
+                    const waitResult = await VMUtils.waitForTaskCompletion(node, nameUpdateResult.upid, 'VM name update');
+                    if (!waitResult.success) {
+                        await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, waitResult.errorMessage);
+                        return { success: false, errorMessage: waitResult.errorMessage };
+                    }
+                }
+
+                await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.COMPLETED, "VM name update completed");
+                return { success: true };
+            } else {
+                await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, nameUpdateResult.errorMessage);
+                return { success: false, errorMessage: nameUpdateResult.errorMessage };
+            }
+        } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : "Unknown error";
+            await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.FAILED, undefined, errorMsg);
+            return { success: false, errorMessage: errorMsg };
+        }
+    }
+
     private async _configureVMCPU(node: string, vmid: string, cpuCores: number, taskId: string, stepIndex: number): Promise<{ success: boolean, errorMessage?: string }> {
         try {
             await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.IN_PROGRESS);
@@ -1003,7 +1033,7 @@ export class VMManageService extends Service {
                 return createResponse(error.code, error.message);
             }
 
-            const { vm_id, cpuCores, memorySize, diskSize, ciuser: requestCiuser, cipassword: requestCipassword } = Request.body;
+            const { vm_id, cpuCores, memorySize, diskSize, vmName, ciuser: requestCiuser, cipassword: requestCipassword } = Request.body;
 
             logger.info(`User ${user.username} (${user._id}) starting VM config update for VM ${vm_id}`);
 
@@ -1013,8 +1043,8 @@ export class VMManageService extends Service {
             }
 
             // 檢查至少有一個要更新的配置
-            if (!cpuCores && !memorySize && !diskSize && requestCiuser === undefined && requestCipassword === undefined) {
-                return createResponse(400, "At least one configuration parameter must be provided (cpuCores, memorySize, diskSize, or cloud-init settings)");
+            if (!cpuCores && !memorySize && !diskSize && !vmName && requestCiuser === undefined && requestCipassword === undefined) {
+                return createResponse(400, "At least one configuration parameter must be provided (cpuCores, memorySize, diskSize, vmName, or cloud-init settings)");
             }
 
             // 檢查 ci user 和 ci password 是否同時存在或同時為空（如果提供的話）
@@ -1031,6 +1061,19 @@ export class VMManageService extends Service {
                 if (!((ciuserProvided && cipasswordProvided) || (ciuserEmpty && cipasswordEmpty))) {
                     return createResponse(400, "Both ciuser and cipassword must be provided together with values, or both must be empty strings");
                 }
+            }
+
+            // 驗證 VM 名稱（如果提供的話）
+            let sanitizedVMName: string | undefined = undefined;
+            if (vmName) {
+                if (typeof vmName !== 'string') {
+                    return createResponse(400, "vmName must be a string");
+                }
+                const sanitized = PVEUtils.sanitizeVMName(vmName.trim());
+                if (!sanitized) {
+                    return createResponse(400, "Invalid VM name: name contains invalid characters or is too long");
+                }
+                sanitizedVMName = sanitized;
             }
 
             // 檢查 VM 是否屬於該用戶
@@ -1100,7 +1143,8 @@ export class VMManageService extends Service {
                 newDiskSize, 
                 task.task_id, 
                 requestCiuser, 
-                requestCipassword
+                requestCipassword,
+                sanitizedVMName
             );
 
             if (configResult.success) {
@@ -1114,7 +1158,7 @@ export class VMManageService extends Service {
 
                 logger.info(`VM ${vm.pve_vmid} configuration updated successfully for user ${user.username}, task ${task.task_id}`);
 
-                return createResponse(200, "VM configuration updated successfully", {
+                const responseData: any = {
                     task_id: task.task_id,
                     vm_id: vm_id,
                     pve_vmid: vm.pve_vmid,
@@ -1123,7 +1167,14 @@ export class VMManageService extends Service {
                         memory_size: newMemorySize,
                         disk_size: newDiskSize
                     }
-                });
+                };
+
+                // 如果更新了名稱，則在回應中包含新名稱
+                if (sanitizedVMName) {
+                    responseData.updated_config.vm_name = sanitizedVMName;
+                }
+
+                return createResponse(200, "VM configuration updated successfully", responseData);
             } else {
                 // 配置失敗
                 await this._updateTaskStatus(task.task_id, VM_Task_Status.FAILED, undefined, configResult.errorMessage);
@@ -1208,11 +1259,20 @@ export class VMManageService extends Service {
             updated_at: new Date(),
             steps: [
                 {
-                    step_name: "Configure CPU Cores",
+                    step_name: "Update VM Name",
                     pve_upid: "PENDING",
                     step_status: VM_Task_Status.PENDING,
                     step_message: "",
                     step_start_time: new Date(),
+                    step_end_time: undefined,
+                    error_message: ""
+                },
+                {
+                    step_name: "Configure CPU Cores",
+                    pve_upid: "PENDING",
+                    step_status: VM_Task_Status.PENDING,
+                    step_message: "",
+                    step_start_time: undefined,
                     step_end_time: undefined,
                     error_message: ""
                 },
@@ -1262,7 +1322,8 @@ export class VMManageService extends Service {
         newDiskSize: number, 
         taskId: string, 
         ciuser: string | undefined, 
-        cipassword: string | undefined
+        cipassword: string | undefined,
+        vmName: string | undefined
     ): Promise<{ success: boolean, errorMessage?: string }> {
         try {
             // 等待 VM 磁碟準備就緒
@@ -1271,6 +1332,14 @@ export class VMManageService extends Service {
             if (!diskReadyResult.success) {
                 logger.error(`VM ${vmid} disk not ready: ${diskReadyResult.errorMessage}`);
                 return { success: false, errorMessage: diskReadyResult.errorMessage };
+            }
+
+            // 更新 VM 名稱 (如果提供的話)
+            if (vmName) {
+                const nameUpdateResult = await this._updateVMName(node, vmid, vmName, taskId, this.VM_UPDATE_CONFIG_STEP_INDICES.NAME);
+                if (!nameUpdateResult.success) {
+                    return { success: false, errorMessage: `VM name update failed: ${nameUpdateResult.errorMessage}` };
+                }
             }
 
             // 配置 CPU 核心數 (如果有變化)
