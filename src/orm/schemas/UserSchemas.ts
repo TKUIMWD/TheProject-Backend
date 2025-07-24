@@ -17,7 +17,8 @@ export const UsersSchemas = new Schema<User>({
     compute_resource_plan_id :{type:String},
     used_compute_resource_id: { type: String, default: '' },
     course_ids: { type: [String], default: [] },
-    owned_vms: { type: [String], default: [] }
+    owned_vms: { type: [String], default: [] },
+    owned_templates: { type: [String], default: [] }
 });
 
 export const UsersModel = model<User>('users', UsersSchemas);

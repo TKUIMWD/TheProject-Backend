@@ -15,3 +15,8 @@ export interface VMDeletionUserValidation {
     user: User | null;
     error?: resp<any>;
 }
+
+export interface CloneTemplateResponse {
+    template_id: string;
+    task_id: string;
+}

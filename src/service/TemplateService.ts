@@ -237,10 +237,13 @@ export class TemplateService extends Service {
 
             await newTemplate.save();
 
-            // 從用戶的 owned_vms 列表中移除該 VM
+            // 從用戶的 owned_vms 列表中移除該 VM，並將新模板 ID 加入 owned_templates
             await UsersModel.updateOne(
                 { _id: user._id },
-                { $pull: { owned_vms: vm_id } }
+                { 
+                    $pull: { owned_vms: vm_id },
+                    $push: { owned_templates: newTemplate._id }
+                }
             );
 
             // 從 owned VM 資料中移除
