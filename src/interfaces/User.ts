@@ -17,6 +17,7 @@ export interface User{
     used_compute_resource_id: string,
     course_ids: Array<string>;
     owned_vms: Array<string>;
+    owned_templates: Array<string>;
 }
 
 export interface UserProfile {

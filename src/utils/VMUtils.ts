@@ -31,6 +31,7 @@ export const PVE_API_USERMODE_TOKEN = process.env.PVE_API_USERMODE_TOKEN;
  * - forceCleanupVMDisks: 強制清理VM磁碟
  * - waitForVMDiskReady: 等待VM磁碟準備就緒
  * - deleteVMWithDiskCleanup: 刪除VM並清理磁碟
+ * - deleteTemplate: 刪除模板
  * - regenerateCloudInit: 重新生成Cloud-Init
  * - startVM: 啟動VM
  * - shutdownVM: 正常關機VM
@@ -896,6 +897,154 @@ export class VMUtils {
         } catch (error) {
             logger.error(`Error getting resource usage for VM ${vmid}:`, error);
             return { success: false, errorMessage: error instanceof Error ? error.message : "Unknown error getting resource usage" };
+        }
+    }
+
+    /**
+     * 更新 VM 名稱
+     */
+    static async updateVMName(node: string, vmid: string, vmName: string): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
+        try {
+            logger.info(`Updating VM ${vmid} name to: ${vmName}`);
+            
+            const nameUpdateResp: PVEResp = await callWithUnauthorized('PUT', pve_api.nodes_qemu_config(node, vmid), {
+                name: vmName
+            }, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+                }
+            });
+
+            // 名稱更新通常是立即執行，不返回 UPID
+            if (nameUpdateResp && nameUpdateResp.data === null) {
+                logger.info(`Successfully updated VM ${vmid} name to: ${vmName}`);
+                return { success: true };
+            }
+
+            // 如果返回 UPID（字符串），則返回任務 ID
+            if (nameUpdateResp && nameUpdateResp.data && typeof nameUpdateResp.data === 'string') {
+                logger.info(`VM ${vmid} name update initiated with UPID: ${nameUpdateResp.data}`);
+                return { success: true, upid: nameUpdateResp.data };
+            }
+
+            return { success: false, errorMessage: "Failed to update VM name - no response data" };
+        } catch (error) {
+            logger.error(`Error updating VM ${vmid} name:`, error);
+            return { success: false, errorMessage: error instanceof Error ? error.message : "Unknown error updating VM name" };
+        }
+    }
+
+    /**
+     * 將 VM 轉換為模板
+     */
+    static async convertVMToTemplate(node: string, vmid: string, templateName?: string): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
+        try {
+            logger.info(`Converting VM ${vmid} to template on node ${node}${templateName ? ` with name: ${templateName}` : ''}`);
+            
+            // 先更新 VM 名稱（如果提供的話）
+            if (templateName) {
+                const nameUpdateResult = await this.updateVMName(node, vmid, templateName);
+                if (!nameUpdateResult.success) {
+                    logger.error(`Failed to update VM name before template conversion: ${nameUpdateResult.errorMessage}`);
+                    return { success: false, errorMessage: `Failed to update VM name: ${nameUpdateResult.errorMessage}` };
+                }
+                
+                // 如果名稱更新有 UPID，等待完成
+                if (nameUpdateResult.upid) {
+                    const waitResult = await this.waitForTaskCompletion(node, nameUpdateResult.upid, 'VM name update');
+                    if (!waitResult.success) {
+                        return { success: false, errorMessage: `VM name update failed: ${waitResult.errorMessage}` };
+                    }
+                }
+            }
+            
+            // 將 VM 轉換為模板
+            const convertResp: PVEResp = await callWithUnauthorized('POST', pve_api.nodes_qemu_template(node, vmid), undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                }
+            });
+
+            // 模板轉換通常是立即執行，不返回 UPID
+            if (convertResp && convertResp.data === null) {
+                logger.info(`Successfully converted VM ${vmid} to template`);
+                return { success: true };
+            }
+
+            // 如果返回 UPID（字符串），則返回任務 ID
+            if (convertResp && convertResp.data && typeof convertResp.data === 'string') {
+                logger.info(`VM ${vmid} template conversion initiated with UPID: ${convertResp.data}`);
+                return { success: true, upid: convertResp.data };
+            }
+
+            return { success: false, errorMessage: "Failed to convert VM to template - no response data" };
+        } catch (error) {
+            logger.error(`Error converting VM ${vmid} to template:`, error);
+            return { success: false, errorMessage: error instanceof Error ? error.message : "Unknown error converting VM to template" };
+        }
+    }
+
+    /**
+     * 刪除模板
+     */
+    static async deleteTemplate(pve_node: string, pve_vmid: string): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
+        try {
+            console.log(`[VMUtils.deleteTemplate] Attempting to delete template from PVE: node=${pve_node}, vmid=${pve_vmid}`);
+            console.log(`[VMUtils.deleteTemplate] Target URL: ${pve_api.nodes_qemu_vm(pve_node, pve_vmid)}`);
+
+            // 按照 PVE API 標準，直接使用 DELETE 方法，不需要 body 參數
+            const deleteResp: PVEResp = await callWithUnauthorized(
+                'DELETE', 
+                pve_api.nodes_qemu_vm(pve_node, pve_vmid), 
+                undefined, // DELETE 請求不需要 body
+                {
+                    headers: {
+                        'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+                    }
+                }
+            );
+            
+            console.log(`[VMUtils.deleteTemplate] Delete response type:`, typeof deleteResp);
+            console.log(`[VMUtils.deleteTemplate] Delete result:`, JSON.stringify(deleteResp, null, 2));
+            
+            // 檢查響應
+            if (typeof deleteResp === 'string') {
+                console.log(`[VMUtils.deleteTemplate] Received string response: "${deleteResp}"`);
+                // 如果響應是錯誤信息字符串
+                if (deleteResp.includes('Unexpected content') || deleteResp.includes('error')) {
+                    return { 
+                        success: false, 
+                        errorMessage: `PVE API error: ${deleteResp}` 
+                    };
+                }
+                // 否則可能是成功但沒有 UPID
+                return { success: true };
+            }
+            
+            // 檢查是否有任務 ID 需要等待
+            if (deleteResp && deleteResp.data && typeof deleteResp.data === 'string') {
+                const taskId = deleteResp.data;
+                console.log(`[VMUtils.deleteTemplate] Template deletion initiated with UPID: ${taskId}`);
+                return { success: true, upid: taskId };
+            } else {
+                console.log(`[VMUtils.deleteTemplate] Template deletion completed immediately (no UPID)`);
+                return { success: true };
+            }
+
+        } catch (error) {
+            console.error(`[VMUtils.deleteTemplate] Error deleting template from PVE:`, error);
+            
+            // 檢查是否是因為模板不存在而失敗 (404 錯誤)
+            if (error instanceof Error && error.message.includes('404')) {
+                console.log(`[VMUtils.deleteTemplate] Template ${pve_vmid} not found in PVE`);
+                return { success: true }; // 模板不存在視為成功刪除
+            }
+            
+            return { 
+                success: false, 
+                errorMessage: error instanceof Error ? error.message : 'Unknown error deleting template' 
+            };
         }
     }
 }
