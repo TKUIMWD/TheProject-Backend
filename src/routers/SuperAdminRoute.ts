@@ -12,10 +12,25 @@ export class SuperAdminRoute extends Route {
     }
 
     protected setRoutes(): void {
+
+        /**
+         * @method PUT
+         * @path /api/v1/superadmin/changeUserRole
+         * @description Changes a specified user's role.
+         * @body { userId: string, newRole: 'user' | 'admin' }
+         */
+        
         this.router.put(`${this.url}changeUserRole`, (req, res) => {
             this.Controller.changeUserRole(req, res);
         });
 
+        /**
+         * @method PUT
+         * @path /api/v1/superadmin/assignCRPToUser
+         * @description Assigns a Compute Resource Plan to a specified user.
+         * @body { userId: string, CRPId: string }
+         */
+        
         this.router.put(`${this.url}assignCRPToUser`, (req, res) => {
             this.Controller.assignCRPToUser(req, res);
         });

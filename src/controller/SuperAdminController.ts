@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import { Controller } from "../abstract/Controller";
 import { SuperAdminService } from "../service/SuperAdminService";
 
-export class SuperAdminController extends Controller{
+export class SuperAdminController extends Controller {
     protected service: SuperAdminService;
 
     constructor() {

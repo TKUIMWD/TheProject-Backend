@@ -8,18 +8,24 @@ import { ComputeResourcePlan } from '../interfaces/ComputeResourcePlan';
 import { User } from '../interfaces/User';
 
 
+/**
+ * Service for SuperAdmins to manage Compute Resource Plans (CRPs).
+ */
+
+
 export class SuperAdminCRPService extends Service {
 
     /**
-     * 
-     * 
-     * 
+     * Creates a new Compute Resource Plan.
+     * Requires SuperAdmin role.
+     * @param request - The Express request object, containing plan data in the body.
+     * @returns A response object containing the newly created plan.
      */
 
     public async createCRP(request: Request): Promise<resp<ComputeResourcePlan | undefined>> {
 
         try {
-            // 驗證
+
             const { user, error } = await validateTokenAndGetUser<User>(request);
             if (error) {
                 return createResponse(401, "Unauthorized: Invalid token");
@@ -33,7 +39,7 @@ export class SuperAdminCRPService extends Service {
                 return createResponse(400, "Bad Request: Missing required field 'name'")
             }
 
-            // 檢查名稱是否已存在
+
             const existingPlan = await ComputeResourcePlanModel.findOne({ name: planData.name });
             if (existingPlan) {
                 return createResponse(409, `Conflict: CRP with name "${planData.name}" already exists`);
@@ -52,15 +58,16 @@ export class SuperAdminCRPService extends Service {
 
 
     /**
-    * 
-    * 
-    * 
-    **/
+     * Updates an existing Compute Resource Plan.
+     * Requires SuperAdmin role.
+     * @param request - The Express request object, containing crpId in params and update data in the body.
+     * @returns A response object containing the updated plan.
+     */
 
     public async updateCRP(request: Request): Promise<resp<ComputeResourcePlan | undefined>> {
 
         try {
-            // 驗證
+
             const { user, error } = await validateTokenAndGetUser<User>(request);
             if (error) {
                 return createResponse(401, "Unauthorized: Invalid token");
@@ -88,16 +95,17 @@ export class SuperAdminCRPService extends Service {
     }
 
     /**
-    * 
-    * 
-    * 
-    **/
+     * Deletes a Compute Resource Plan.
+     * Requires SuperAdmin role.
+     * @param request - The Express request object, containing crpId in params.
+     * @returns A response object indicating the result of the operation.
+     */
 
     public async deleteCRP(request: Request): Promise<resp<undefined>> {
 
         try {
 
-            // 驗證
+
             const { user, error } = await validateTokenAndGetUser<User>(request);
             if (error) {
                 return createResponse(401, "Unauthorized: Invalid token");
@@ -124,14 +132,15 @@ export class SuperAdminCRPService extends Service {
     }
 
     /**
-    * 
-    * 
-    * 
-    **/
+     * Retrieves a list of all Compute Resource Plans.
+     * Requires Admin or SuperAdmin role.
+     * @param request - The Express request object.
+     * @returns A response object containing an array of all CRPs.
+     */
 
     public async getAllCRPs(request: Request): Promise<resp<ComputeResourcePlan[] | undefined>> {
         try {
-            // 驗證
+
             const { user, error } = await validateTokenAndGetUser<User>(request);
             if (error) {
                 return createResponse(401, "Unauthorized: Invalid token");

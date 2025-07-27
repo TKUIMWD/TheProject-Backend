@@ -5,7 +5,7 @@ import { SuperAdminCRPService } from "../service/SuperAdminCRPService";
 
 
 export class SuperAdminCRPController extends Controller {
-    
+
     protected service: SuperAdminCRPService;
 
     constructor() {
