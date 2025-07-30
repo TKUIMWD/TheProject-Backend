@@ -1,6 +1,6 @@
 import { Service } from "../abstract/Service";
 import { CoursePageDTO } from "../interfaces/Course/CoursePageDTO";
-import { validateTokenAndGetUser } from "../utils/auth";
+import { getTokenRole, validateTokenAndGetAdminUser, validateTokenAndGetUser } from "../utils/auth";
 import { resp, createResponse } from "../utils/resp";
 import { Request } from "express";
 import { logger } from "../middlewares/log";
@@ -11,6 +11,8 @@ import { UsersModel } from "../orm/schemas/UserSchemas";
 import { ChapterModel } from "../orm/schemas/ChapterSchemas";
 import { Course } from "../interfaces/Course/Course";
 import { ClassModel } from "../orm/schemas/ClassSchemas";
+import { get } from "jquery";
+import Roles from "../enum/role";
 
 export class CourseService extends Service {
     /**
@@ -56,13 +58,13 @@ export class CourseService extends Service {
             if (!authResult.success) {
                 return authResult.errorResp;
             }
-            
+
             const { course } = authResult;
             const submitter = await UsersModel.findById(course.submitter_user_id).lean();
             if (!submitter) {
                 return createResponse(404, "Submitter not found");
             }
-            
+
             const courseData: CoursePageDTO = {
                 course_name: course.course_name,
                 course_subtitle: course.course_subtitle,
@@ -130,6 +132,164 @@ export class CourseService extends Service {
 
         } catch (err) {
             logger.error("Error in getCourseMenu:", err);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    /**
+     * @description Add a new course.
+     * @param Request Express request object.
+     * @returns A promise resolving to the created course or an error response.
+     */
+    public async AddCourse(Request: Request): Promise<resp<String | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetAdminUser<String>(Request)
+            if (error) {
+                return error;
+            }
+
+            const { course_name, course_subtitle, course_description, duration_in_minutes, difficulty } = Request.body;
+            const requiredFields = {
+                course_name,
+                course_subtitle,
+                course_description,
+                duration_in_minutes,
+                difficulty
+            };
+
+            const missingFields = Object.entries(requiredFields)
+                .filter(([_, value]) => value === undefined)
+                .map(([key]) => key);
+
+            if (missingFields.length > 0) {
+                return createResponse(400, `Missing required fields: ${missingFields.join(', ')}`);
+            }
+
+            if (user.error) {
+                return user.error;
+            }
+
+            const newCourse: Course = ({
+                course_name,
+                course_subtitle,
+                course_description,
+                duration_in_minutes,
+                difficulty,
+                reviews: [],
+                rating: 0,
+                class_ids: [],
+                update_date: new Date(),
+                submitter_user_id: user._id,
+                status: "編輯中", // 初始狀態為編輯中
+            });
+
+            const savedCourse = await new CourseModel(newCourse).save();
+            // Add the course ID to user's course_ids array
+            try {
+                user.course_ids.push(String(savedCourse._id));
+                const updateResult = await UsersModel.findByIdAndUpdate(
+                    user._id,
+                    { course_ids: user.course_ids }
+                );
+
+                if (!updateResult) {
+                    logger.error(`Failed to update user ${user._id} with new course ID`);
+                    // rolling back course creation
+                    await CourseModel.findByIdAndDelete(savedCourse._id);
+                    return createResponse(500, "Failed to associate course with user");
+                }
+            } catch (updateErr) {
+                logger.error(`Error updating user with course: ${updateErr}`);
+                // Roll back course creation
+                await CourseModel.findByIdAndDelete(savedCourse._id);
+                return createResponse(500, "Failed to update user with new course");
+            }
+
+            if (!savedCourse) {
+                return createResponse(500, "Failed to create course");
+            }
+            logger.info(`Course created successfully: ${savedCourse._id}`);
+            return createResponse(200, "Course created successfully", String(savedCourse._id));
+        } catch (err) {
+            logger.error("Error in AddCourse:", err);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    public async UpdateCourseById(Request: Request): Promise<resp<String | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetAdminUser<String>(Request);
+            if (error) {
+                return error;
+            }
+
+            const { courseId } = Request.params;
+            if (!courseId || !mongoose.Types.ObjectId.isValid(courseId)) {
+                return createResponse(400, "Invalid course_id format");
+            }
+
+            const requestBody = Request.body;
+            const allowedUpdates = ["course_name", "course_subtitle", "course_description", "duration_in_minutes", "difficulty"];
+            const sanitizedUpdates: { [key: string]: any } = {};
+            Object.keys(requestBody).forEach(key => {
+                if (allowedUpdates.includes(key)) {
+                    sanitizedUpdates[key] = requestBody[key];
+                }
+            });
+
+            if (Object.keys(sanitizedUpdates).length === 0) {
+                return createResponse(400, "No valid fields to update");
+            }
+
+            sanitizedUpdates.update_date = new Date();
+
+            const updatedCourse = await CourseModel.findByIdAndUpdate(
+                courseId,
+                { $set: sanitizedUpdates },
+                { new: true }
+            );
+
+            if (!updatedCourse) {
+                return createResponse(404, "Course not found");
+            }
+
+            logger.info(`Course updated successfully: ${courseId}`);
+            return createResponse(200, "Course updated successfully", String(updatedCourse._id));
+
+        }
+        catch (err) {
+            logger.error("Error in UpdateCourseById:", err);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    // todo delete class, chapter
+    public async DeleteCourseById(Request: Request): Promise<resp<String | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetAdminUser<String>(Request)
+            if (error) {
+                return error;
+            }
+
+            const { courseId } = Request.params;
+            if (!courseId || !mongoose.Types.ObjectId.isValid(courseId)) {
+                return createResponse(400, "Invalid course_id format");
+            }
+
+            const deletedCourse = await CourseModel.findByIdAndDelete(courseId);
+            if (!deletedCourse) {
+                return createResponse(404, "Course not found");
+            }
+
+            // Remove the course ID from user's course_ids array
+            user.course_ids = user.course_ids.filter((id: any) => id.toString() !== courseId);
+            await UsersModel.findByIdAndUpdate(user._id, { course_ids: user.course_ids });
+
+            logger.info(`Course deleted successfully: ${courseId}`);
+            return createResponse(200, "Course deleted successfully");
+
+        } catch (err) {
+            logger.error("Error in DeleteCourseById:", err);
             return createResponse(500, "Internal Server Error");
         }
     }

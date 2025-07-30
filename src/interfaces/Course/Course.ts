@@ -10,7 +10,8 @@ export interface Course {
     class_ids: Array<string>,
     update_date: Date,
     submitter_user_id: string,
-    update_log: Array<String>, // !temp
+    update_log?: Array<String>, // !temp
+    status: "公開" | "未公開" | "編輯中" | "審核中" | "審核未通過"
 }
 
 export interface CourseInfo {
