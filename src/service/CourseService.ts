@@ -293,4 +293,64 @@ export class CourseService extends Service {
             return createResponse(500, "Internal Server Error");
         }
     }
+
+    public async AddClassToCourse(Request: Request): Promise<resp<String | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetAdminUser<String>(Request);
+            if (error) {
+                return error;
+            }
+
+            const { courseId } = Request.params;
+            if (!courseId || !mongoose.Types.ObjectId.isValid(courseId)) {
+                return createResponse(400, "Invalid course_id format");
+            }
+
+            const course = await CourseModel.findById(courseId);
+            if (!course) {
+                return createResponse(404, "Course not found");
+            }
+
+            const { class_name, class_subtitle, class_order } = Request.body;
+            const requiredFields = { class_name, class_subtitle, class_order };
+            const missingFields = Object.entries(requiredFields)
+                .filter(([_, value]) => value === undefined)
+                .map(([key]) => key);
+            if (missingFields.length > 0) {
+                return createResponse(400, `Missing required fields: ${missingFields.join(', ')}`);
+            }
+
+            // 檢查class名稱是否已存在於同一課程中
+            const existingClass = await ClassModel.findOne({
+                course_id: courseId,
+                class_name: class_name
+            }).lean();
+            if (existingClass) {
+                return createResponse(400, "Class with this name already exists in the course");
+            }
+
+            // 確認是課程擁有者的操作
+            if (user._id.toString() !== course.submitter_user_id.toString()) {
+                return createResponse(403, "You are not authorized to add classes to this course");
+            }
+
+            const newClass = new ClassModel({
+                course_id: courseId,
+                class_name,
+                class_subtitle,
+                class_order,
+                chapter_ids: []
+            });
+            await newClass.save();
+            
+            // 更新課程的class列表
+            course.class_ids.push(newClass._id);
+            await CourseModel.findByIdAndUpdate(courseId, { class_ids: course.class_ids });
+
+            return createResponse(200, "Class added successfully");
+        } catch (err) {
+            logger.error("Error in AddClassToCourse:", err);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
 }

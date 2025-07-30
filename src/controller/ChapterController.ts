@@ -15,4 +15,9 @@ export class ChapterController extends Controller {
     const resp = await this.service.getChapterById(Request);
     Response.status(resp.code).send(resp);
   }
+
+  public async AddChapterToClass(Request: Request, Response: Response) {
+    const resp = await this.service.AddChapterToClass(Request);
+    Response.status(resp.code).send(resp);
+  }
 }

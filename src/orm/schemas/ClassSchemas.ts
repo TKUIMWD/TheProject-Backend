@@ -4,6 +4,8 @@ import { Class } from "../../interfaces/Class/Class";
 export const ClassSchemas = new Schema<Class>({
     class_order: { type: Number, required: true },
     class_name: { type: String, required: true },
+    class_subtitle: { type: String, required: true },
+    course_id: { type: String, required: true },
     chapter_ids: { type: [String], required: true }
 });
 
