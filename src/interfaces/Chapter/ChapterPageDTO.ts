@@ -7,5 +7,5 @@ export interface ChapterPageDTO {
     chapter_name: string;
     chapter_subtitle: string;
     chapter_content: string;
-    chpater_order: number;
+    chapter_order: number;
 }
