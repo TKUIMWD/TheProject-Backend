@@ -9,6 +9,9 @@ import { logger } from "../middlewares/log";
 import { ClassMap } from "../interfaces/Course/Maps";
 import { CourseModel } from "../orm/schemas/CourseSchemas";
 import { ClassModel } from "../orm/schemas/ClassSchemas";
+import { JSDOM } from 'jsdom';
+import DOMPurify from 'dompurify';
+import { sanitizeString, sanitizeArray } from "../utils/sanitize";
 
 export class ChapterService extends Service {
     /**
@@ -38,7 +41,7 @@ export class ChapterService extends Service {
             }
 
             // 使用者無權訪問包含此章節的課程
-            const parentCourse = await CourseModel.findOne({_id: chapter.course_id}).lean();
+            const parentCourse = await CourseModel.findOne({ _id: chapter.course_id }).lean();
             if (!parentCourse) {
                 return createResponse(403, "You are not authorized to view this chapter.");
             }
@@ -64,7 +67,7 @@ export class ChapterService extends Service {
         }
     }
 
-    public async AddChapterToClass(Request: Request): Promise<resp<String | undefined>> {
+    public async AddChapterToClass(Request: Request): Promise<resp<String | { chapter_id: string } | undefined>> {
         try {
             const { user, error } = await validateTokenAndGetAdminUser<String>(Request);
             if (error) {
@@ -111,6 +114,22 @@ export class ChapterService extends Service {
                 return createResponse(403, "You are not authorized to add classes to this course");
             }
 
+            // 輸入清理
+            const sanitizedChapterName = sanitizeString(chapter_name || '');
+            if (sanitizedChapterName.trim() === '') {
+                return createResponse(400, "chapter_name cannot be empty or strings containing security-sensitive characters");
+            }
+
+            const sanitizedSubtitle = sanitizeString(chapter_subtitle || '');
+            if (sanitizedSubtitle.trim() === '') {
+                return createResponse(400, "chapter_subtitle cannot be empty or strings containing security-sensitive characters");
+            }
+
+            const sanitizedContent = sanitizeString(chapter_content || '');
+            if (sanitizedContent.trim() === '') {
+                return createResponse(400, "chapter_content cannot be empty or strings containing security-sensitive characters");
+            }
+
             // 創建新的章節
             const newChapter = new ChapterModel({
                 chapter_name,
@@ -123,13 +142,13 @@ export class ChapterService extends Service {
                 saved_content: ""
             });
 
-            await newChapter.save();
+            const savedChapter = await newChapter.save();
 
             // 更新課程的章節列表
-            classData.chapter_ids.push(newChapter._id);
-            await ClassModel.findByIdAndUpdate(classId, { chapter_ids: classData.chapter_ids });
+            await ClassModel.findByIdAndUpdate(classId, { $push: { chapter_ids: savedChapter._id } });
 
-            return createResponse(200, "Chapter added successfully", String(newChapter._id));
+            logger.info(`Chapter ${newChapter._id} added to class ${classId}`);
+            return createResponse(200, "Chapter added successfully", {chapter_id: String(newChapter._id)});
         } catch (error) {
             logger.error("Error in AddChapterToClass:", error);
             return createResponse(500, "Internal Server Error");

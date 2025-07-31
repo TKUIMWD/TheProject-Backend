@@ -13,6 +13,9 @@ import { Course } from "../interfaces/Course/Course";
 import { ClassModel } from "../orm/schemas/ClassSchemas";
 import { get } from "jquery";
 import Roles from "../enum/role";
+import { JSDOM } from 'jsdom';
+import DOMPurify from 'dompurify';
+import { sanitizeString, sanitizeArray } from "../utils/sanitize";
 
 export class CourseService extends Service {
     /**
@@ -141,7 +144,7 @@ export class CourseService extends Service {
      * @param Request Express request object.
      * @returns A promise resolving to the created course or an error response.
      */
-    public async AddCourse(Request: Request): Promise<resp<String | undefined>> {
+    public async AddCourse(Request: Request): Promise<resp<String | { course_id: String } | undefined>> {
         try {
             const { user, error } = await validateTokenAndGetAdminUser<String>(Request)
             if (error) {
@@ -168,11 +171,32 @@ export class CourseService extends Service {
             if (user.error) {
                 return user.error;
             }
+            // input sanitization
+            const sanitizedCourseName = sanitizeString(course_name);
+            if (sanitizedCourseName.trim() === '') {
+                return createResponse(400, "course_name cannot be empty or strings containing security-sensitive characters");
+            }
+            const sanitizedCourseSubtitle = sanitizeString(course_subtitle || '');
+            if (sanitizedCourseSubtitle.trim() === '') {
+                return createResponse(400, "course_subtitle cannot be empty or strings containing security-sensitive characters");
+            }
+            const sanitizedCourseDescription = sanitizeString(course_description || '');
+            if (sanitizedCourseDescription.trim() === '') {
+                return createResponse(400, "course_description cannot be empty or strings containing security-sensitive characters");
+            }
+
+            if (duration_in_minutes <= 0 || typeof duration_in_minutes !== "number") {
+                return createResponse(400, "duration_in_minutes must be a non-negative number");
+            }
+
+            if (difficulty !== "Easy" && difficulty !== "Medium" && difficulty !== "Hard") {
+                return createResponse(400, "difficulty must be one of 'Easy', 'Medium', or 'Hard'");
+            }
 
             const newCourse: Course = ({
-                course_name,
-                course_subtitle,
-                course_description,
+                course_name: sanitizedCourseName,
+                course_subtitle: sanitizedCourseSubtitle,
+                course_description: sanitizedCourseDescription,
                 duration_in_minutes,
                 difficulty,
                 reviews: [],
@@ -209,14 +233,14 @@ export class CourseService extends Service {
                 return createResponse(500, "Failed to create course");
             }
             logger.info(`Course created successfully: ${savedCourse._id}`);
-            return createResponse(200, "Course created successfully", String(savedCourse._id));
+            return createResponse(200, "Course created successfully", {course_id: String(savedCourse._id)});
         } catch (err) {
             logger.error("Error in AddCourse:", err);
             return createResponse(500, "Internal Server Error");
         }
     }
 
-    public async UpdateCourseById(Request: Request): Promise<resp<String | undefined>> {
+    public async UpdateCourseById(Request: Request): Promise<resp<String | { course_id: string } | undefined>> {
         try {
             const { user, error } = await validateTokenAndGetAdminUser<String>(Request);
             if (error) {
@@ -228,34 +252,70 @@ export class CourseService extends Service {
                 return createResponse(400, "Invalid course_id format");
             }
 
-            const requestBody = Request.body;
-            const allowedUpdates = ["course_name", "course_subtitle", "course_description", "duration_in_minutes", "difficulty"];
-            const sanitizedUpdates: { [key: string]: any } = {};
-            Object.keys(requestBody).forEach(key => {
-                if (allowedUpdates.includes(key)) {
-                    sanitizedUpdates[key] = requestBody[key];
-                }
-            });
-
-            if (Object.keys(sanitizedUpdates).length === 0) {
-                return createResponse(400, "No valid fields to update");
+            // 檢查是不是課程擁有者的操作
+            const course = await CourseModel.findById(courseId);
+            if (!course) {
+                return createResponse(404, "Course not found");
             }
 
-            sanitizedUpdates.update_date = new Date();
+            if (course.submitter_user_id !== user._id.toString()) {
+                return createResponse(403, "You are not authorized to update this course");
+            }
 
+            // 輸入檢查
+            const requestBody = Request.body;
+            const updates: { [key: string]: any } = {};
+
+            if (requestBody.course_name !== undefined) {
+                const sanitized = sanitizeString(requestBody.course_name);
+                if (sanitized.trim() === '') return createResponse(400, "Course name cannot be empty or strings containing security-sensitive characters");
+                updates.course_name = sanitized;
+            }
+            if (requestBody.course_subtitle !== undefined) {
+                const sanitizedSubtitle = sanitizeString(requestBody.course_subtitle);
+                if (sanitizedSubtitle.trim() === '') return createResponse(400, "course_subtitle cannot be empty or strings containing security-sensitive characters");
+                updates.course_subtitle = sanitizeString(requestBody.course_subtitle);
+            }
+            if (requestBody.course_description !== undefined) {
+                const sanitizedDescription = sanitizeString(requestBody.course_description);
+                if (sanitizedDescription.trim() === '') return createResponse(400, "course_description cannot be empty or strings containing security-sensitive characters");
+                updates.course_description = sanitizeString(requestBody.course_description);
+            }
+            if (requestBody.duration_in_minutes !== undefined) {
+                if (typeof requestBody.duration_in_minutes !== 'number' || requestBody.duration_in_minutes <= 0) {
+                    return createResponse(400, "duration_in_minutes must be a positive number.");
+                }
+                updates.duration_in_minutes = requestBody.duration_in_minutes;
+            }
+            if (requestBody.difficulty !== undefined) {
+                const validDifficulties = ["Easy", "Medium", "Hard"];
+                if (!validDifficulties.includes(requestBody.difficulty)) {
+                    return createResponse(400, "difficulty must be one of 'Easy', 'Medium', or 'Hard'.");
+                }
+                updates.difficulty = requestBody.difficulty;
+            }
+
+            if (Object.keys(updates).length === 0) {
+                return createResponse(400, "No valid fields provided for update.");
+            }
+
+            updates.update_date = new Date();
+            updates.status = "編輯中";
+
+            // 更新課程
             const updatedCourse = await CourseModel.findByIdAndUpdate(
                 courseId,
-                { $set: sanitizedUpdates },
+                { $set: updates },
                 { new: true }
             );
 
             if (!updatedCourse) {
-                return createResponse(404, "Course not found");
+                // 可能發生在檢查和更新之間的極短時間內課程被刪除
+                return createResponse(404, "Course not found during update operation.");
             }
 
             logger.info(`Course updated successfully: ${courseId}`);
-            return createResponse(200, "Course updated successfully", String(updatedCourse._id));
-
+            return createResponse(200, "Course updated successfully", { course_id: String(course._id) });
         }
         catch (err) {
             logger.error("Error in UpdateCourseById:", err);
@@ -294,7 +354,7 @@ export class CourseService extends Service {
         }
     }
 
-    public async AddClassToCourse(Request: Request): Promise<resp<String | undefined>> {
+    public async AddClassToCourse(Request: Request): Promise<resp<String | { class_id: string } | undefined>> {
         try {
             const { user, error } = await validateTokenAndGetAdminUser<String>(Request);
             if (error) {
@@ -334,6 +394,20 @@ export class CourseService extends Service {
                 return createResponse(403, "You are not authorized to add classes to this course");
             }
 
+            if (typeof class_order !== "number" || class_order < 0) {
+                return createResponse(400, "class_order must be a non-negative number");
+            }
+
+            const sanitizedClassName = sanitizeString(class_name);
+            if (sanitizedClassName.trim() === '') {
+                return createResponse(400, "class_name cannot be empty or strings containing security-sensitive characters");
+            }
+
+            const sanitizedSubtitle = sanitizeString(class_subtitle);
+            if (sanitizedSubtitle.trim() === '') {
+                return createResponse(400, "class_subtitle cannot be empty or strings containing security-sensitive characters");
+            }
+
             const newClass = new ClassModel({
                 course_id: courseId,
                 class_name,
@@ -341,13 +415,13 @@ export class CourseService extends Service {
                 class_order,
                 chapter_ids: []
             });
-            await newClass.save();
-            
+            const savedClass = await newClass.save();
+
             // 更新課程的class列表
-            course.class_ids.push(newClass._id);
+            course.class_ids.push(savedClass._id);
             await CourseModel.findByIdAndUpdate(courseId, { class_ids: course.class_ids });
 
-            return createResponse(200, "Class added successfully");
+            return createResponse(200, "Class added successfully", { class_id: String(savedClass._id) });
         } catch (err) {
             logger.error("Error in AddClassToCourse:", err);
             return createResponse(500, "Internal Server Error");

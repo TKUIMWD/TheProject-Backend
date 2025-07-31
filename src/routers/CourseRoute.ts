@@ -26,7 +26,7 @@ export class CourseRoute extends Route{
             this.Controller.AddCourse(req, res)
         });
 
-        this.router.put(`${this.url}/update/:courseId`, (req, res) => {
+        this.router.patch(`${this.url}/update/:courseId`, (req, res) => {
             this.Controller.UpdateCourseById(req, res)
         });
 
