@@ -14,7 +14,7 @@ import { ClassModel } from "../orm/schemas/ClassSchemas";
 import { get } from "jquery";
 import Roles from "../enum/role";
 import { JSDOM } from 'jsdom';
-import DOMPurify from 'dompurify';
+import DOMPurify, { sanitize } from 'dompurify';
 import { sanitizeString, sanitizeArray } from "../utils/sanitize";
 
 export class CourseService extends Service {
@@ -233,7 +233,7 @@ export class CourseService extends Service {
                 return createResponse(500, "Failed to create course");
             }
             logger.info(`Course created successfully: ${savedCourse._id}`);
-            return createResponse(200, "Course created successfully", {course_id: String(savedCourse._id)});
+            return createResponse(200, "Course created successfully", { course_id: String(savedCourse._id) });
         } catch (err) {
             logger.error("Error in AddCourse:", err);
             return createResponse(500, "Internal Server Error");
@@ -274,12 +274,12 @@ export class CourseService extends Service {
             if (requestBody.course_subtitle !== undefined) {
                 const sanitizedSubtitle = sanitizeString(requestBody.course_subtitle);
                 if (sanitizedSubtitle.trim() === '') return createResponse(400, "course_subtitle cannot be empty or strings containing security-sensitive characters");
-                updates.course_subtitle = sanitizeString(requestBody.course_subtitle);
+                updates.course_subtitle = sanitizedSubtitle;
             }
             if (requestBody.course_description !== undefined) {
                 const sanitizedDescription = sanitizeString(requestBody.course_description);
                 if (sanitizedDescription.trim() === '') return createResponse(400, "course_description cannot be empty or strings containing security-sensitive characters");
-                updates.course_description = sanitizeString(requestBody.course_description);
+                updates.course_description = sanitizedDescription;
             }
             if (requestBody.duration_in_minutes !== undefined) {
                 if (typeof requestBody.duration_in_minutes !== 'number' || requestBody.duration_in_minutes <= 0) {
@@ -410,16 +410,16 @@ export class CourseService extends Service {
 
             const newClass = new ClassModel({
                 course_id: courseId,
-                class_name,
-                class_subtitle,
+                class_name: sanitizedClassName,
+                class_subtitle: sanitizedSubtitle,
                 class_order,
                 chapter_ids: []
             });
             const savedClass = await newClass.save();
 
-            // 更新課程的class列表
-            course.class_ids.push(savedClass._id);
-            await CourseModel.findByIdAndUpdate(courseId, { class_ids: course.class_ids });
+            await CourseModel.findByIdAndUpdate(courseId, {
+                $push: { class_ids: savedClass._id }
+            });
 
             return createResponse(200, "Class added successfully", { class_id: String(savedClass._id) });
         } catch (err) {

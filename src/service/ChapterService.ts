@@ -84,24 +84,17 @@ export class ChapterService extends Service {
                 return createResponse(404, "Class not found");
             }
 
-            const { chapter_name, chapter_subtitle, chapter_content, chapter_order } = Request.body;
-            const requiredFields = ["chapter_name", "chapter_subtitle", "chapter_content", "chapter_order"];
-            const missingFields = requiredFields.filter(field => !Request.body[field]);
-            if (missingFields.length > 0) {
-                return createResponse(400, `Missing required fields: ${missingFields.join(", ")}`);
+            const requestBody = Request.body;
+            const requiredFieldKeys = ["chapter_name", "chapter_subtitle", "chapter_content", "chapter_order"];
+            const missingKeys = requiredFieldKeys.filter(field => requestBody[field] === undefined);
+
+            if (missingKeys.length > 0) {
+                return createResponse(400, `Missing required key(s) in request body: ${missingKeys.join(", ")}`);
             }
 
+            const { chapter_name, chapter_subtitle, chapter_content, chapter_order } = Request.body;
             if (typeof chapter_order !== "number" || chapter_order < 0) {
                 return createResponse(400, "chapter_order must be a non-negative number");
-            }
-
-            // 檢查章節名稱是否已存在於同一課程中
-            const existingChapter = await ChapterModel.findOne({
-                class_id: classId,
-                chapter_name: chapter_name
-            }).lean();
-            if (existingChapter) {
-                return createResponse(400, "Chapter with this name already exists in the class");
             }
 
             // 確認是課程擁有者的操作
@@ -130,15 +123,24 @@ export class ChapterService extends Service {
                 return createResponse(400, "chapter_content cannot be empty or strings containing security-sensitive characters");
             }
 
+             // 檢查章節名稱是否已存在於同一課程中
+            const existingChapter = await ChapterModel.findOne({
+                class_id: classId,
+                chapter_name: sanitizedChapterName
+            }).lean();
+            if (existingChapter) {
+                return createResponse(400, "Chapter with this name already exists in the class");
+            }
+
             // 創建新的章節
             const newChapter = new ChapterModel({
-                chapter_name,
-                chapter_subtitle,
+                chapter_name: sanitizedChapterName,
+                chapter_subtitle: sanitizedSubtitle,
                 chapter_order,
                 class_id: classId,
                 course_id: classData.course_id,
                 has_approved_content: "",
-                waiting_for_approve_content: chapter_content,
+                waiting_for_approve_content: sanitizedContent,
                 saved_content: ""
             });
 
