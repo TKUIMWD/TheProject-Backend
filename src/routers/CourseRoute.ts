@@ -33,10 +33,6 @@ export class CourseRoute extends Route{
         this.router.delete(`${this.url}/delete/:courseId`, (req, res) => {
             this.Controller.DeleteCourseById(req, res)
         });
-
-        this.router.post(`${this.url}/addClassToCourse/:courseId`, (req, res) => {
-            this.Controller.AddClassToCourse(req, res)
-        });
     }
 
 }

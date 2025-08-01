@@ -12,6 +12,7 @@ import { ClassModel } from "../orm/schemas/ClassSchemas";
 import { JSDOM } from 'jsdom';
 import DOMPurify from 'dompurify';
 import { sanitizeString, sanitizeArray } from "../utils/sanitize";
+import { create } from "domain";
 
 export class ChapterService extends Service {
     /**
@@ -46,6 +47,10 @@ export class ChapterService extends Service {
                 return createResponse(403, "You are not authorized to view this chapter.");
             }
 
+            if (user._id.toString() !== parentCourse.submitter_user_id.toString()) {
+                return createResponse(403, "You are not authorized to view this chapter.");
+            }
+
             const chapterData: ChapterPageDTO = {
                 course_id: parentCourse._id,
                 course_name: parentCourse.course_name,
@@ -63,6 +68,135 @@ export class ChapterService extends Service {
         } catch (err) {
             logger.error("Error in getChapterById:", err);
             console.error("Error in getChapterById:", err);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    /**
+     * @description Deletes a chapter by its ID and handles all related data consistency.
+     * @param Request Express request object containing the chapterId.
+     * @returns A promise resolving to a success or error response.
+     */
+    public async DeleteChapterById(Request: Request): Promise<resp<string | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetAdminUser<string>(Request);
+            if (error) {
+                return error;
+            }
+
+            const { chapterId } = Request.params;
+            if (!chapterId || !mongoose.Types.ObjectId.isValid(chapterId)) {
+                return createResponse(400, "Invalid chapter_id format");
+            }
+
+            const chapterToDelete = await ChapterModel.findById(chapterId);
+            if (!chapterToDelete) {
+                return createResponse(404, "Chapter not found");
+            }
+
+            // Verify ownership: Ensure the user is the owner of the course this chapter belongs to.
+            const course = await CourseModel.findById(chapterToDelete.course_id);
+            if (!course || user._id.toString() !== course.submitter_user_id.toString()) {
+                return createResponse(403, "You are not authorized to delete this chapter");
+            }
+
+            // Atomically remove the chapter's ID from its parent Class's chapter_ids array.
+            await ClassModel.findByIdAndUpdate(chapterToDelete.class_id, {
+                $pull: { chapter_ids: chapterId }
+            });
+
+            // Delete the chapter document itself.
+            await ChapterModel.findByIdAndDelete(chapterId);
+
+            logger.info(`Chapter ${chapterId} deleted successfully by user ${user._id}`);
+            return createResponse(200, "Chapter deleted successfully");
+
+        } catch (err) {
+            logger.error("Error in DeleteChapterById:", err);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    /**
+     * @description Updates a chapter's information by its ID.
+     * @param Request Express request object containing the chapterId and update data.
+     * @returns A promise resolving to a success or error response.
+     */
+    public async UpdateChapterById(Request: Request): Promise<resp<string | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetAdminUser<string>(Request);
+            if (error) {
+                return error;
+            }
+
+            const { chapterId } = Request.params;
+            if (!chapterId || !mongoose.Types.ObjectId.isValid(chapterId)) {
+                return createResponse(400, "Invalid chapter_id format");
+            }
+
+            const chapterToUpdate = await ChapterModel.findById(chapterId);
+            if (!chapterToUpdate) {
+                return createResponse(404, "Chapter not found");
+            }
+
+            // Verify ownership.
+            const course = await CourseModel.findById(chapterToUpdate.course_id);
+            if (!course || user._id.toString() !== course.submitter_user_id.toString()) {
+                return createResponse(403, "You are not authorized to update this chapter");
+            }
+
+            // Build the update object based on the fields provided in the request body (PATCH logic).
+            const requestBody = Request.body;
+            const updateData: { [key: string]: any } = {};
+
+            // Handle chapter_name update
+            if (requestBody.chapter_name !== undefined) {
+                const sanitizedName = sanitizeString(requestBody.chapter_name);
+                if (sanitizedName.trim() === '') {
+                    return createResponse(400, "Chapter name cannot be empty.");
+                }
+                // If name is changed, check for uniqueness within the same class.
+                if (sanitizedName !== chapterToUpdate.chapter_name) {
+                    const existingChapter = await ChapterModel.findOne({
+                        class_id: chapterToUpdate.class_id,
+                        chapter_name: sanitizedName,
+                        _id: { $ne: chapterId } // Exclude the current chapter from the check.
+                    }).lean();
+                    if (existingChapter) {
+                        return createResponse(409, "A chapter with this name already exists in this class.");
+                    }
+                }
+                updateData.chapter_name = sanitizedName;
+            }
+
+            if (requestBody.chapter_subtitle !== undefined) {
+                updateData.chapter_subtitle = sanitizeString(requestBody.chapter_subtitle);
+            }
+
+            if (requestBody.chapter_content !== undefined) {
+                // Updated content should go into the 'waiting_for_approve_content' field.
+                updateData.waiting_for_approve_content = sanitizeString(requestBody.chapter_content);
+            }
+
+            if (requestBody.chapter_order !== undefined) {
+                if (typeof requestBody.chapter_order !== 'number' || requestBody.chapter_order < 0) {
+                    return createResponse(400, "chapter_order must be a non-negative number.");
+                }
+                updateData.chapter_order = requestBody.chapter_order;
+            }
+
+            // If no valid fields were provided for update, return an error.
+            if (Object.keys(updateData).length === 0) {
+                return createResponse(400, "No valid fields provided for update.");
+            }
+
+            await ChapterModel.findByIdAndUpdate(chapterId, { $set: updateData });
+
+            logger.info(`Chapter ${chapterId} updated successfully by user ${user._id}`);
+            return createResponse(200, "Chapter updated successfully");
+
+        } catch (err) {
+            logger.error("Error in UpdateChapterById:", err);
             return createResponse(500, "Internal Server Error");
         }
     }
@@ -123,7 +257,7 @@ export class ChapterService extends Service {
                 return createResponse(400, "chapter_content cannot be empty or strings containing security-sensitive characters");
             }
 
-             // 檢查章節名稱是否已存在於同一課程中
+            // 檢查章節名稱是否已存在於同一課程中
             const existingChapter = await ChapterModel.findOne({
                 class_id: classId,
                 chapter_name: sanitizedChapterName
@@ -150,7 +284,7 @@ export class ChapterService extends Service {
             await ClassModel.findByIdAndUpdate(classId, { $push: { chapter_ids: savedChapter._id } });
 
             logger.info(`Chapter ${newChapter._id} added to class ${classId}`);
-            return createResponse(200, "Chapter added successfully", {chapter_id: String(newChapter._id)});
+            return createResponse(200, "Chapter added successfully", { chapter_id: String(newChapter._id) });
         } catch (error) {
             logger.error("Error in AddChapterToClass:", error);
             return createResponse(500, "Internal Server Error");

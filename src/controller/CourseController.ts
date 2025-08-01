@@ -35,9 +35,4 @@ export class CourseController extends Controller {
     const resp = await this.service.DeleteCourseById(Request);
     Response.status(resp.code).send(resp);
   }
-
-  public async AddClassToCourse(Request: Request, Response: Response) {
-    const resp = await this.service.AddClassToCourse(Request);
-    Response.status(resp.code).send(resp);
-  }
 }
