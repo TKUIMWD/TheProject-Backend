@@ -20,4 +20,14 @@ export class ChapterController extends Controller {
     const resp = await this.service.AddChapterToClass(Request);
     Response.status(resp.code).send(resp);
   }
+
+  public async UpdateChapterById(Request: Request, Response: Response) {
+    const resp = await this.service.UpdateChapterById(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async DeleteChapterById(Request: Request, Response: Response) {
+    const resp = await this.service.DeleteChapterById(Request);
+    Response.status(resp.code).send(resp);
+  }
 }

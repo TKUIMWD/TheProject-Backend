@@ -15,4 +15,14 @@ export class ClassController extends Controller {
     const resp = await this.service.AddClassToCourse(Request);
     Response.status(resp.code).send(resp);
   }
+
+  public async UpdateClassById(Request: Request, Response: Response) {
+    const resp = await this.service.UpdateClassById(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async DeleteClassById(Request: Request, Response: Response) {
+    const resp = await this.service.DeleteClassById(Request);
+    Response.status(resp.code).send(resp);
+  }
 }

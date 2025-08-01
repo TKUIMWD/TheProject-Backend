@@ -20,6 +20,14 @@ export class ChapterRoute extends Route {
         this.router.post(`${this.url}/addChapterToClass/:classId`, (req, res) => {
             this.Controller.AddChapterToClass(req, res)
         });
+
+        this.router.patch(`${this.url}/update/:chapterId`, (req, res) => {
+            this.Controller.UpdateChapterById(req, res)
+        });
+
+        this.router.delete(`${this.url}/delete/:chapterId`, (req, res) => {
+            this.Controller.DeleteChapterById(req, res)
+        });
     }
 
 }

@@ -185,6 +185,18 @@ export class ChapterService extends Service {
                 updateData.chapter_order = requestBody.chapter_order;
             }
 
+            // class_order 相同
+            if (updateData.chapter_order !== undefined) {
+                const existingChapters = await ChapterModel.find({
+                    class_id: chapterToUpdate.class_id,
+                    chapter_order: updateData.chapter_order
+                }).lean();
+
+                if (existingChapters.length > 0) {
+                    return createResponse(400, "A chapter with the same order already exists in this class.");
+                }
+            }
+
             // If no valid fields were provided for update, return an error.
             if (Object.keys(updateData).length === 0) {
                 return createResponse(400, "No valid fields provided for update.");
