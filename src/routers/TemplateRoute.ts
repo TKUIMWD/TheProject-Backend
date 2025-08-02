@@ -25,6 +25,10 @@ export class TemplateRoute extends Route{
         this.router.post(`${this.url}convert`, (req, res) => {
             this.Controller.convertVMtoTemplate(req, res);
         });
+
+        this.router.post(`${this.url}submit`, (req, res) => {
+            this.Controller.submitTemplate(req, res);
+        });
     }
 
 }

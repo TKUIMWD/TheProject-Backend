@@ -1,7 +1,7 @@
 import { Service } from "../abstract/Service";
 import { resp, createResponse } from "../utils/resp";
 import { Request } from "express";
-import { validateTokenAndGetUser, validateTokenAndGetSuperAdminUser } from "../utils/auth";
+import { validateTokenAndGetUser, validateTokenAndGetSuperAdminUser, validateTokenAndGetAdminUser } from "../utils/auth";
 import { VMTemplateModel } from "../orm/schemas/VM/VMTemplateSchemas";
 import { VM_Template_Info } from "../interfaces/VM/VM_Template";
 import { UsersModel } from "../orm/schemas/UserSchemas";
@@ -253,6 +253,36 @@ export class TemplateService extends Service {
 
         } catch (error) {
             console.error("Error in convertVMtoTemplate:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    public async submitTemplate(Request: Request): Promise<resp<string | undefined>> {
+        // 提交範本的實現
+        // required admin or superadmin privileges
+        try {
+            const {user, error} = await validateTokenAndGetAdminUser<string>(Request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return error;
+            }
+            const { template_id } = Request.body;
+            if (!template_id) {
+                return createResponse(400, "Missing required field: template_id");
+            }
+            // 查找範本
+            const template = await VMTemplateModel.findById(template_id).exec();
+            if (!template) {
+                return createResponse(404, "Template not found");
+            }
+
+            /*
+            待實作
+            */
+
+            return createResponse(200, "Template submitted successfully", template._id?.toString());
+        } catch (error) {
+            console.error("Error in submitTemplate:", error);
             return createResponse(500, "Internal Server Error");
         }
     }
