@@ -16,6 +16,10 @@ export class ChapterRoute extends Route {
         this.router.get(`${this.url}/:chapterId`, (req, res) => {
             this.Controller.getChapterById(req, res)
         });
+
+        this.router.post(`${this.url}/addChapterToClass/:classId`, (req, res) => {
+            this.Controller.AddChapterToClass(req, res)
+        });
     }
 
 }
