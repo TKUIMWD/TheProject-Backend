@@ -2,7 +2,7 @@ import { Request } from "express";
 import { Service } from "../abstract/Service";
 import { logger } from "../middlewares/log";
 import { createResponse, resp } from "../utils/resp";
-import { validateTokenAndGetUser } from "../utils/auth";
+import { validateTokenAndGetSuperAdminUser } from "../utils/auth";
 import { ComputeResourcePlanModel } from '../orm/schemas/ComputeResourcePlanSchemas';
 import { ComputeResourcePlan } from '../interfaces/ComputeResourcePlan';
 import { User } from '../interfaces/User';
@@ -23,15 +23,11 @@ export class SuperAdminCRPService extends Service {
      */
 
     public async createCRP(request: Request): Promise<resp<ComputeResourcePlan | undefined>> {
-
         try {
-
-            const { user, error } = await validateTokenAndGetUser<User>(request);
+            const { user, error } = await validateTokenAndGetSuperAdminUser<User>(request);
             if (error) {
-                return createResponse(401, "Unauthorized: Invalid token");
-            }
-            if (user.role !== 'superadmin') {
-                return createResponse(403, "Forbidden: requires superadmin role");
+                console.error("Error validating token:", error);
+                return createResponse(error.code, error.message);
             }
 
             const planData: ComputeResourcePlan = request.body;
@@ -65,15 +61,11 @@ export class SuperAdminCRPService extends Service {
      */
 
     public async updateCRP(request: Request): Promise<resp<ComputeResourcePlan | undefined>> {
-
         try {
-
-            const { user, error } = await validateTokenAndGetUser<User>(request);
+            const { user, error } = await validateTokenAndGetSuperAdminUser<User>(request);
             if (error) {
-                return createResponse(401, "Unauthorized: Invalid token");
-            }
-            if (user.role !== 'superadmin') {
-                return createResponse(403, "Forbidden: requires superadmin role");
+                console.error("Error validating token:", error);
+                return createResponse(error.code, error.message);
             }
 
             const { crpId } = request.params;
@@ -102,16 +94,11 @@ export class SuperAdminCRPService extends Service {
      */
 
     public async deleteCRP(request: Request): Promise<resp<undefined>> {
-
         try {
-
-
-            const { user, error } = await validateTokenAndGetUser<User>(request);
+            const { user, error } = await validateTokenAndGetSuperAdminUser<User>(request);
             if (error) {
-                return createResponse(401, "Unauthorized: Invalid token");
-            }
-            if (user.role !== 'superadmin') {
-                return createResponse(403, "Forbidden: requires superadmin role");
+                console.error("Error validating token:", error);
+                return createResponse(error.code, error.message);
             }
 
             const { crpId } = request.params;
@@ -140,20 +127,17 @@ export class SuperAdminCRPService extends Service {
 
     public async getAllCRPs(request: Request): Promise<resp<ComputeResourcePlan[] | undefined>> {
         try {
-
-            const { user, error } = await validateTokenAndGetUser<User>(request);
+            const { user, error } = await validateTokenAndGetSuperAdminUser<User>(request);
             if (error) {
-                return createResponse(401, "Unauthorized: Invalid token");
-            }
-            if (user.role !== 'superadmin') {
-                return createResponse(403, "Forbidden: requires superadmin role");
+                console.error("Error validating token:", error);
+                return createResponse(error.code, error.message);
             }
 
             const CRPs = await ComputeResourcePlanModel.find();
             return createResponse(200, "CRPs retrieved successfully", CRPs);
-        } catch (e: any) {
-            logger.error(`Error retrieving CRPs: ${e.message}`);
-            return createResponse(500, "Internal Server Error: " + e.message);
+        } catch (error) {
+            console.error("Error in getAllCRPs:", error);
+            return createResponse(500, "Internal Server Error");
         }
     }
 }

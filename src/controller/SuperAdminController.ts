@@ -10,12 +10,12 @@ export class SuperAdminController extends Controller {
         this.service = new SuperAdminService();
     }
 
-    public changeUserRole = async (Request: Request, Response: Response) => {
+    public async changeUserRole(Request: Request, Response: Response) {
         const resp = await this.service.changeUserRole(Request);
         Response.status(resp.code).send(resp);
     }
 
-    public assignCRPToUser = async (Request: Request, Response: Response) => {
+    public async assignCRPToUser(Request: Request, Response: Response) {
         const resp = await this.service.assignCRPToUser(Request);
         Response.status(resp.code).send(resp);
     }

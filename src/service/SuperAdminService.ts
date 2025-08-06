@@ -2,7 +2,7 @@ import { Request } from "express";
 import { Service } from "../abstract/Service";
 import { logger } from "../middlewares/log";
 import { createResponse, resp } from "../utils/resp";
-import { validateTokenAndGetUser } from "../utils/auth";
+import { validateTokenAndGetSuperAdminUser, validateTokenAndGetUser } from "../utils/auth";
 import { UsersModel } from '../orm/schemas/UserSchemas';
 import { User } from '../interfaces/User';
 import { ComputeResourcePlanModel } from "../orm/schemas/ComputeResourcePlanSchemas";

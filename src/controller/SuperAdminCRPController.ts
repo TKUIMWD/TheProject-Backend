@@ -13,22 +13,22 @@ export class SuperAdminCRPController extends Controller {
         this.service = new SuperAdminCRPService();
     }
 
-    public createCRP = async (Request: Request, Response: Response) => {
+    public async createCRP(Request: Request, Response: Response) {
         const resp = await this.service.createCRP(Request);
         Response.status(resp.code).send(resp);
     }
 
-    public updateCRP = async (Request: Request, Response: Response) => {
+    public async updateCRP(Request: Request, Response: Response) {
         const resp = await this.service.updateCRP(Request);
         Response.status(resp.code).send(resp);
     }
 
-    public deleteCRP = async (Request: Request, Response: Response) => {
+    public async deleteCRP(Request: Request, Response: Response) {
         const resp = await this.service.deleteCRP(Request);
         Response.status(resp.code).send(resp);
     }
 
-    public getAllCRPs = async (Request: Request, Response: Response) => {
+    public async getAllCRPs(Request: Request, Response: Response) {
         const resp = await this.service.getAllCRPs(Request);
         Response.status(resp.code).send(resp);
     }
