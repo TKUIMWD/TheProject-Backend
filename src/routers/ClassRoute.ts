@@ -13,6 +13,10 @@ export class ClassRoute extends Route {
     }
 
     protected setRoutes(): void {
+        this.router.get(`${this.url}/:classId`, (req, res) => {
+            this.Controller.getClassById(req, res)
+        });
+
         this.router.post(`${this.url}/addClassToCourse/:courseId`, (req, res) => {
             this.Controller.AddClassToCourse(req, res)
         });

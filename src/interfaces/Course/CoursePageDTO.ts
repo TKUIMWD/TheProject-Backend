@@ -8,5 +8,6 @@ export interface CoursePageDTO {
     course_difficulty: "Easy" | "Medium" | "Hard";
     course_rating: number;
     course_reviews: Array<string>; // !temp
+    class_ids: Array<string>;
     submitterInfo: SubmitterInfo;
 }

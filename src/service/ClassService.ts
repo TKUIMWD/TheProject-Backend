@@ -10,6 +10,40 @@ import { sanitizeString } from "../utils/sanitize";
 import { ChapterModel } from "../orm/schemas/ChapterSchemas";
 
 export class ClassService extends Service {
+    public async getClassById(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetAdminUser<string>(Request);
+            if (error) {
+                return error;
+            }
+
+            const classId = Request.params.classId;
+            if (!classId || !mongoose.Types.ObjectId.isValid(classId)) {
+                return createResponse(400, "Invalid class_id format");
+            }
+
+            
+            const classData = await ClassModel.findById(classId);
+            if (!classData) {
+                return createResponse(404, "Class not found");
+            }
+
+            const course = await CourseModel.findById(classData.course_id);
+            if (!course) {
+                return createResponse(404, "Associated course not found");
+            }
+
+            // 確認是課程擁有者的操作
+            if (user._id.toString() !== course.submitter_user_id.toString()) {
+                return createResponse(403, "You are not authorized to view this class");
+            }
+
+            return createResponse(200, "success", { classData });
+        } catch (err) {
+            logger.error("Error in getClassById:", err);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
 
     public async UpdateClassById(Request: Request): Promise<resp<string | undefined>> {
         try {

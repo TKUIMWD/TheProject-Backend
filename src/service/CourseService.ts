@@ -76,6 +76,7 @@ export class CourseService extends Service {
                 course_difficulty: course.difficulty as "Easy" | "Medium" | "Hard",
                 course_rating: course.rating,
                 course_reviews: course.reviews,
+                class_ids: course.class_ids,
                 submitterInfo: {
                     username: submitter.username,
                     email: submitter.email,
@@ -188,6 +189,12 @@ export class CourseService extends Service {
 
             if (difficulty !== "Easy" && difficulty !== "Medium" && difficulty !== "Hard") {
                 return createResponse(400, "difficulty must be one of 'Easy', 'Medium', or 'Hard'");
+            }
+
+            // 如果相同名稱的課程存在，則返回錯誤
+            const existingCourse = await CourseModel.findOne({ course_name: sanitizedCourseName });
+            if (existingCourse) {
+                return createResponse(400, "Course with the same name already exists");
             }
 
             const newCourse: Course = ({

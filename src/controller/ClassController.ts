@@ -11,6 +11,11 @@ export class ClassController extends Controller {
     this.service = new ClassService();
   }
 
+  public async getClassById(Request: Request, Response: Response) {
+    const resp = await this.service.getClassById(Request);
+    Response.status(resp.code).send(resp);
+  }
+
   public async AddClassToCourse(Request: Request, Response: Response) {
     const resp = await this.service.AddClassToCourse(Request);
     Response.status(resp.code).send(resp);
