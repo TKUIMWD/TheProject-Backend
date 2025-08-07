@@ -47,7 +47,8 @@ export class ChapterService extends Service {
                 return createResponse(403, "You are not authorized to view this chapter.");
             }
 
-            if (user._id.toString() !== parentCourse.submitter_user_id.toString()) {
+            // user course_ids 有沒有 parentCourse._id
+            if (!user.course_ids || !user.course_ids.includes(parentCourse._id.toString())) {
                 return createResponse(403, "You are not authorized to view this chapter.");
             }
 

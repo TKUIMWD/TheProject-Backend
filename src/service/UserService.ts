@@ -235,13 +235,14 @@ export class UserService extends Service {
         }
     }
 
-    /**
+/**
      * get user's courses
      * @param Request - Request object
      * @returns resp<Array<CourseInfo> | undefined>
      */
     public async getUserCourses(Request: Request): Promise<resp<Array<CourseInfo> | undefined>> {
         try {
+            // 1. 驗證 Token 並取得使用者資料 (此部分不變)
             const { user, error } = await validateTokenAndGetUser<Array<CourseInfo>>(Request);
             if (error) {
                 return error;
@@ -251,44 +252,22 @@ export class UserService extends Service {
                 return createResponse(403, "user is not verified");
             }
 
-            const courseObjectIds = user.course_ids.map((id: string) => new Types.ObjectId(id));
-            const courseInfo = await CourseModel.aggregate([
-                {
-                    $match: {
-                        "_id": { $in: courseObjectIds }
-                    }
-                },
-                {
-                    $addFields: {
-                        convertedSubmitterId: { $toObjectId: "$submitter_user_id" }
-                    }
-                },
-                {
-                    $lookup: {
-                        from: "users",
-                        localField: "convertedSubmitterId",
-                        foreignField: "_id",
-                        as: "teacherDetails"
-                    }
-                },
-                {
-                    $unwind: {
-                        path: "$teacherDetails",
-                        preserveNullAndEmptyArrays: true
-                    }
-                },
-                {
-                    $project: {
-                        _id: "$_id",
-                        course_name: "$course_name",
-                        duration_in_minutes: "$duration_in_minutes",
-                        difficulty: "$difficulty",
-                        rating: "$rating",
-                        teacher_name: { $ifNull: ["$teacherDetails.username", "Unknown"] },
-                        update_date: "$update_date"
-                    }
-                }
-            ]);
+            const courses = await CourseModel.find({
+                '_id': { $in: user.course_ids }
+            })
+            .populate<{ submitter_user_id: { username: string } }>('submitter_user_id', 'username')
+            .lean();
+
+            const courseInfo: CourseInfo[] = courses.map(course => ({
+                _id: course._id,
+                course_name: course.course_name,
+                duration_in_minutes: course.duration_in_minutes,
+                difficulty: course.difficulty,
+                rating: course.rating,
+                teacher_name: course.submitter_user_id?.username,
+                update_date: course.update_date,
+                status: course.status 
+            }));
 
             if (!courseInfo || courseInfo.length === 0) {
                 return createResponse(200, "User has no courses", []);

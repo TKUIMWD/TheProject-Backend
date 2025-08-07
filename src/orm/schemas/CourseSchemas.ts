@@ -13,6 +13,7 @@ export const CourseSchemas = new Schema<Course>({
     update_date: { type: Date },
     submitter_user_id: { type: String, required: true },
     update_log: { type: [String], default: [] }, // !temp
+    status: {type: String, enum: ["公開", "未公開", "編輯中", "審核中", "審核未通過"], default: "編輯中"}
 });
 
 export const CourseModel = model<Course>('courses', CourseSchemas);

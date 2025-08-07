@@ -20,5 +20,6 @@ export interface CourseInfo {
     difficulty: string,
     rating: number,
     teacher_name: string,
-    update_date: Date
+    update_date: Date,
+    status: "公開" | "未公開" | "編輯中" | "審核中" | "審核未通過"
 }
