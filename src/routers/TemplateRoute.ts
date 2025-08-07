@@ -25,6 +25,19 @@ export class TemplateRoute extends Route{
         this.router.post(`${this.url}convert`, (req, res) => {
             this.Controller.convertVMtoTemplate(req, res);
         });
+
+        this.router.post(`${this.url}submit`, (req, res) => {
+            this.Controller.submitTemplate(req, res);
+        });
+
+        /**
+         * @method GET
+         * @path /api/v1/template/getAllSubmittedTemplates
+         * @description Gets all submitted templates (superadmin only)
+         */
+        this.router.get(`${this.url}getAllSubmittedTemplates`, (req, res) => {
+            this.Controller.getAllSubmittedTemplates(req, res);
+        });
     }
 
 }

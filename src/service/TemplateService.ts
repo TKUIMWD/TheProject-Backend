@@ -1,13 +1,16 @@
 import { Service } from "../abstract/Service";
 import { resp, createResponse } from "../utils/resp";
 import { Request } from "express";
-import { validateTokenAndGetUser, validateTokenAndGetSuperAdminUser } from "../utils/auth";
+import { validateTokenAndGetUser, validateTokenAndGetSuperAdminUser, validateTokenAndGetAdminUser } from "../utils/auth";
 import { VMTemplateModel } from "../orm/schemas/VM/VMTemplateSchemas";
 import { VM_Template_Info } from "../interfaces/VM/VM_Template";
 import { UsersModel } from "../orm/schemas/UserSchemas";
 import { PVE_qemu_config } from "../interfaces/PVE";
 import { PVEUtils } from "../utils/PVEUtils";
 import { VMUtils } from "../utils/VMUtils";
+import { SubmittedTemplateModel } from "../orm/schemas/SubmittedTemplateSchemas";
+import { SubmittedTemplateStatus, SubmittedTemplateDetails } from "../interfaces/SubmittedTemplate";
+import { User } from "../interfaces/User";
 
 export class TemplateService extends Service {
 
@@ -130,7 +133,7 @@ export class TemplateService extends Service {
     private async _getTemplateInfo(node: string, vmid: string): Promise<resp<PVE_qemu_config | undefined>> {
         try {
             const templateInfoResp = await VMUtils.getTemplateInfo(node, vmid);
-            
+
             if (templateInfoResp.code !== 200 || !templateInfoResp.body) {
                 return createResponse(templateInfoResp.code, templateInfoResp.message);
             }
@@ -161,7 +164,7 @@ export class TemplateService extends Service {
             const validateResult = await VMUtils.validateVMCreationParams({
                 template_id: "dummy", // 這裡用假值，因為我們主要驗證 ci 參數
                 name: "dummy",
-                target: "dummy", 
+                target: "dummy",
                 cpuCores: 1,
                 memorySize: 1024,
                 diskSize: 10,
@@ -175,9 +178,9 @@ export class TemplateService extends Service {
 
             // 查找用戶擁有的 VM (使用 VM schema 的 _id)
             const VMModel = (await import("../orm/schemas/VM/VMSchemas")).VMModel;
-            const ownedVM = await VMModel.findOne({ 
+            const ownedVM = await VMModel.findOne({
                 _id: vm_id,
-                owner: user._id 
+                owner: user._id
             }).exec();
 
             if (!ownedVM) {
@@ -209,7 +212,7 @@ export class TemplateService extends Service {
 
             // 使用 VMUtils 將 VM 轉換為模板
             const convertResult = await VMUtils.convertVMToTemplate(node, vmid, finalTemplateName);
-            
+
             if (!convertResult.success) {
                 console.error("Failed to convert VM to template:", convertResult.errorMessage);
                 return createResponse(500, `Failed to convert VM to template: ${convertResult.errorMessage}`);
@@ -240,7 +243,7 @@ export class TemplateService extends Service {
             // 從用戶的 owned_vms 列表中移除該 VM，並將新模板 ID 加入 owned_templates
             await UsersModel.updateOne(
                 { _id: user._id },
-                { 
+                {
                     $pull: { owned_vms: vm_id },
                     $push: { owned_templates: newTemplate._id }
                 }
@@ -253,6 +256,151 @@ export class TemplateService extends Service {
 
         } catch (error) {
             console.error("Error in convertVMtoTemplate:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    public async submitTemplate(Request: Request): Promise<resp<string | undefined>> {
+        // 提交範本的實現
+        // required admin or superadmin privileges
+        try {
+            const { user, error } = await validateTokenAndGetAdminUser<string>(Request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return error;
+            }
+            const { template_id } = Request.body;
+            if (!template_id) {
+                return createResponse(400, "Missing required field: template_id");
+            }
+            // 查找範本
+            const template = await VMTemplateModel.findById(template_id).exec();
+            if (!template) {
+                return createResponse(404, "Template not found");
+            }
+
+            const submittedTemplate = new SubmittedTemplateModel({
+                status: SubmittedTemplateStatus.not_approved,
+                template_id: template._id,
+                submitter_user_id: user._id,
+                submitted_date: new Date(),
+            });
+            await submittedTemplate.save();
+            return createResponse(200, "Template submitted successfully", template._id?.toString());
+        } catch (error) {
+            console.error("Error in submitTemplate:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    /**
+     * 獲取所有提交的模板 (僅限 superadmin)
+     */
+    public async getAllSubmittedTemplates(request: Request): Promise<resp<SubmittedTemplateDetails[] | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetSuperAdminUser<User>(request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return createResponse(error.code, error.message);
+            }
+
+            const submittedTemplates = await SubmittedTemplateModel.find({})
+                .populate('submitter_user_id', 'username email')
+                .sort({ submitted_date: -1 });
+            
+            if (!submittedTemplates || submittedTemplates.length === 0) {
+                return createResponse(200, "No submitted templates found", []);
+            }
+
+            const templateDetailsPromises = submittedTemplates.map(async (submittedTemplate): Promise<SubmittedTemplateDetails> => {
+                // 獲取實際的模板資料
+                const template = await VMTemplateModel.findById(submittedTemplate.template_id).exec();
+                if (!template) {
+                    console.warn(`Template not found for submitted template ${submittedTemplate._id}`);
+                    // 返回基本信息，但標記為找不到模板
+                    // 查詢 submitter_user_id 的詳細資訊
+                    let submitterUserInfo = { username: "", email: "" };
+                    if (submittedTemplate.submitter_user_id) {
+                        const submitterUser = await UsersModel.findById(submittedTemplate.submitter_user_id).exec();
+                        console.log(submitterUser)
+                        if (submitterUser) {
+                            submitterUserInfo = {
+                                username: submitterUser.username,
+                                email: submitterUser.email
+                            };
+                        }
+                    }
+                    return {
+                        _id: submittedTemplate._id,
+                        status: submittedTemplate.status,
+                        template_id: submittedTemplate.template_id,
+                        submitter_user_id: submittedTemplate.submitter_user_id,
+                        submitted_date: submittedTemplate.submitted_date,
+                        status_updated_date: submittedTemplate.status_updated_date,
+                        reject_reason: submittedTemplate.reject_reason,
+                        template_name: "Template Not Found",
+                        template_description: "Template data unavailable",
+                        owner: "Unknown",
+                        submitter_user_info: submitterUserInfo,
+                        pve_vmid: "",
+                        pve_node: "",
+                        default_cpu_cores: 0,
+                        default_memory_size: 0,
+                        default_disk_size: 0,
+                        cipassword: "",
+                        ciuser: ""
+                    };
+                }
+
+                // 獲取模板的 PVE 配置資訊
+                const configResp = await this._getTemplateInfo(template.pve_node, template.pve_vmid);
+                let qemuConfig: PVE_qemu_config | null = null;
+                if (configResp.code === 200 && configResp.body) {
+                    qemuConfig = configResp.body;
+                }
+
+                // 獲取擁有者資訊
+                const ownerUser = await UsersModel.findById(template.owner).exec();
+
+                // 獲取提交者資訊
+                let submitterUserInfo = { username: "", email: "" };
+                if (submittedTemplate.submitter_user_id) {
+                    const submitterUser = await UsersModel.findById(submittedTemplate.submitter_user_id).exec();
+                    if (submitterUser) {
+                        submitterUserInfo = {
+                            username: submitterUser.username,
+                            email: submitterUser.email
+                        };
+                    }
+                }
+
+                return {
+                    _id: submittedTemplate._id,
+                    status: submittedTemplate.status,
+                    template_id: submittedTemplate.template_id,
+                    submitter_user_id: submittedTemplate.submitter_user_id,
+                    submitted_date: submittedTemplate.submitted_date,
+                    status_updated_date: submittedTemplate.status_updated_date,
+                    reject_reason: submittedTemplate.reject_reason,
+                    template_name: qemuConfig?.name || template.description || "Unnamed Template",
+                    template_description: template.description,
+                    owner: ownerUser?.username || "Unknown User",
+                    submitter_user_info: submitterUserInfo,
+                    pve_vmid: template.pve_vmid,
+                    pve_node: template.pve_node,
+                    default_cpu_cores: qemuConfig ? PVEUtils.extractCpuCores(qemuConfig) : 0,
+                    default_memory_size: qemuConfig ? PVEUtils.extractMemorySize(qemuConfig) : 0,
+                    default_disk_size: qemuConfig ? (PVEUtils.extractDiskSizeFromConfig(qemuConfig.scsi0 || "") || 0) : 0,
+                    cipassword: template.cipassword || "",
+                    ciuser: template.ciuser || ""
+                };
+            });
+
+            const templateDetails = await Promise.all(templateDetailsPromises);
+            return createResponse(200, "Submitted templates retrieved successfully", templateDetails);
+            
+        } catch (error) {
+            console.error("Error in getAllSubmittedTemplates:", error);
             return createResponse(500, "Internal Server Error");
         }
     }
