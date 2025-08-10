@@ -9,7 +9,6 @@ import { logger } from "../middlewares/log";
 import { ClassMap } from "../interfaces/Course/Maps";
 import { CourseModel } from "../orm/schemas/CourseSchemas";
 import { ClassModel } from "../orm/schemas/ClassSchemas";
-import { JSDOM } from 'jsdom';
 import DOMPurify from 'dompurify';
 import { sanitizeString, sanitizeArray } from "../utils/sanitize";
 import { create } from "domain";
