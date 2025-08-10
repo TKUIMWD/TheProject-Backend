@@ -396,12 +396,48 @@ export class VMUtils {
                 }
             });
 
-            if (cloneResp && cloneResp.data) {
-                logger.info(`Clone operation initiated for VM ${newVmid} with UPID: ${cloneResp.data}`);
-                return { success: true, upid: cloneResp.data };
-            } else {
-                return { success: false, errorMessage: "No UPID returned from clone operation" };
+            console.log(`Clone API response:`, JSON.stringify(cloneResp, null, 2));
+
+            // 檢查響應是否成功
+            if (!cloneResp) {
+                return { success: false, errorMessage: "No response from PVE API" };
             }
+
+            // 檢查是否有錯誤
+            if (cloneResp.errors) {
+                const errorMessages = Object.values(cloneResp.errors).join(', ');
+                return { success: false, errorMessage: `PVE API errors: ${errorMessages}` };
+            }
+
+            // 檢查 data 字段中是否有 UPID
+            if (cloneResp.data) {
+                if (typeof cloneResp.data === 'string') {
+                    // UPID 是字符串格式
+                    logger.info(`Clone operation initiated for VM ${newVmid} with UPID: ${cloneResp.data}`);
+                    return { success: true, upid: cloneResp.data };
+                } else if (typeof cloneResp.data === 'object' && cloneResp.data.upid) {
+                    // UPID 在對象中
+                    logger.info(`Clone operation initiated for VM ${newVmid} with UPID: ${cloneResp.data.upid}`);
+                    return { success: true, upid: cloneResp.data.upid };
+                }
+            }
+
+            // 檢查頂級是否直接包含 UPID（某些 PVE 版本的響應格式）
+            if (typeof cloneResp === 'string') {
+                logger.info(`Clone operation initiated for VM ${newVmid} with UPID: ${cloneResp}`);
+                return { success: true, upid: cloneResp };
+            }
+
+            // 檢查是否有 success 標誌但沒有 UPID（可能是同步操作）
+            if (cloneResp.success === 1 || cloneResp.success === true) {
+                logger.info(`Clone operation completed successfully for VM ${newVmid} (no UPID - synchronous operation)`);
+                return { success: true };
+            }
+
+            // 如果沒有明確的錯誤，但也沒有成功標誌或 UPID，則假設操作可能成功但需要驗證
+            logger.warn(`Clone operation for VM ${newVmid} completed with unclear status - will attempt verification`);
+            return { success: true };
+
         } catch (error) {
             logger.error(`Error during VM clone operation:`, error);
             return { success: false, errorMessage: error instanceof Error ? error.message : "Unknown error during clone" };

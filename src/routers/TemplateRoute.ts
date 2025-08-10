@@ -38,6 +38,11 @@ export class TemplateRoute extends Route{
         this.router.get(`${this.url}getAllSubmittedTemplates`, (req, res) => {
             this.Controller.getAllSubmittedTemplates(req, res);
         });
+
+
+        this.router.post(`${this.url}audit`, (req, res) => {
+            this.Controller.auditSubmittedTemplate(req, res);
+        });        
     }
 
 }
