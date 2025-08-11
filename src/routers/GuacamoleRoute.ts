@@ -8,7 +8,7 @@ export class GuacamoleRoute extends Route{
 
     constructor(){
         super()
-        this.url = '/api/v1/guacample/'
+        this.url = '/api/v1/guacamole/'
         this.setRoutes()
     }
 
@@ -20,7 +20,7 @@ export class GuacamoleRoute extends Route{
 
         // RDP connection endpoint
         this.router.post(`${this.url}rdp`, (req, res) => {
-            this.Controller.establishRDPConnection
+            this.Controller.establishRDPConnection(req, res);
         });
 
         // VNC connection endpoint
