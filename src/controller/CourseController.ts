@@ -35,4 +35,24 @@ export class CourseController extends Controller {
     const resp = await this.service.DeleteCourseById(Request);
     Response.status(resp.code).send(resp);
   }
+
+  public async GetAllPulicCourses(Request: Request, Response: Response) {
+    const resp = await this.service.GetAllPublicCourses(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async JoinCourseById(Request: Request, Response: Response) {
+    const resp = await this.service.JoinCourseById(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async ApprovedCourseById(Request: Request, Response: Response) {
+    const resp = await this.service.ApprovedCourseById(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async UnApprovedCourseById(Request: Request, Response: Response) {
+    const resp = await this.service.UnApprovedCourseById(Request);
+    Response.status(resp.code).send(resp);
+  }
 }

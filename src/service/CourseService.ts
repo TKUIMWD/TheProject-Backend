@@ -1,6 +1,6 @@
 import { Service } from "../abstract/Service";
 import { CoursePageDTO } from "../interfaces/Course/CoursePageDTO";
-import { getTokenRole, validateTokenAndGetAdminUser, validateTokenAndGetUser } from "../utils/auth";
+import { getTokenRole, validateTokenAndGetAdminUser, validateTokenAndGetSuperAdminUser, validateTokenAndGetUser } from "../utils/auth";
 import { resp, createResponse } from "../utils/resp";
 import { Request } from "express";
 import { logger } from "../middlewares/log";
@@ -9,13 +9,14 @@ import mongoose from "mongoose";
 import { CourseMenu } from "../interfaces/Course/CourseMenu";
 import { UsersModel } from "../orm/schemas/UserSchemas";
 import { ChapterModel } from "../orm/schemas/ChapterSchemas";
-import { Course } from "../interfaces/Course/Course";
+import { Course, CourseInfo } from "../interfaces/Course/Course";
 import { ClassModel } from "../orm/schemas/ClassSchemas";
 import { get } from "jquery";
 import Roles from "../enum/role";
 import { JSDOM } from 'jsdom';
 import DOMPurify, { sanitize } from 'dompurify';
 import { sanitizeString, sanitizeArray } from "../utils/sanitize";
+import { SubmitterInfo } from "../interfaces/Course/SubmitterInfo";
 
 export class CourseService extends Service {
     /**
@@ -24,8 +25,9 @@ export class CourseService extends Service {
      * @returns A promise resolving to the course document or an error response.
      */
     private async _getAuthorizedCourse(Request: Request): Promise<
-        { success: true; course: Course } |
-        { success: false; errorResp: resp<undefined> }
+        { success: true; Joined: true; course: Course } |
+        { success: false; errorResp: resp<undefined> } |
+        { success: true; Joined: false; course: Course }
     > {
         const { user, error } = await validateTokenAndGetUser<undefined>(Request);
         if (error) {
@@ -37,17 +39,17 @@ export class CourseService extends Service {
             return { success: false, errorResp: createResponse(400, "Invalid course_id format") };
         }
 
-        const isAuthorized = user.course_ids.some((id: any) => id.toString() === courseId);
-        if (!isAuthorized) {
-            return { success: false, errorResp: createResponse(403, "You are not authorized to view this course") };
-        }
-
         const course = await CourseModel.findById(courseId).lean();
+        const isAuthorized = user.course_ids.some((id: any) => id.toString() === courseId);
         if (!course) {
             return { success: false, errorResp: createResponse(404, "Course not found") };
         }
 
-        return { success: true, course };
+        if (!isAuthorized) {
+            return { success: true, Joined: false, course };
+        }
+
+        return { success: true, Joined: true, course };
     }
 
     /**
@@ -62,13 +64,15 @@ export class CourseService extends Service {
                 return authResult.errorResp;
             }
 
+            
             const { course } = authResult;
             const submitter = await UsersModel.findById(course.submitter_user_id).lean();
             if (!submitter) {
                 return createResponse(404, "Submitter not found");
             }
-
+            
             const courseData: CoursePageDTO = {
+                _id: course._id.toString(),
                 course_name: course.course_name,
                 course_subtitle: course.course_subtitle,
                 course_description: course.course_description,
@@ -76,6 +80,7 @@ export class CourseService extends Service {
                 course_difficulty: course.difficulty as "Easy" | "Medium" | "Hard",
                 course_rating: course.rating,
                 course_reviews: course.reviews,
+                course_update_date: course.update_date,
                 class_ids: course.class_ids,
                 submitterInfo: {
                     username: submitter.username,
@@ -83,6 +88,10 @@ export class CourseService extends Service {
                     avatar_path: submitter.avatar_path
                 }
             };
+            
+            if (authResult.Joined === false) {
+                return createResponse(403, "You are not joined to this course", courseData);
+            }
 
             return createResponse(200, "Course page data retrieved successfully", courseData);
 
@@ -131,6 +140,10 @@ export class CourseService extends Service {
             const courseMenuData: CourseMenu = {
                 class_titles: classTitles
             };
+
+            if (authResult.Joined === false) {
+                return createResponse(403, "You are not joined to this course", courseMenuData);
+            }
 
             return createResponse(200, "Course menu data retrieved successfully", courseMenuData);
 
@@ -198,6 +211,7 @@ export class CourseService extends Service {
             }
 
             const newCourse: Course = ({
+                _id: new mongoose.Types.ObjectId().toString(),
                 course_name: sanitizedCourseName,
                 course_subtitle: sanitizedCourseSubtitle,
                 course_description: sanitizedCourseDescription,
@@ -327,7 +341,6 @@ export class CourseService extends Service {
         }
     }
 
-    // todo delete class, chapter
     public async DeleteCourseById(Request: Request): Promise<resp<String | undefined>> {
         try {
             const { user, error } = await validateTokenAndGetAdminUser<String>(Request)
@@ -358,5 +371,158 @@ export class CourseService extends Service {
         }
     }
 
-    
+    public async GetAllPublicCourses(Request: Request): Promise<resp<String | CourseInfo[] | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser<String>(Request);
+            if (error) {
+                return error;
+            }
+
+            const courseDocs = await CourseModel.find({ status: "公開" }).lean();
+            const coursesPromises = courseDocs.map(async (course): Promise<CourseInfo | null> => {
+                const submitter = await UsersModel.findById(course.submitter_user_id).lean();
+                if (!submitter) {
+                    logger.warn(`Submitter not found for course ${course._id}`);
+                    return null;
+                }
+
+                return {
+                    _id: course._id.toString(),
+                    course_name: course.course_name,
+                    course_subtitle: course.course_subtitle,
+                    duration_in_minutes: course.duration_in_minutes,
+                    difficulty: course.difficulty as "Easy" | "Medium" | "Hard",
+                    rating: course.rating,
+                    teacher_name: submitter.username,
+                    update_date: course.update_date,
+                    status: course.status as "公開" | "未公開" | "編輯中" | "審核中" | "審核未通過"
+                };
+            });
+
+            const courses = (await Promise.all(coursesPromises)).filter((c): c is CourseInfo => c !== null);
+
+            if (!courses || courses.length === 0) {
+                return createResponse(404, "No public courses found");
+            }
+
+            return createResponse(200, "success", courses);
+        } catch (error) {
+            logger.error("Error in GetAllPublicCourse:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    public async JoinCourseById(Request: Request): Promise<resp<String | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser<String>(Request);
+            if (error) {
+                return error;
+            }
+
+            const { courseId } = Request.params;
+            if (!courseId || !mongoose.Types.ObjectId.isValid(courseId)) {
+                return createResponse(400, "Invalid course_id format");
+            }
+
+            // 檢查課程是否存在
+            const course = await CourseModel.findById(courseId);
+            if (!course) {
+                return createResponse(404, "Course not found");
+            }
+
+            if (course.status !== "公開") {
+                return createResponse(403, "You can only join courses that are publicly available");
+            }
+
+            // 檢查用戶是否已經加入該課程
+            if (user.course_ids.includes(courseId)) {
+                return createResponse(400, "You have already joined this course");
+            }
+
+            // 將課程 ID 添加到用戶的 course_ids 中
+            user.course_ids.push(courseId);
+            await UsersModel.findByIdAndUpdate(user._id, { course_ids: user.course_ids });
+
+            logger.info(`User ${user._id} joined course ${courseId}`);
+            return createResponse(200, "Successfully joined the course");
+        } catch (err) {
+            logger.error("Error in JoinCourseById:", err);
+            return createResponse(500, "Internal Server Error");
+        }
+
+    }
+
+    public async ApprovedCourseById(Request: Request): Promise<resp<String | undefined>> {
+        try{
+            const { user, error } = await validateTokenAndGetSuperAdminUser<String>(Request);
+            if (error) {
+                return error;
+            }
+
+            const { courseId } = Request.params;
+            if (!courseId || !mongoose.Types.ObjectId.isValid(courseId)) {
+                return createResponse(400, "Invalid course_id format");
+            }
+
+            const course = await CourseModel.findById(courseId);
+            if (!course) {
+                return createResponse(404, "Course not found");
+            }
+
+            // 檢查課程狀態是否為審核中
+            if (course.status !== "審核中") {
+                return createResponse(400, "Course is not in '審核中' status");
+            }
+
+            course.status = "未公開"; // 更新狀態為未公開
+            const updatedCourse = await course.save();
+            if (!updatedCourse) {
+                return createResponse(500, "Failed to update course status");
+            }
+
+            logger.info(`Course ${courseId} approved successfully by user ${user._id}`);
+            return createResponse(200, "Course approved successfully");
+            
+        }catch (err) {
+            logger.error("Error in ApprovedCourseById:", err);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    public async UnApprovedCourseById(Request: Request): Promise<resp<String | undefined>> {
+        try{
+            const { user, error } = await validateTokenAndGetSuperAdminUser<String>(Request);
+            if (error) {
+                return error;
+            }
+
+            const { courseId } = Request.params;
+            if (!courseId || !mongoose.Types.ObjectId.isValid(courseId)) {
+                return createResponse(400, "Invalid course_id format");
+            }
+
+            const course = await CourseModel.findById(courseId);
+            if (!course) {
+                return createResponse(404, "Course not found");
+            }
+
+            // 檢查課程狀態是否為審核中
+            if (course.status !== "審核中") {
+                return createResponse(400, "Course is not in '審核中' status");
+            }
+
+            course.status = "審核未通過"; // 更新狀態為審核未通過
+            const updatedCourse = await course.save();
+            if (!updatedCourse) {
+                return createResponse(500, "Failed to update course status");
+            }
+
+            logger.info(`Course ${courseId} unapproved successfully by user ${user._id}`);
+            return createResponse(200, "Course unapproved successfully");
+
+        }catch (err) {
+            logger.error("Error in UnApprovedCourseById:", err);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
 }
