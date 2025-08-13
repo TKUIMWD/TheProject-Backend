@@ -14,12 +14,16 @@ export class CourseRoute extends Route{
 
     protected setRoutes(): void {
         
-        this.router.get(`${this.url}/:courseId`, (req, res) => {
-            this.Controller.getCourseById(req, res)
+        this.router.get(`${this.url}/allPublicCourses`, (req, res) => {
+            this.Controller.GetAllPulicCourses(req, res)
         });
         
         this.router.get(`${this.url}/:courseId/menu`, (req, res) => {
             this.Controller.getCourseMenu(req, res)
+        });
+
+        this.router.get(`${this.url}/get/:courseId`, (req, res) => {
+            this.Controller.getCourseById(req, res)
         });
 
         this.router.post(`${this.url}/add`, (req, res) => {
@@ -32,6 +36,18 @@ export class CourseRoute extends Route{
 
         this.router.delete(`${this.url}/delete/:courseId`, (req, res) => {
             this.Controller.DeleteCourseById(req, res)
+        });
+
+        this.router.post(`${this.url}/join/:courseId`, (req, res) => {
+            this.Controller.JoinCourseById(req, res)
+        });
+
+        this.router.post(`${this.url}/approved/:courseId`, (req, res) => {
+            this.Controller.ApprovedCourseById(req, res)
+        });
+
+        this.router.post(`${this.url}/unapproved/:courseId`, (req, res) => {
+            this.Controller.UnApprovedCourseById(req, res)
         });
     }
 

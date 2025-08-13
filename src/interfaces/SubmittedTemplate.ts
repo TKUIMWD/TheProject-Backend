@@ -1,4 +1,5 @@
 export enum SubmittedTemplateStatus {
+    cancelled = 'cancelled',
     not_approved = 'not_approved',
     approved = 'approved',
     rejected = 'rejected'

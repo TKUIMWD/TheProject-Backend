@@ -261,6 +261,7 @@ export class UserService extends Service {
             const courseInfo: CourseInfo[] = courses.map(course => ({
                 _id: course._id,
                 course_name: course.course_name,
+                course_subtitle: course.course_subtitle,
                 duration_in_minutes: course.duration_in_minutes,
                 difficulty: course.difficulty,
                 rating: course.rating,

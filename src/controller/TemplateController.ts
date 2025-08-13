@@ -36,4 +36,9 @@ export class TemplateController extends Controller {
     const resp = await this.service.getAllSubmittedTemplates(Request);
     Response.status(resp.code).send(resp);
   }
+
+  public async auditSubmittedTemplate(Request: Request, Response: Response) {
+    const resp = await this.service.auditSubmittedTemplate(Request);
+    Response.status(resp.code).send(resp);
+  }
 }

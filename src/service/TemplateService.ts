@@ -11,6 +11,7 @@ import { VMUtils } from "../utils/VMUtils";
 import { SubmittedTemplateModel } from "../orm/schemas/SubmittedTemplateSchemas";
 import { SubmittedTemplateStatus, SubmittedTemplateDetails } from "../interfaces/SubmittedTemplate";
 import { User } from "../interfaces/User";
+import { sendTemplateAuditResultEmail } from "../utils/MailSender/TemplateAuditResultSender";
 
 export class TemplateService extends Service {
 
@@ -307,7 +308,7 @@ export class TemplateService extends Service {
             const submittedTemplates = await SubmittedTemplateModel.find({})
                 .populate('submitter_user_id', 'username email')
                 .sort({ submitted_date: -1 });
-            
+
             if (!submittedTemplates || submittedTemplates.length === 0) {
                 return createResponse(200, "No submitted templates found", []);
             }
@@ -398,9 +399,176 @@ export class TemplateService extends Service {
 
             const templateDetails = await Promise.all(templateDetailsPromises);
             return createResponse(200, "Submitted templates retrieved successfully", templateDetails);
-            
+
         } catch (error) {
             console.error("Error in getAllSubmittedTemplates:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+
+    public async auditSubmittedTemplate(request: Request): Promise<resp<string | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetSuperAdminUser<User>(request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return createResponse(error.code, error.message);
+            }
+
+            const { template_id, status, reject_reason } = request.body;
+
+            // 驗證必要參數
+            if (!template_id || !status) {
+                return createResponse(400, "Missing required fields: template_id, status");
+            }
+
+            // 驗證狀態
+            if (![SubmittedTemplateStatus.approved, SubmittedTemplateStatus.rejected].includes(status)) {
+                return createResponse(400, "Invalid status. Must be 'approved' or 'rejected'.");
+            }
+
+            // 查找提交的範本
+            const submittedTemplate = await SubmittedTemplateModel.findById(template_id).exec();
+            if (!submittedTemplate) {
+                return createResponse(404, "Submitted template not found");
+            }
+
+            // 更新提交的範本狀態
+            submittedTemplate.status = status;
+            submittedTemplate.status_updated_date = new Date();
+            if (status === SubmittedTemplateStatus.rejected) {
+                submittedTemplate.reject_reason = reject_reason || "No reason provided";
+            } else {
+                submittedTemplate.reject_reason = undefined; // 清除拒絕原因
+            }
+            await submittedTemplate.save();
+
+            // 如果範本被批准，則在 PVE 中克隆範本並在資料庫中建立新的資料
+            if (status === SubmittedTemplateStatus.approved) {
+                const originalTemplate = await VMTemplateModel.findById(submittedTemplate.template_id).exec();
+                if (!originalTemplate) {
+                    return createResponse(404, "Original template not found for the approved submission");
+                }
+
+                // 獲取下一個可用的 VM ID 作為新範本的 ID
+                const nextIdResult = await VMUtils.getNextVMId();
+                if (nextIdResult.code !== 200 || !nextIdResult.body) {
+                    console.error(`Failed to get next VM ID for approved template: ${nextIdResult.message}`);
+                    return createResponse(500, `Failed to get next VM ID: ${nextIdResult.message}`);
+                }
+                const newTemplateVmid = nextIdResult.body.data;
+
+                // 使用 PVE API 克隆原始範本到新的 VM ID
+                console.log(`Starting clone operation: source=${originalTemplate.pve_vmid} on ${originalTemplate.pve_node}, target=${newTemplateVmid}`);
+                
+                // 先獲取原始範本的配置信息以取得範本名稱
+                const originalTemplateConfig = await VMUtils.getTemplateInfo(originalTemplate.pve_node, originalTemplate.pve_vmid);
+                if (originalTemplateConfig.code !== 200 || !originalTemplateConfig.body) {
+                    console.error(`Failed to get original template config: ${originalTemplateConfig.message}`);
+                    return createResponse(500, `Failed to get original template config: ${originalTemplateConfig.message}`);
+                }
+                
+                const originalTemplateName = originalTemplateConfig.body.name || originalTemplate.description;
+                
+                // 清理範本名稱以符合 DNS 格式要求，加入日期以識別
+                const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD 格式
+                const rawTemplateName = `${currentDate}-${originalTemplateName}`;
+                const sanitizedTemplateName = PVEUtils.sanitizeVMName(rawTemplateName);
+                if (!sanitizedTemplateName) {
+                    console.error(`Failed to sanitize template name: ${rawTemplateName}`);
+                    return createResponse(500, `Invalid template name format: ${rawTemplateName}`);
+                }
+                
+                console.log(`Original template name: ${originalTemplateName}, sanitized new name: ${sanitizedTemplateName}`);
+                
+                const cloneResult = await VMUtils.cloneVM(
+                    originalTemplate.pve_node,
+                    originalTemplate.pve_vmid,
+                    newTemplateVmid,
+                    sanitizedTemplateName,
+                    originalTemplate.pve_node, // 克隆到同一個節點
+                    "NFS", // 預設存儲
+                    "1" // 完整克隆
+                );
+
+                console.log(`Clone result:`, cloneResult);
+
+                if (!cloneResult.success) {
+                    console.error(`Failed to clone template in PVE: ${cloneResult.errorMessage}`);
+                    return createResponse(500, `Failed to clone template in PVE: ${cloneResult.errorMessage}`);
+                }
+
+                // 等待克隆任務完成（如果有 UPID）
+                if (cloneResult.upid) {
+                    console.log(`Waiting for clone task completion with UPID: ${cloneResult.upid}`);
+                    const waitResult = await VMUtils.waitForTaskCompletion(
+                        originalTemplate.pve_node,
+                        cloneResult.upid,
+                        'Template clone for approval'
+                    );
+                    if (!waitResult.success) {
+                        console.error("Template clone task failed:", waitResult.errorMessage);
+                        return createResponse(500, `Template clone failed: ${waitResult.errorMessage}`);
+                    }
+                    console.log(`Clone task completed successfully`);
+                } else {
+                    // 沒有 UPID 可能表示操作立即完成，等待一段時間確保操作完成
+                    console.log(`No UPID returned, assuming clone completed immediately. Waiting 3 seconds for safety...`);
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    
+                    // 驗證新的範本是否已經創建成功
+                    try {
+                        const newTemplateInfo = await VMUtils.getTemplateInfo(originalTemplate.pve_node, newTemplateVmid);
+                        if (newTemplateInfo.code !== 200) {
+                            console.error(`Failed to verify cloned template: ${newTemplateInfo.message}`);
+                            return createResponse(500, `Clone operation completed but failed to verify new template: ${newTemplateInfo.message}`);
+                        }
+                        console.log(`Clone verification successful for template ${newTemplateVmid}`);
+                    } catch (verifyError) {
+                        console.error(`Error verifying cloned template:`, verifyError);
+                        return createResponse(500, `Clone operation completed but verification failed`);
+                    }
+                }
+
+                // 在資料庫中建立新的公開範本記錄
+                const newApprovedTemplate = new VMTemplateModel({
+                    description: `[Approved] ${originalTemplate.description}`,
+                    pve_vmid: newTemplateVmid,
+                    pve_node: originalTemplate.pve_node,
+                    submitter_user_id: submittedTemplate.submitter_user_id,
+                    submitted_date: submittedTemplate.submitted_date,
+                    owner: user._id, // SuperAdmin 作為擁有者
+                    ciuser: originalTemplate.ciuser,
+                    cipassword: originalTemplate.cipassword,
+                    is_public: true // 設置為公共範本
+                });
+
+                await newApprovedTemplate.save();
+
+                // 將新範本 ID 加入 SuperAdmin 的 owned_templates
+                await UsersModel.updateOne(
+                    { _id: user._id },
+                    { $addToSet: { owned_templates: newApprovedTemplate._id } }
+                );
+
+                console.log(`New approved template created with ID: ${newApprovedTemplate._id}, PVE VMID: ${newTemplateVmid}`);
+
+                // 發送審核結果通知郵件給提交者
+                const submitterUser = await UsersModel.findById(submittedTemplate.submitter_user_id).exec();
+                if (submitterUser?.email) {
+                    sendTemplateAuditResultEmail(submitterUser.email, originalTemplate.description, "approved");
+                }
+            } else if (status === SubmittedTemplateStatus.rejected) {
+                // 發送拒絕通知郵件
+                const toMail = (await UsersModel.findById(submittedTemplate.submitter_user_id).exec())?.email;
+                if (toMail) {
+                    sendTemplateAuditResultEmail(toMail, submittedTemplate.template_id, "rejected", reject_reason);
+                }
+            }
+
+            return createResponse(200, "Template audit status updated successfully", submittedTemplate._id?.toString());
+        } catch (error) {
+            console.error("Error in auditSubmittedTemplate:", error);
             return createResponse(500, "Internal Server Error");
         }
     }
