@@ -35,4 +35,9 @@ export class GuacamoleController extends Controller {
     const resp = await this.service.listUserConnections(Request);
     Response.status(resp.code).send(resp);
   }
+
+  public async deleteConnection(Request: Request, Response: Response) {
+    const resp = await this.service.deleteConnection(Request);
+    Response.status(resp.code).send(resp);
+  }
 }

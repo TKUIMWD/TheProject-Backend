@@ -1553,4 +1553,193 @@ export class GuacamoleService extends Service {
             return createResponse(500, "Internal Server Error");
         }
     }
+
+    /**
+     * 檢查用戶是否有權限刪除指定的連接
+     */
+    private async _validateConnectionDeletePermission(
+        connectionId: string, 
+        user: User, 
+        isSuperAdmin: boolean, 
+        authToken: string, 
+        dataSource: string
+    ): Promise<{ valid: boolean; message?: string; connectionData?: any }> {
+        try {
+            // SuperAdmin 可以刪除任何連接
+            if (isSuperAdmin) {
+                logger.info(`SuperAdmin ${user.email} attempting to delete connection ${connectionId}`);
+                
+                // 獲取連接資訊以返回給調用者
+                const connectionUrl = `${GUACAMOLE_URL}/api/session/data/${dataSource}/connections/${connectionId}`;
+                
+                try {
+                    const connectionData = await callWithUnauthorized(
+                        'GET',
+                        connectionUrl,
+                        undefined,
+                        {
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Guacamole-Token': authToken
+                            }
+                        }
+                    );
+                    return { valid: true, connectionData };
+                } catch (error) {
+                    logger.error("Error fetching connection data for SuperAdmin:", error);
+                    return { valid: true }; // SuperAdmin 仍可嘗試刪除
+                }
+            }
+
+            // 對於一般用戶，需要檢查連接名稱是否包含用戶 email
+            const connectionUrl = `${GUACAMOLE_URL}/api/session/data/${dataSource}/connections/${connectionId}`;
+            
+            try {
+                const connectionData = await callWithUnauthorized(
+                    'GET',
+                    connectionUrl,
+                    undefined,
+                    {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Guacamole-Token': authToken
+                        }
+                    }
+                );
+
+                console.log('Delete Permission Debug - Connection data:', JSON.stringify(connectionData, null, 2));
+                console.log('Delete Permission Debug - User email:', user.email);
+
+                // 檢查連接名稱是否包含用戶的 email（基於我們的命名規則：protocol-VMName-userEmail）
+                if (connectionData && (connectionData as any).name) {
+                    const connectionName = (connectionData as any).name;
+                    // 更精確的權限檢查：連接名稱必須以用戶 email 結尾
+                    if (connectionName.endsWith(`-${user.email}`)) {
+                        logger.info(`User ${user.email} has permission to delete connection ${connectionId} (${connectionName})`);
+                        return { valid: true, connectionData };
+                    } else {
+                        logger.warn(`User ${user.email} does not have permission to delete connection ${connectionId} (${connectionName}) - name should end with user email`);
+                        return { valid: false, message: "You don't have permission to delete this connection" };
+                    }
+                } else {
+                    logger.error("Connection data invalid or missing name");
+                    return { valid: false, message: "Connection not found or invalid" };
+                }
+
+            } catch (error) {
+                logger.error("Error fetching connection data for permission check:", error);
+                return { valid: false, message: "Connection not found or access denied" };
+            }
+
+        } catch (error) {
+            logger.error("Error validating connection delete permission:", error);
+            return { valid: false, message: "Error validating connection permission" };
+        }
+    }
+
+    /**
+     * 刪除 Guacamole 連接
+     */
+    public async deleteConnection(req: Request): Promise<resp<any>> {
+        try {
+            // 檢查 Guacamole 服務配置
+            if (!this._checkGuacamoleConfiguration()) {
+                logger.error("Guacamole service is not configured");
+                return createResponse(503, "Guacamole service is not configured. Please contact administrator to configure the service.");
+            }
+
+            // 驗證用戶權限
+            const userValidation = await this._validateUserPermissions(req);
+            if ('error' in userValidation) {
+                return userValidation.error;
+            }
+
+            const { user, isSuperAdmin } = userValidation;
+            const { connection_id } = req.body;
+
+            if (!connection_id) {
+                return createResponse(400, "Connection ID is required");
+            }
+
+            // 獲取管理員認證令牌 (需要管理員權限來刪除連接)
+            const authTokenResult = await this._getAdminAuthToken();
+            if (authTokenResult.code !== 200 || !authTokenResult.body) {
+                return createResponse(500, "Failed to authenticate with Guacamole service");
+            }
+
+            const dataSource = authTokenResult.body.dataSource || 'postgresql';
+
+            // 檢查用戶是否有權限刪除此連接
+            const permissionCheck = await this._validateConnectionDeletePermission(
+                connection_id, 
+                user, 
+                isSuperAdmin, 
+                authTokenResult.body.token, 
+                dataSource
+            );
+
+            if (!permissionCheck.valid) {
+                return createResponse(403, permissionCheck.message || "Access denied");
+            }
+
+            const connectionData = permissionCheck.connectionData;
+            const connectionName = connectionData?.name || `connection-${connection_id}`;
+            
+            try {
+                // 刪除連接
+                const deleteUrl = `${GUACAMOLE_URL}/api/session/data/${dataSource}/connections/${connection_id}`;
+                
+                console.log('Delete Connection Debug - URL:', deleteUrl);
+                console.log('Delete Connection Debug - Connection ID:', connection_id);
+                console.log('Delete Connection Debug - Connection Name:', connectionName);
+                
+                const deleteResponse = await callWithUnauthorized(
+                    'DELETE',
+                    deleteUrl,
+                    undefined,
+                    {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Guacamole-Token': authTokenResult.body.token
+                        }
+                    }
+                );
+
+                console.log('Delete Connection Debug - Response:', JSON.stringify(deleteResponse, null, 2));
+
+                // 檢查刪除是否成功
+                if (deleteResponse && (deleteResponse as any).type === 'INTERNAL_ERROR') {
+                    const errorMsg = (deleteResponse as any).message || 'Internal server error';
+                    return createResponse(500, `Guacamole internal error: ${errorMsg}`);
+                }
+
+                if (deleteResponse && (deleteResponse as any).type === 'NOT_FOUND') {
+                    return createResponse(404, "Connection not found");
+                }
+
+                // 檢查是否有錯誤響應
+                if (deleteResponse && (deleteResponse as any).error) {
+                    const errorMsg = (deleteResponse as any).error.message || 'Unknown error';
+                    return createResponse(500, `Failed to delete connection: ${errorMsg}`);
+                }
+
+                logger.info(`Connection ${connection_id} (${connectionName}) deleted successfully by user ${user.email} (${isSuperAdmin ? 'SuperAdmin' : 'User'})`);
+
+                return createResponse(200, "Connection deleted successfully", {
+                    connection_id: connection_id,
+                    name: connectionName,
+                    deleted_at: new Date(),
+                    deleted_by: user.email
+                });
+
+            } catch (guacError) {
+                console.log('Delete Connection Debug - Guacamole API error:', guacError);
+                return createResponse(500, `Failed to delete connection: ${guacError instanceof Error ? guacError.message : 'Unknown error'}`);
+            }
+
+        } catch (error) {
+            logger.error("Error deleting connection:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
 }

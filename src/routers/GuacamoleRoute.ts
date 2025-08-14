@@ -38,6 +38,11 @@ export class GuacamoleRoute extends Route{
             this.Controller.listUserConnections(req, res);
         });
 
+        // Delete connection endpoint
+        this.router.delete(`${this.url}deleteConnection`, (req, res) => {
+            this.Controller.deleteConnection(req, res);
+        });
+
     }
 
 }
