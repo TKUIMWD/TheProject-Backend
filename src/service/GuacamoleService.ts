@@ -17,8 +17,9 @@ import {
 
 // Guacamole 環境變數配置
 const GUACAMOLE_URL = process.env.GUACAMOLE_BASE_URL;
-const GUACAMOLE_USERNAME = process.env.GUACAMOLE_USER;
-const GUACAMOLE_PASSWORD = process.env.GUACAMOLE_PASSWORD;
+const GUACAMOLE_API_USERNAME = process.env.GUACAMOLE_API_USERNAME;
+const GUACAMOLE_API_PASSWORD = process.env.GUACAMOLE_API_PASSWORD;
+const PROJECTUSER_GUACAMOLE_PASSWORD = process.env.PROJECTUSER_GUACAMOLE_PASSWORD;
 
 export class GuacamoleService extends Service {
 
@@ -26,7 +27,7 @@ export class GuacamoleService extends Service {
      * 檢查 Guacamole 服務配置是否完整
      */
     private _checkGuacamoleConfiguration(): boolean {
-        return !!(GUACAMOLE_URL && GUACAMOLE_USERNAME && GUACAMOLE_PASSWORD);
+        return !!(GUACAMOLE_URL && GUACAMOLE_API_USERNAME && GUACAMOLE_API_PASSWORD && PROJECTUSER_GUACAMOLE_PASSWORD);
     }
 
     /**
@@ -350,7 +351,401 @@ export class GuacamoleService extends Service {
     }
 
     /**
-     * 獲取 Guacamole 認證令牌
+     * 檢查 Guacamole 用戶是否存在
+     */
+    private async _checkGuacamoleUserExists(userEmail: string, dataSource: string): Promise<{ exists: boolean; user?: any }> {
+        try {
+            // 先獲取管理員認證令牌
+            const authTokenResult = await this._getAdminAuthToken();
+            if (authTokenResult.code !== 200 || !authTokenResult.body) {
+                throw new Error("Failed to get admin auth token");
+            }
+
+            const usersUrl = `${GUACAMOLE_URL}/api/session/data/${dataSource}/users/${userEmail}`;
+            
+            const https = require('https');
+            const { URL } = require('url');
+            
+            return new Promise((resolve) => {
+                const parsedUrl = new URL(usersUrl);
+                
+                const options = {
+                    hostname: parsedUrl.hostname,
+                    port: parsedUrl.port,
+                    path: parsedUrl.pathname,
+                    method: 'GET',
+                    headers: {
+                        'Guacamole-Token': authTokenResult.body!.token,
+                        'Content-Type': 'application/json'
+                    },
+                    rejectUnauthorized: false
+                };
+
+                const req = https.request(options, (res: any) => {
+                    let data = '';
+                    
+                    res.on('data', (chunk: any) => {
+                        data += chunk;
+                    });
+                    
+                    res.on('end', () => {
+                        if (res.statusCode === 200) {
+                            try {
+                                const userData = JSON.parse(data);
+                                resolve({ exists: true, user: userData });
+                            } catch (parseError) {
+                                logger.error('Error parsing user data:', parseError);
+                                resolve({ exists: false });
+                            }
+                        } else if (res.statusCode === 404) {
+                            resolve({ exists: false });
+                        } else {
+                            logger.error(`Unexpected response status: ${res.statusCode}, data: ${data}`);
+                            resolve({ exists: false });
+                        }
+                    });
+                });
+
+                req.on('error', (error: any) => {
+                    logger.error('Error checking user existence:', error);
+                    resolve({ exists: false });
+                });
+
+                req.end();
+            });
+
+        } catch (error) {
+            logger.error("Error checking Guacamole user existence:", error);
+            return { exists: false };
+        }
+    }
+
+    /**
+     * 創建 Guacamole 用戶
+     */
+    private async _createGuacamoleUser(userEmail: string, dataSource: string): Promise<{ success: boolean; message: string }> {
+        try {
+            // 獲取管理員認證令牌
+            const authTokenResult = await this._getAdminAuthToken();
+            if (authTokenResult.code !== 200 || !authTokenResult.body) {
+                throw new Error("Failed to get admin auth token");
+            }
+
+            const createUserUrl = `${GUACAMOLE_URL}/api/session/data/${dataSource}/users`;
+
+            const userData = {
+                username: userEmail,
+                password: PROJECTUSER_GUACAMOLE_PASSWORD,
+                attributes: {
+                    "guac-full-name": userEmail,
+                    "guac-email-address": userEmail
+                }
+            };
+
+            const https = require('https');
+            const { URL } = require('url');
+            
+            return new Promise((resolve) => {
+                const parsedUrl = new URL(createUserUrl);
+                const postData = JSON.stringify(userData);
+                
+                const options = {
+                    hostname: parsedUrl.hostname,
+                    port: parsedUrl.port,
+                    path: parsedUrl.pathname,
+                    method: 'POST',
+                    headers: {
+                        'Guacamole-Token': authTokenResult.body!.token,
+                        'Content-Type': 'application/json',
+                        'Content-Length': Buffer.byteLength(postData)
+                    },
+                    rejectUnauthorized: false
+                };
+
+                const req = https.request(options, (res: any) => {
+                    let data = '';
+                    
+                    res.on('data', (chunk: any) => {
+                        data += chunk;
+                    });
+                    
+                    res.on('end', async () => {
+                        if (res.statusCode === 200 || res.statusCode === 201) {
+                            logger.info(`Successfully created Guacamole user: ${userEmail}`);
+                            
+                            // 設定用戶權限：只允許建立連接
+                            const permissionResult = await this._setUserPermissions(userEmail, authTokenResult.body!.token, dataSource);
+                            
+                            if (permissionResult.success) {
+                                // 驗證權限是否設定成功
+                                setTimeout(async () => {
+                                    const verifyResult = await this._verifyUserPermissions(userEmail, dataSource);
+                                    logger.info(`Permission verification for ${userEmail}: ${verifyResult.hasPermissions ? 'SUCCESS' : 'FAILED'} - ${verifyResult.message}`);
+                                }, 500);
+                                
+                                resolve({ success: true, message: "User created and permissions set successfully" });
+                            } else {
+                                logger.error(`User created but failed to set permissions: ${permissionResult.message}`);
+                                resolve({ success: true, message: `User created but permission setup failed: ${permissionResult.message}` });
+                            }
+                        } else {
+                            logger.error(`Failed to create Guacamole user. Status: ${res.statusCode}, Response: ${data}`);
+                            resolve({ success: false, message: `Failed to create user: ${res.statusCode}` });
+                        }
+                    });
+                });
+
+                req.on('error', (error: any) => {
+                    logger.error("Error creating Guacamole user:", error);
+                    resolve({ success: false, message: error.message || "Unknown error" });
+                });
+
+                req.write(postData);
+                req.end();
+            });
+
+        } catch (error) {
+            logger.error("Error creating Guacamole user:", error);
+            return { success: false, message: error instanceof Error ? error.message : "Unknown error" };
+        }
+    }
+
+    /**
+     * 設定用戶權限：只允許建立連接
+     */
+    private async _setUserPermissions(userEmail: string, adminToken: string, dataSource: string): Promise<{ success: boolean; message: string }> {
+        return new Promise((resolve) => {
+            try {
+                const permissionsUrl = `${GUACAMOLE_URL}/api/session/data/${dataSource}/users/${userEmail}/permissions`;
+                
+                // 根據 Guacamole API 文檔，正確的 patch 路徑格式
+                const patchOperations = [
+                    {
+                        "op": "add",
+                        "path": "/systemPermissions",
+                        "value": "CREATE_CONNECTION"
+                    }
+                ];
+
+                const https = require('https');
+                const { URL } = require('url');
+                const postData = JSON.stringify(patchOperations);
+                
+                const parsedUrl = new URL(permissionsUrl);
+                
+                const options = {
+                    hostname: parsedUrl.hostname,
+                    port: parsedUrl.port,
+                    path: parsedUrl.pathname,
+                    method: 'PATCH',
+                    headers: {
+                        'Guacamole-Token': adminToken,
+                        'Content-Type': 'application/json',
+                        'Content-Length': Buffer.byteLength(postData)
+                    },
+                    rejectUnauthorized: false
+                };
+
+                logger.info(`Setting CREATE_CONNECTION permission for user: ${userEmail}`);
+
+                const req = https.request(options, (res: any) => {
+                    let data = '';
+                    res.on('data', (chunk: any) => {
+                        data += chunk;
+                    });
+                    res.on('end', () => {
+                        logger.info(`Permission setting response status: ${res.statusCode}`);
+                        logger.info(`Permission setting response: ${data}`);
+                        
+                        if (res.statusCode === 200 || res.statusCode === 204) {
+                            resolve({ success: true, message: "Permissions set successfully" });
+                        } else {
+                            resolve({ success: false, message: `Failed to set permissions: ${res.statusCode} - ${data}` });
+                        }
+                    });
+                });
+
+                req.on('error', (error: any) => {
+                    logger.error("Error setting user permissions:", error);
+                    resolve({ success: false, message: error.message || "Unknown error" });
+                });
+
+                req.write(postData);
+                req.end();
+
+            } catch (error) {
+                logger.error("Error setting user permissions:", error);
+                resolve({ success: false, message: error instanceof Error ? error.message : "Unknown error" });
+            }
+        });
+    }
+
+    /**
+     * 驗證用戶是否有創建連接的權限
+     */
+    private async _verifyUserPermissions(userEmail: string, dataSource: string): Promise<{ hasPermissions: boolean; message?: string }> {
+        try {
+            // 獲取管理員認證令牌
+            const authTokenResult = await this._getAdminAuthToken();
+            if (authTokenResult.code !== 200 || !authTokenResult.body) {
+                return { hasPermissions: false, message: "Failed to get admin auth token" };
+            }
+
+            const permissionsUrl = `${GUACAMOLE_URL}/api/session/data/${dataSource}/users/${userEmail}/permissions`;
+            
+            const https = require('https');
+            const { URL } = require('url');
+            
+            return new Promise((resolve) => {
+                const parsedUrl = new URL(permissionsUrl);
+                
+                const options = {
+                    hostname: parsedUrl.hostname,
+                    port: parsedUrl.port,
+                    path: parsedUrl.pathname,
+                    method: 'GET',
+                    headers: {
+                        'Guacamole-Token': authTokenResult.body!.token,
+                        'Content-Type': 'application/json'
+                    },
+                    rejectUnauthorized: false
+                };
+
+                const req = https.request(options, (res: any) => {
+                    let data = '';
+                    
+                    res.on('data', (chunk: any) => {
+                        data += chunk;
+                    });
+                    
+                    res.on('end', () => {
+                        if (res.statusCode === 200) {
+                            try {
+                                const permissions = JSON.parse(data);
+                                const hasCreatePermission = permissions.systemPermissions && 
+                                    permissions.systemPermissions.includes('CREATE_CONNECTION');
+                                
+                                resolve({ 
+                                    hasPermissions: hasCreatePermission,
+                                    message: hasCreatePermission ? "User has connection creation permissions" : "User missing CREATE_CONNECTION permission"
+                                });
+                            } catch (parseError) {
+                                logger.error('Error parsing permissions data:', parseError);
+                                resolve({ hasPermissions: false, message: "Error parsing permissions" });
+                            }
+                        } else {
+                            logger.error(`Failed to get user permissions. Status: ${res.statusCode}, Response: ${data}`);
+                            resolve({ hasPermissions: false, message: `Failed to get permissions: ${res.statusCode}` });
+                        }
+                    });
+                });
+
+                req.on('error', (error: any) => {
+                    logger.error('Error checking user permissions:', error);
+                    resolve({ hasPermissions: false, message: "Error checking permissions" });
+                });
+
+                req.end();
+            });
+
+        } catch (error) {
+            logger.error("Error verifying user permissions:", error);
+            return { hasPermissions: false, message: error instanceof Error ? error.message : "Unknown error" };
+        }
+    }
+
+    /**
+     * 獲取管理員認證令牌
+     */
+    private async _getAdminAuthToken(): Promise<resp<GuacamoleAuthToken | undefined>> {
+        try {
+            const authUrl = `${GUACAMOLE_URL}/api/tokens`;
+            
+            const response = await this._guacamoleApiCall(authUrl, {
+                username: GUACAMOLE_API_USERNAME!,
+                password: GUACAMOLE_API_PASSWORD!
+            });
+
+            if (response.error) {
+                return createResponse(500, `Admin authentication failed: ${response.error}`);
+            }
+
+            const token = response?.authToken || response?.token;
+            const dataSource = response?.dataSource || 'postgresql';
+            
+            if (token) {
+                return createResponse(200, "Admin auth token obtained", { 
+                    token, 
+                    dataSource,
+                    username: GUACAMOLE_API_USERNAME
+                });
+            }
+
+            return createResponse(500, "Failed to obtain admin auth token");
+        } catch (error) {
+            logger.error("Error getting admin auth token:", error);
+            return createResponse(500, `Error getting admin auth token: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
+
+    /**
+     * 確保用戶存在並獲取用戶認證令牌
+     */
+    private async _ensureUserAndGetToken(userEmail: string): Promise<resp<GuacamoleAuthToken | undefined>> {
+        try {
+            // 先獲取管理員認證令牌以取得 dataSource
+            const adminTokenResult = await this._getAdminAuthToken();
+            if (adminTokenResult.code !== 200 || !adminTokenResult.body) {
+                return createResponse(500, "Failed to get admin auth token for dataSource");
+            }
+            
+            const dataSource = adminTokenResult.body.dataSource || 'postgresql';
+            
+            // 檢查用戶是否存在
+            const { exists } = await this._checkGuacamoleUserExists(userEmail, dataSource);
+            
+            if (!exists) {
+                logger.info(`Guacamole user ${userEmail} does not exist, creating...`);
+                const createResult = await this._createGuacamoleUser(userEmail, dataSource);
+                
+                if (!createResult.success) {
+                    return createResponse(500, `Failed to create Guacamole user: ${createResult.message}`);
+                }
+            }
+
+            // 獲取用戶認證令牌
+            const authUrl = `${GUACAMOLE_URL}/api/tokens`;
+            
+            const response = await this._guacamoleApiCall(authUrl, {
+                username: userEmail,
+                password: PROJECTUSER_GUACAMOLE_PASSWORD!
+            });
+
+            if (response.error) {
+                return createResponse(500, `User authentication failed: ${response.error}`);
+            }
+
+            const token = response?.authToken || response?.token;
+            const responseDataSource = response?.dataSource || dataSource;
+            
+            if (token) {
+                logger.info(`Successfully obtained auth token for user: ${userEmail}`);
+                return createResponse(200, "User auth token obtained", { 
+                    token, 
+                    dataSource: responseDataSource,
+                    username: userEmail
+                });
+            }
+
+            return createResponse(500, "Failed to obtain user auth token");
+        } catch (error) {
+            logger.error("Error in _ensureUserAndGetToken:", error);
+            return createResponse(500, `Error ensuring user and getting token: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
+
+    /**
+     * 獲取 Guacamole 認證令牌 (使用用戶信箱和統一密碼)
      */
     private async _getGuacamoleAuthToken(req: Request): Promise<resp<GuacamoleAuthToken | undefined>> {
         try {
@@ -358,65 +753,28 @@ export class GuacamoleService extends Service {
             if (!this._checkGuacamoleConfiguration()) {
                 logger.error("Guacamole configuration missing:", {
                     url: !!GUACAMOLE_URL,
-                    username: !!GUACAMOLE_USERNAME,
-                    password: !!GUACAMOLE_PASSWORD
+                    username: !!GUACAMOLE_API_USERNAME,
+                    password: !!GUACAMOLE_API_PASSWORD,
+                    userPassword: !!PROJECTUSER_GUACAMOLE_PASSWORD
                 });
                 return createResponse(503, "Guacamole service is not configured. Please contact administrator to configure the service.");
             }
 
-            const authUrl = `${GUACAMOLE_URL}/api/tokens`;
-            logger.info(`Requesting Guacamole auth token - URL: ${authUrl}, Username: ${GUACAMOLE_USERNAME}`);
-
-            // 使用專門的函數進行 Guacamole API 調用
-            try {
-                const response = await this._guacamoleApiCall(authUrl, {
-                    username: GUACAMOLE_USERNAME!,
-                    password: GUACAMOLE_PASSWORD!
-                });
-
-                logger.info('Guacamole auth response received:', typeof response);
-                
-                // 檢查是否有錯誤
-                if (response.error) {
-                    logger.error('Guacamole API error:', response);
-                    return createResponse(500, `Guacamole authentication failed: ${response.error}`);
-                }
-
-                // 檢查是否是認證頻率限制
-                if (response.type === 'BAD_REQUEST' && response.message?.includes('Too many failed authentication attempts')) {
-                    logger.warn('Guacamole rate limit hit');
-                    return createResponse(429, "Too many authentication attempts. Please wait and try again.");
-                }
-
-                // 檢查並返回認證令牌
-                const token = response?.authToken || response?.token;
-                const dataSource = response?.dataSource || 'postgresql';
-                const username = response?.username || GUACAMOLE_USERNAME;
-                
-                if (token) {
-                    logger.info('Successfully obtained Guacamole auth token');
-                    return createResponse(200, "Guacamole auth token obtained", { 
-                        token, 
-                        dataSource,
-                        username
-                    });
-                }
-
-                logger.error("Guacamole auth response missing token field:", JSON.stringify(response));
-                return createResponse(500, "Failed to obtain Guacamole auth token - invalid response format");
-
-            } catch (apiError) {
-                logger.error("Guacamole API call failed:", {
-                    message: apiError instanceof Error ? apiError.message : 'Unknown API error',
-                    code: (apiError as any)?.code,
-                    errno: (apiError as any)?.errno,
-                    syscall: (apiError as any)?.syscall,
-                    address: (apiError as any)?.address,
-                    port: (apiError as any)?.port
-                });
-
-                return createResponse(500, `Guacamole API connection failed: ${apiError instanceof Error ? apiError.message : 'Unknown error'}`);
+            // 驗證用戶權限並獲取用戶信息
+            const userValidation = await this._validateUserPermissions(req);
+            if ('error' in userValidation) {
+                return userValidation.error;
             }
+
+            const userEmail = userValidation.user.email;
+            if (!userEmail) {
+                return createResponse(400, "User email is required for Guacamole authentication");
+            }
+
+            logger.info(`Requesting Guacamole auth token for user: ${userEmail}`);
+
+            // 確保用戶存在並獲取認證令牌
+            return await this._ensureUserAndGetToken(userEmail);
 
         } catch (error) {
             logger.error("Error in _getGuacamoleAuthToken:", {
@@ -501,7 +859,7 @@ export class GuacamoleService extends Service {
             // 調用 Guacamole API 建立連線
             try {
                 const dataSource = authTokenResult.body.dataSource || 'postgresql';
-                const connectionName = `SSH-${vmName}`;
+                const connectionName = `SSH-${vmName}-${user.email}`;
                 
                 // 第一步：檢查是否已存在相同名稱的配置
                 const connectionsListUrl = `${GUACAMOLE_URL}/api/session/data/${dataSource}/connections`;
@@ -551,10 +909,6 @@ export class GuacamoleService extends Service {
                             port: (port || 22).toString(),
                             username: username || 'root',
                             password: password || '',
-                            // 只保留基本的 SSH 參數
-                            'font-name': 'monospace',
-                            'font-size': '12',
-                            'color-scheme': 'white-black'
                         },
                         attributes: {
                             'max-connections': '5',
@@ -716,7 +1070,7 @@ export class GuacamoleService extends Service {
             // 調用 Guacamole API 建立連線
             try {
                 const dataSource = authTokenResult.body.dataSource || 'postgresql';
-                const connectionName = `RDP-${vmName}`;
+                const connectionName = `RDP-${vmName}-${user.email}`;
                 
                 // 檢查是否已存在相同名稱的配置
                 const connectionsListUrl = `${GUACAMOLE_URL}/api/session/data/${dataSource}/connections`;
@@ -914,7 +1268,7 @@ export class GuacamoleService extends Service {
             // 調用 Guacamole API 建立連線
             try {
                 const dataSource = authTokenResult.body.dataSource || 'postgresql';
-                const connectionName = `VNC-${vmName}`;
+                const connectionName = `VNC-${vmName}-${user.email}`;
                 
                 // 檢查是否已存在相同名稱的配置
                 const connectionsListUrl = `${GUACAMOLE_URL}/api/session/data/${dataSource}/connections`;
