@@ -1453,4 +1453,104 @@ export class GuacamoleService extends Service {
             return createResponse(500, `Error disconnecting connection: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }
+
+    /**
+     * 列出用戶的連接
+     */
+    public async listUserConnections(req: Request): Promise<resp<any[] | undefined>> {
+        try {
+            // 檢查 Guacamole 服務配置
+            if (!this._checkGuacamoleConfiguration()) {
+                logger.error("Guacamole service is not configured for listing connections");
+                return createResponse(503, "Guacamole service is not configured. Please contact administrator to configure the service.");
+            }
+
+            // 驗證用戶權限
+            const userValidation = await this._validateUserPermissions(req);
+            if ('error' in userValidation) {
+                return userValidation.error;
+            }
+
+            const { user } = userValidation;
+
+            // 獲取 Guacamole 認證令牌
+            const authTokenResult = await this._getGuacamoleAuthToken(req);
+            if (authTokenResult.code !== 200 || !authTokenResult.body) {
+                return createResponse(500, "Failed to authenticate with Guacamole service");
+            }
+
+            const dataSource = authTokenResult.body.dataSource || 'postgresql';
+            
+            try {
+                // 調用 Guacamole API 列出連接
+                const connectionsListUrl = `${GUACAMOLE_URL}/api/session/data/${dataSource}/connections`;
+                
+                console.log('List Connections Debug - URL:', connectionsListUrl);
+                console.log('List Connections Debug - User:', user.email);
+                
+                const connectionsResponse = await callWithUnauthorized(
+                    'GET',
+                    connectionsListUrl,
+                    undefined,
+                    {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Guacamole-Token': authTokenResult.body.token
+                        }
+                    }
+                );
+
+                console.log('List Connections Debug - Raw response:', JSON.stringify(connectionsResponse, null, 2));
+
+                if (!connectionsResponse || typeof connectionsResponse !== 'object') {
+                    console.log('List Connections Debug - No connections found or invalid response');
+                    return createResponse(200, "No connections found", []);
+                }
+
+                // 處理連接列表，過濾出屬於當前用戶的連接
+                const userConnections = [];
+                
+                for (const [connectionId, connection] of Object.entries(connectionsResponse)) {
+                    const connectionData = connection as any;
+                    
+                    // 檢查連接名稱是否包含用戶 email（基於我們之前的命名規則）
+                    if (connectionData.name && connectionData.name.includes(user.email)) {
+                        // 生成直接連接 URL
+                        const directUrl = this._generateDirectConnectionUrl(
+                            connectionId, 
+                            dataSource, 
+                            authTokenResult.body.token
+                        );
+
+                        userConnections.push({
+                            connection_id: connectionId,
+                            name: connectionData.name,
+                            protocol: connectionData.protocol,
+                            parameters: {
+                                hostname: connectionData.parameters?.hostname,
+                                port: connectionData.parameters?.port,
+                                username: connectionData.parameters?.username
+                            },
+                            created_at: new Date(), // Guacamole 可能不提供創建時間
+                            status: 'active' as const
+                        });
+                    }
+                }
+
+                console.log('List Connections Debug - Filtered user connections:', userConnections.length);
+
+                logger.info(`Listed ${userConnections.length} connections for user ${user.email}`);
+                
+                return createResponse(200, `Found ${userConnections.length} connections`, userConnections);
+
+            } catch (guacError) {
+                console.log('List Connections Debug - Guacamole API error:', guacError);
+                return createResponse(500, `Failed to list connections from Guacamole: ${guacError instanceof Error ? guacError.message : 'Unknown error'}`);
+            }
+
+        } catch (error) {
+            logger.error("Error listing user connections:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
 }

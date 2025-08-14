@@ -30,4 +30,9 @@ export class GuacamoleController extends Controller {
     const resp = await this.service.disconnectGuacamoleConnection(Request);
     Response.status(resp.code).send(resp);
   }
+
+  public async listUserConnections(Request: Request, Response: Response) {
+    const resp = await this.service.listUserConnections(Request);
+    Response.status(resp.code).send(resp);
+  }
 }

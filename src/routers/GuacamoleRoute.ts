@@ -33,6 +33,11 @@ export class GuacamoleRoute extends Route{
             this.Controller.disconnectGuacamoleConnection(req, res);
         });
 
+        // List user connections endpoint
+        this.router.get(`${this.url}connections`, (req, res) => {
+            this.Controller.listUserConnections(req, res);
+        });
+
     }
 
 }
