@@ -963,14 +963,12 @@ export class GuacamoleService extends Service {
                 const directSSHUrl = this._generateDirectConnectionUrl(configId, dataSource, authTokenResult.body.token);
                 console.log(`SSH Direct Session URL: ${directSSHUrl}`);
                 
-                const connection: GuacamoleConnection = {
+                const connection:GuacamoleConnection = {
                     connection_id: connectionId,
-                    vm_id: vm_id,
                     protocol: 'ssh',
                     status: 'active',
                     created_at: new Date(),
                     expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000), // 4小時後過期
-                    guacamole_connection_id: configId,
                     target_ip: networkInfo.ip,
                     available_ips: networkInfo.allIPs,
                     direct_url: directSSHUrl
@@ -1165,14 +1163,12 @@ export class GuacamoleService extends Service {
                 const directRDPUrl = this._generateDirectConnectionUrl(configId, dataSource, authTokenResult.body.token);
                 console.log(`RDP Direct Session URL: ${directRDPUrl}`);
                 
-                const connection: GuacamoleConnection = {
+                const connection:GuacamoleConnection = {
                     connection_id: connectionId,
-                    vm_id: vm_id,
                     protocol: 'rdp',
                     status: 'active',
                     created_at: new Date(),
                     expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000), // 4小時後過期
-                    guacamole_connection_id: configId,
                     target_ip: networkInfo.ip,
                     available_ips: networkInfo.allIPs,
                     direct_url: directRDPUrl
@@ -1363,14 +1359,12 @@ export class GuacamoleService extends Service {
                 const directVNCUrl = this._generateDirectConnectionUrl(configId, dataSource, authTokenResult.body.token);
                 console.log(`VNC Direct Session URL: ${directVNCUrl}`);
                 
-                const connection: GuacamoleConnection = {
+                const connection:GuacamoleConnection = {
                     connection_id: connectionId,
-                    vm_id: vm_id,
                     protocol: 'vnc',
                     status: 'active',
                     created_at: new Date(),
                     expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000), // 4小時後過期
-                    guacamole_connection_id: configId,
                     target_ip: networkInfo.ip,
                     available_ips: networkInfo.allIPs,
                     direct_url: directVNCUrl

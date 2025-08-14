@@ -10,12 +10,10 @@ export interface GuacamoleConnectionRequest {
 
 export interface GuacamoleConnection {
     connection_id: string;
-    vm_id: string;
     protocol: string;
     status: 'active' | 'inactive';
     created_at: Date;
     expires_at: Date;
-    guacamole_connection_id?: string;
     target_ip?: string;
     available_ips?: string[];
     direct_url?: string; // Guacamole 直接連線 URL
