@@ -1,7 +1,7 @@
 import { Service } from "../abstract/Service";
 import { resp, createResponse } from "../utils/resp";
 import { Request } from "express";
-import { validateTokenAndGetUser } from "../utils/auth";
+import { validateTokenAndGetSuperAdminUser, validateTokenAndGetUser } from "../utils/auth";
 import { VMModel } from "../orm/schemas/VM/VMSchemas";
 import { User } from "../interfaces/User";
 import { VMUtils } from "../utils/VMUtils";
@@ -9,6 +9,10 @@ import { VM } from "../interfaces/VM/VM";
 import { logger } from "../middlewares/log";
 
 export class VMOperateService extends Service {
+    public async _isSuperAdmin(Request: Request): Promise<boolean> {
+        const { user, error } = await validateTokenAndGetSuperAdminUser<User>(Request);
+        return !error && user ? true : false;
+    }
 
     /**
      * 啟動 VM (boot)
@@ -32,7 +36,9 @@ export class VMOperateService extends Service {
                 return createResponse(404, "VM not found");
             }
 
-            if (vm.owner !== user._id.toString()) {
+            // 如果不是擁有者，且不是超級管理員，則拒絕
+            const isSuperAdmin = await this._isSuperAdmin(Request);
+            if (vm.owner !== user._id.toString() && !isSuperAdmin) {
                 return createResponse(403, "You don't have permission to operate this VM");
             }
 
@@ -84,7 +90,9 @@ export class VMOperateService extends Service {
                 return createResponse(404, "VM not found");
             }
 
-            if (vm.owner !== user._id.toString()) {
+            // 如果不是擁有者，且不是超級管理員，則拒絕
+            const isSuperAdmin = await this._isSuperAdmin(Request);
+            if (vm.owner !== user._id.toString() && !isSuperAdmin) {
                 return createResponse(403, "You don't have permission to operate this VM");
             }
 
@@ -136,7 +144,9 @@ export class VMOperateService extends Service {
                 return createResponse(404, "VM not found");
             }
 
-            if (vm.owner !== user._id.toString()) {
+            // 如果不是擁有者，且不是超級管理員，則拒絕
+            const isSuperAdmin = await this._isSuperAdmin(Request);
+            if (vm.owner !== user._id.toString() && !isSuperAdmin) {
                 return createResponse(403, "You don't have permission to operate this VM");
             }
 
@@ -188,7 +198,9 @@ export class VMOperateService extends Service {
                 return createResponse(404, "VM not found");
             }
 
-            if (vm.owner !== user._id.toString()) {
+            // 如果不是擁有者，且不是超級管理員，則拒絕
+            const isSuperAdmin = await this._isSuperAdmin(Request);
+            if (vm.owner !== user._id.toString() && !isSuperAdmin) {
                 return createResponse(403, "You don't have permission to operate this VM");
             }
 
@@ -240,7 +252,9 @@ export class VMOperateService extends Service {
                 return createResponse(404, "VM not found");
             }
 
-            if (vm.owner !== user._id.toString()) {
+            // 如果不是擁有者，且不是超級管理員，則拒絕
+            const isSuperAdmin = await this._isSuperAdmin(Request);
+            if (vm.owner !== user._id.toString() && !isSuperAdmin) {
                 return createResponse(403, "You don't have permission to operate this VM");
             }
 
