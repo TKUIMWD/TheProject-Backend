@@ -1,31 +1,22 @@
-import { VM_Template } from "./VM_Template";
+import { VM_Template, VM_Template_Info } from "./VM_Template";
 
 export interface VM_Box extends VM_Template {
     box_setup_description: string;
-    rating_score: number;
-    review_count:number;
-    reviews: string[];
-    walkthroughs: string[];
+    rating_score: number | undefined;
+    review_count:number | undefined;
+    reviews?: string[];
+    walkthroughs?: string[];
     updated_date: Date;
-    update_log: string // in json format
+    update_log?: string // in json format
 }
 
-export interface VM_Box_Info {
+export interface VM_Box_Info extends VM_Template_Info {
     _id?: string;
-    name: string | undefined;
-    description: string;
     box_setup_description: string;
-    submitted_date?: Date;
+    rating_score: number | undefined;
+    review_count:number | undefined;
+    reviews?: string[];
+    walkthroughs?: string[];
     updated_date: Date;
-    owner: string;
-    submitter_user_info?: {
-        username: string;
-        email: string;
-    };
-    default_cpu_cores: number;
-    default_memory_size: number;
-    default_disk_size: number;
-    rating_score: number;
-    review_count:number;
-    is_public?: boolean; // 是否為公開範本
+    update_log?: string // in json format
 }
