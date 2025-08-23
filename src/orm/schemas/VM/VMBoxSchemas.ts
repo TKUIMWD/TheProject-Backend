@@ -1,11 +1,11 @@
-import { model, Schema, Document, Types } from "mongoose";
+import { model, Schema, Document } from "mongoose";
 
 export interface IVMBox extends Document {
     vmtemplate_id: string;
     box_setup_description: string;
     rating_score: number | undefined;
     review_count: number | undefined;
-    reviews: Types.ObjectId[];
+    reviews: string[];
     walkthroughs: string[];
     updated_date: Date;
     update_log: string;
@@ -20,7 +20,7 @@ export const VMBoxSchemas = new Schema<IVMBox>({
     box_setup_description: { type: String, required: true },
     rating_score: { type: Number, default: undefined },
     review_count: { type: Number, default: undefined },
-    reviews: [{ type: Schema.Types.ObjectId, ref: 'reviews' }],
+    reviews: { type: [String], default: [] },
     walkthroughs: { type: [String], default: [] },
     updated_date: { type: Date, default: Date.now },
     update_log: { type: String, default: "[]" }, // JSON 格式
