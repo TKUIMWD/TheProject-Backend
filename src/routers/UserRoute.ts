@@ -43,5 +43,9 @@ export class UserRoute extends Route{
         this.router.get(`${this.url}getUserCourses`, (req: Request, res: Response) => {
             this.Controller.getUserCourses(req, res);
         });
+
+        this.router.get(`${this.url}getUserCRP`, (req: Request, res: Response) => {
+            this.Controller.getUserCRP(req, res);
+        });
     }
 }

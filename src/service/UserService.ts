@@ -14,6 +14,8 @@ import { Course, CourseInfo } from "../interfaces/Course/Course";
 import { CourseModel } from "../orm/schemas/CourseSchemas";
 import { log } from "console";
 import { createResponse } from "../utils/resp";
+import { ComputeResourcePlan } from "../interfaces/ComputeResourcePlan";
+import { ComputeResourcePlanModel } from "../orm/schemas/ComputeResourcePlanSchemas";
 
 
 export class UserService extends Service {
@@ -277,6 +279,30 @@ export class UserService extends Service {
             return createResponse(200, "User courses retrieved successfully", courseInfo);
         } catch (error) {
             logger.error(`Error getting user courses: ${error}`);
+            return createResponse(500, "Internal server error");
+        }
+    }
+
+    // get user CRP
+    public async getUserCRP(Request: Request): Promise<resp<ComputeResourcePlan | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser<ComputeResourcePlan>(Request);
+            if (error) {
+                return error;
+            }
+
+            if (!user.isVerified) {
+                return createResponse(403, "user is not verified");
+            }
+
+            const crp = await ComputeResourcePlanModel.findOne({ _id: user.compute_resource_plan_id }).lean();
+            if (!crp) {
+                return createResponse(404, "User CRP not found");
+            }
+
+            return createResponse(200, "User CRP retrieved successfully", crp);
+        } catch (error) {
+            logger.error(`Error getting user CRP: ${error}`);
             return createResponse(500, "Internal server error");
         }
     }

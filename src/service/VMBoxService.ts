@@ -13,7 +13,7 @@ import { Document } from "mongoose";
 import { sendBoxAuditResultEmail } from "../utils/MailSender/BoxAuditResultSender";
 import { VMUtils } from "../utils/VMUtils";
 import { PVEUtils } from "../utils/PVEUtils";
-import { Reviews } from "../interfaces/reviews";
+import { Reviews } from "../interfaces/Reviews";
 import { ReviewsModel } from "../orm/schemas/ReviewsSchemas";
 
 
