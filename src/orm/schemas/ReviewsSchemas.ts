@@ -1,5 +1,5 @@
 import { model, Schema } from "mongoose";
-import { Reviews } from "../../interfaces/reviews";
+import { Reviews } from "../../interfaces/Reviews";
 
 export const ReviewsSchemas = new Schema<Reviews>({
     reviewer_user_id: { type: String, required: true },
