@@ -140,4 +140,26 @@ export class SuperAdminCRPService extends Service {
             return createResponse(500, "Internal Server Error");
         }
     }
+
+    public async getCRPById(request: Request): Promise<resp<ComputeResourcePlan | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetSuperAdminUser<User>(request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return createResponse(error.code, error.message);
+            }
+
+            const { crpId } = request.params;
+
+            const crp = await ComputeResourcePlanModel.findById(crpId);
+            if (!crp) {
+                return createResponse(404, "Not Found: CRP not found");
+            }
+
+            return createResponse(200, "CRP retrieved successfully", crp);
+        } catch (e: any) {
+            logger.error(`Error retrieving CRP: ${e.message}`);
+            return createResponse(500, "Internal Server Error: " + e.message);
+        }
+    }
 }

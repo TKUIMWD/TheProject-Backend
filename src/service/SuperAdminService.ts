@@ -80,18 +80,18 @@ export class SuperAdminService extends Service {
                 return createResponse(403, "Forbidden: requires superadmin role");
             }
 
-            const { userId, planId  } = request.body;
+            const { userId, planId } = request.body;
 
             if (!userId) {
                 return createResponse(400, "Missing 'userId' field");
             }
-            if (!planId ) {
+            if (!planId) {
                 return createResponse(400, "Missing 'planId' field");
             }
 
             const [targetUser, CRP] = await Promise.all([
                 UsersModel.findById(userId),
-                ComputeResourcePlanModel.findById(planId )
+                ComputeResourcePlanModel.findById(planId)
             ]);
 
             if (!targetUser) {
@@ -117,6 +117,52 @@ export class SuperAdminService extends Service {
         } catch (e: any) {
             logger.error(`Error assigning CRP to user: ${e.message}`);
             return createResponse(500, "Internal Server Error: " + e.message);
+        }
+    }
+
+    // get all users (superadmin only)
+    public async getAllUsers(Request: Request): Promise<resp<Array<User> | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetSuperAdminUser<User[]>(Request);
+            if (error) {
+                return error;
+            }
+
+            if (!user.isVerified) {
+                return createResponse(403, "user is not verified");
+            }
+
+            const users = await UsersModel.find({ role: 'user' }).lean();
+            if (!users || users.length === 0) {
+                return createResponse(404, "No users found");
+            }
+            return createResponse(200, "All users retrieved successfully", users);
+        } catch (error) {
+            logger.error(`Error getting all users: ${error}`);
+            return createResponse(500, "Internal server error");
+        }
+    }
+
+    // get all admin users
+    public async getAllAdminUsers(Request: Request): Promise<resp<Array<User> | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetSuperAdminUser<User[]>(Request);
+            if (error) {
+                return error;
+            }
+
+            if (!user.isVerified) {
+                return createResponse(403, "user is not verified");
+            }
+
+            const adminUsers = await UsersModel.find({ role: 'admin' }).lean();
+            if (!adminUsers || adminUsers.length === 0) {
+                return createResponse(404, "No admin users found");
+            }
+            return createResponse(200, "All admin users retrieved successfully", adminUsers);
+        } catch (error) {
+            logger.error(`Error getting all admin users: ${error}`);
+            return createResponse(500, "Internal server error");
         }
     }
 }

@@ -52,5 +52,9 @@ export class SuperAdminCRPRoute extends Route {
         this.router.get(`${this.url}getAll`, (req, res) => {
             this.Controller.getAllCRPs(req, res);
         });
+
+        this.router.get(`${this.url}getById/:crpId`, (req, res) => {
+            this.Controller.getCRPById(req, res);
+        });
     }
 }

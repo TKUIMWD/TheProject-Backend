@@ -32,4 +32,9 @@ export class SuperAdminCRPController extends Controller {
         const resp = await this.service.getAllCRPs(Request);
         Response.status(resp.code).send(resp);
     }
+
+    public async getCRPById(Request: Request, Response: Response) {
+        const resp = await this.service.getCRPById(Request);
+        Response.status(resp.code).send(resp);
+    }
 }

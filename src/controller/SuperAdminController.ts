@@ -19,4 +19,14 @@ export class SuperAdminController extends Controller {
         const resp = await this.service.assignCRPToUser(Request);
         Response.status(resp.code).send(resp);
     }
+
+    public async getAllUsers(Request: Request, Response: Response) {
+        const resp = await this.service.getAllUsers(Request);
+        Response.status(resp.code).send(resp);
+    }
+
+    public async getAllAdminUsers(Request: Request, Response: Response) {
+        const resp = await this.service.getAllAdminUsers(Request);
+        Response.status(resp.code).send(resp);
+    }
 }

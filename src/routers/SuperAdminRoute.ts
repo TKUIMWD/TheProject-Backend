@@ -34,5 +34,13 @@ export class SuperAdminRoute extends Route {
         this.router.put(`${this.url}assignCRPToUser`, (req, res) => {
             this.Controller.assignCRPToUser(req, res);
         });
+
+        this.router.get(`${this.url}getAllUsers`, (req, res) => {
+            this.Controller.getAllUsers(req, res);
+        });
+
+        this.router.get(`${this.url}getAllAdminUsers`, (req, res) => {
+            this.Controller.getAllAdminUsers(req, res);
+        });
     }
 }
