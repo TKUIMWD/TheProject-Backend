@@ -3,6 +3,8 @@ export interface VM {
     pve_vmid: string;
     pve_node: string;
     owner: string;
+    is_box_vm?: boolean;
+    box_id?: string;
 }
 
 export interface VMConfig {

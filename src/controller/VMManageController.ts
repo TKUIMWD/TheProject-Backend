@@ -25,4 +25,9 @@ export class VMManageController extends Controller {
         const resp = await this.service.updateVMConfig(Request);
         Response.status(resp.code).send(resp);
     }
+
+    public async createVMFromBoxTemplate(Request: Request, Response: Response) {
+        const resp = await this.service.createVMFromBoxTemplate(Request);
+        Response.status(resp.code).send(resp);
+    }
 }

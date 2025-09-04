@@ -25,5 +25,9 @@ export class VMManageRoute extends Route {
         this.router.post(`${this.url}updateConfig`, (req, res) => {
             this.Controller.updateVMConfig(req, res);
         });
+
+        this.router.post(`${this.url}createFromBoxTemplate`, (req, res) => {
+            this.Controller.createVMFromBoxTemplate(req, res);
+        });
     }
 }

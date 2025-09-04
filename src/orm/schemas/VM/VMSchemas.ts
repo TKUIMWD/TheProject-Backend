@@ -6,6 +6,8 @@ export const VMSchema = new Schema<VM>({
     pve_vmid: { type: String, required: true },
     pve_node: { type: String, required: true },
     owner: { type: String, required: true },
+    is_box_vm: { type: Boolean, default: false },
+    box_id: { type: String }
 });
 
 export const VMModel = model<VM>('vms', VMSchema);

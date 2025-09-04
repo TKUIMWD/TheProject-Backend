@@ -22,6 +22,8 @@ import { UsedComputeResourceModel } from "../orm/schemas/UsedComputeResourceSche
 import { UsersModel } from "../orm/schemas/UserSchemas";
 import { VM_TaskModel } from "../orm/schemas/VM/VM_TaskSchemas";
 import { DeleteResult, UpdateResult } from "mongodb";
+import { SubmittedBoxModel } from "../orm/schemas/VM/SubmittedBoxSchemas";
+import { VMBoxModel } from "../orm/schemas/VM/VMBoxSchemas";
 
 
 export class VMManageService extends Service {
@@ -311,7 +313,7 @@ export class VMManageService extends Service {
         }
     }
 
-    private async _configureAndFinalizeVM(target_node: string, vmid: string, cpuCores: number, memorySize: number, diskSize: number, cloneUpid: string, sourceNode: string, taskId: string, ciuser: string, cipassword: string): Promise<{ success: boolean, errorMessage?: string }> {
+    private async _configureAndFinalizeVM(target_node: string, vmid: string, cpuCores: number, memorySize: number, diskSize: number, cloneUpid: string, sourceNode: string, taskId: string, ciuser?: string, cipassword?: string): Promise<{ success: boolean, errorMessage?: string }> {
         try {
             // 等待克隆任務完成
             const cloneWaitResult = await this._waitForTaskCompletion(sourceNode, cloneUpid, taskId, this.VM_CREATION_STEP_INDICES.CLONE);
@@ -346,9 +348,13 @@ export class VMManageService extends Service {
             }
 
             // 配置 Cloud-Init
-            const cloudInitResult = await this._configureCloudInit(target_node, vmid, ciuser, cipassword, taskId, this.VM_CREATION_STEP_INDICES.CLOUD_INIT);
-            if (!cloudInitResult.success) {
-                return { success: false, errorMessage: `Cloud-Init configuration failed: ${cloudInitResult.errorMessage}` };
+            if (!ciuser || !cipassword) {
+                logger.warn(`Cloud-Init user or password not provided, skipping Cloud-Init configuration for VM ${vmid}`);
+            } else {
+                const cloudInitResult = await this._configureCloudInit(target_node, vmid, ciuser, cipassword, taskId, this.VM_CREATION_STEP_INDICES.CLOUD_INIT);
+                if (!cloudInitResult.success) {
+                    return { success: false, errorMessage: `Cloud-Init configuration failed: ${cloudInitResult.errorMessage}` };
+                }
             }
 
             return { success: true };
@@ -1391,6 +1397,116 @@ export class VMManageService extends Service {
         } catch (error) {
             logger.error(`Error during VM configuration update:`, error);
             return { success: false, errorMessage: error instanceof Error ? error.message : "Unknown error during configuration update" };
+        }
+    }
+
+    public async createVMFromBoxTemplate(Request: Request): Promise<resp<PVEResp | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser<User>(Request);
+            if (error) {
+                logger.error("Error validating token for createVMFromBoxTemplate:", error);
+                return createResponse(error.code, error.message);
+            }
+            const { box_id, name, target, storage = "NFS", full = '1', cpuCores, memorySize, diskSize } = Request.body;
+            const box = await VMBoxModel.findById(box_id).exec();
+            if (!box) {
+                return createResponse(404, "Box not found");
+            }
+            const validationResult = await VMUtils.validateVMCreationParams({ template_id: box.vmtemplate_id, name, target, cpuCores, memorySize, diskSize });
+            if (validationResult.code !== 200) {
+                logger.warn(`VM creation validation failed for user ${user.username}: ${validationResult.message}`);
+                return validationResult;
+            }
+
+             const nextIdResult = await VMUtils.getNextVMId();
+            if (nextIdResult.code !== 200 || !nextIdResult.body) {
+                logger.error(`Failed to get next VM ID for user ${user.username}: ${nextIdResult.message}`);
+                return nextIdResult;
+            }
+            const nextId = nextIdResult.body.data;
+         
+            const sanitizedName = PVEUtils.sanitizeVMName(name);
+            if (!sanitizedName) {
+                logger.warn(`Invalid VM name provided by user ${user.username}: ${name}`);
+                return createResponse(400, "Invalid VM name. Name must contain only alphanumeric characters, hyphens, and dots, and cannot start or end with a hyphen.");
+            }
+
+            // 獲取範本資訊
+            const templateResult = await this._getTemplateDetails(box.vmtemplate_id);
+            if (templateResult.code !== 200 || !templateResult.body) {
+                logger.error(`Failed to get template details for user ${user.username}, template ${box.vmtemplate_id}: ${templateResult.message}`);
+                return templateResult;
+            }
+            const { template_info, qemuConfig } = templateResult.body;
+
+           // 檢查範本是否公開或用戶為 owner
+            if (!template_info.is_public && (!template_info.owner || template_info.owner !== user._id.toString())) {
+                logger.warn(`User ${user.username} (${user._id}) is not allowed to use template ${box.vmtemplate_id}`);
+                return createResponse(403, "You do not have permission to use this template");
+            }
+
+            // 檢查資源限制
+            const resourceCheckResult = await this._checkResourceLimits(user, cpuCores, memorySize, diskSize);
+            if (resourceCheckResult.code !== 200) {
+                logger.warn(`Resource limits exceeded for user ${user.username}: CPU=${cpuCores}, Memory=${memorySize}MB, Disk=${diskSize}GB`);
+                return resourceCheckResult;
+            }
+
+            // 創建任務前清理用戶的舊任務
+            await this._cleanupUserOldTasks(user._id.toString(), 20); // 每個用戶最多保留20個任務
+
+            const task = await this._createVMTask(box.vmtemplate_id, user._id.toString(), nextId, template_info.pve_vmid, target);
+            logger.info(`Created VM task ${task.task_id} for user ${user.username}, VM ID: ${nextId}`);
+
+            const cloneResult = await VMUtils.cloneVM(template_info.pve_node, template_info.pve_vmid, nextId, sanitizedName, target, storage, full);
+
+            await this._updateTaskStatus(task.task_id, cloneResult.success ? VM_Task_Status.IN_PROGRESS : VM_Task_Status.FAILED, cloneResult.upid, cloneResult.errorMessage);
+
+            if (!cloneResult.success) {
+                logger.error(`VM clone failed for user ${user.username}, task ${task.task_id}: ${cloneResult.errorMessage}`);
+                return createResponse(500, "Failed to clone VM from template");
+            }
+
+            const configResult = await this._configureAndFinalizeVM(target, nextId, cpuCores, memorySize, diskSize, cloneResult.upid!, template_info.pve_node, task.task_id);
+
+            if (configResult.success) {
+                // 只有在所有操作都成功後才更新資源使用量和用戶 VM 列表
+                await this._updateUsedComputeResources(user._id.toString(), cpuCores, memorySize, diskSize);
+                const vmTableId = await this._updateUserOwnedVMs(user._id.toString(), nextId, target);
+                await this._updateTaskStatus(task.task_id, VM_Task_Status.COMPLETED, cloneResult.upid);
+
+                // 修改 vm model，加入 box_id
+                await VMModel.updateOne(
+                    { _id: vmTableId },
+                    { box_id: box._id.toString(), is_box_vm: true }
+                );
+                logger.info(`VM ${nextId} created successfully for user ${user.username}, task ${task.task_id}`);
+
+                return createResponse(200, "VM created and configured successfully", {
+                    task_id: task.task_id,
+                    vm_name: sanitizedName,
+                    vmid: nextId
+                });
+            } else {
+                // 配置失敗，需要清理
+                await this._updateTaskStatus(task.task_id, VM_Task_Status.FAILED, cloneResult.upid, configResult.errorMessage);
+
+                logger.error(`VM configuration failed for user ${user.username}, task ${task.task_id}: ${configResult.errorMessage}`);
+
+                // 清理失敗的 VM 和資源 - 強制清理
+                try {
+                    await this._cleanupFailedVMCreation(user._id.toString(), nextId, target, task.task_id);
+                    logger.info(`Successfully cleaned up failed VM ${nextId} for user ${user.username}`);
+                } catch (cleanupError) {
+                    logger.error(`Error during cleanup of failed VM ${nextId}:`, cleanupError);
+                }
+
+                return createResponse(500, "VM created but configuration failed, resources have been cleaned up");
+            }
+            
+        } catch (error) {
+            logger.error("Error creating VM from box template:", error);
+            return createResponse(500, "Internal server error");
         }
     }
 }

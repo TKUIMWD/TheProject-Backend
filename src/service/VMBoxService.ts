@@ -62,7 +62,8 @@ export class VMBoxService extends Service {
                 box_setup_description,
                 submitter_user_id: user._id,
                 submitted_date: new Date(),
-                status: SubmittedBoxStatus.not_approved
+                status: SubmittedBoxStatus.not_approved,
+                flag_answers: Request.body.flag_answers || {}
             });
 
             await newSubmission.save();
