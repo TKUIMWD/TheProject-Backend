@@ -45,4 +45,9 @@ export class PVEController extends Controller {
     const resp = await this.service.getUserLatestTaskStatus(Request);
     Response.status(resp.code).send(resp);
   }
+
+  public async getDatacenterStatus(Request: Request, Response: Response) {
+    const resp = await this.service.getDatacenterStatus(Request);
+    Response.status(resp.code).send(resp);
+  }
 }

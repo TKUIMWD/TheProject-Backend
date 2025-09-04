@@ -44,6 +44,13 @@ export class PVERoute extends Route{
         this.router.get(`${this.url}getUserLatestTaskStatus`, (req, res) => {
             this.Controller.getUserLatestTaskStatus(req, res);
         });
+
+        // 取得 PVE Datacenter 狀態
+        // overview 包含 CPU、RAM、Storage 使用狀況
+        // nodes 包含每個節點的詳細狀態 : online, CPU, RAM , uptime
+        this.router.get(`${this.url}getDatacenterStatus`, (req, res) => {
+            this.Controller.getDatacenterStatus(req, res);
+        });
     }
 
 }
