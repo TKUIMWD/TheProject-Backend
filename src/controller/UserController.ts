@@ -48,4 +48,9 @@ export class UserController extends Controller {
         const resp = await this.service.getUserCRP(Request);
         Response.status(resp.code).send(resp);
     }
+
+    public async getUserById(Request: Request, Response: Response) {
+        const resp = await this.service.getUserById(Request);
+        Response.status(resp.code).send(resp);
+    }
 }

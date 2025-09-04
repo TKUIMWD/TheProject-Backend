@@ -47,5 +47,9 @@ export class UserRoute extends Route{
         this.router.get(`${this.url}getUserCRP`, (req: Request, res: Response) => {
             this.Controller.getUserCRP(req, res);
         });
+
+        this.router.get(`${this.url}getUserById/:id`, (req: Request, res: Response) => {
+            this.Controller.getUserById(req, res);
+        });
     }
 }

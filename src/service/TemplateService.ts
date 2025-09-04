@@ -460,16 +460,16 @@ export class TemplateService extends Service {
 
                 // 使用 PVE API 克隆原始範本到新的 VM ID
                 console.log(`Starting clone operation: source=${originalTemplate.pve_vmid} on ${originalTemplate.pve_node}, target=${newTemplateVmid}`);
-                
+
                 // 先獲取原始範本的配置信息以取得範本名稱
                 const originalTemplateConfig = await VMUtils.getTemplateInfo(originalTemplate.pve_node, originalTemplate.pve_vmid);
                 if (originalTemplateConfig.code !== 200 || !originalTemplateConfig.body) {
                     console.error(`Failed to get original template config: ${originalTemplateConfig.message}`);
                     return createResponse(500, `Failed to get original template config: ${originalTemplateConfig.message}`);
                 }
-                
+
                 const originalTemplateName = originalTemplateConfig.body.name || originalTemplate.description;
-                
+
                 // 清理範本名稱以符合 DNS 格式要求，加入日期以識別
                 const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD 格式
                 const rawTemplateName = `${currentDate}-${originalTemplateName}`;
@@ -478,9 +478,9 @@ export class TemplateService extends Service {
                     console.error(`Failed to sanitize template name: ${rawTemplateName}`);
                     return createResponse(500, `Invalid template name format: ${rawTemplateName}`);
                 }
-                
+
                 console.log(`Original template name: ${originalTemplateName}, sanitized new name: ${sanitizedTemplateName}`);
-                
+
                 const cloneResult = await VMUtils.cloneVM(
                     originalTemplate.pve_node,
                     originalTemplate.pve_vmid,

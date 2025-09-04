@@ -6,7 +6,7 @@ import { DBResp } from "../interfaces/Response/DBResp";
 import { resp } from "../utils/resp";
 import { UserProfile } from "../interfaces/User";
 import { Request } from "express";
-import { validateTokenAndGetUser } from "../utils/auth";
+import { validateTokenAndGetSuperAdminUser, validateTokenAndGetUser } from "../utils/auth";
 import { generateHashedPassword, passwordStrengthCheck } from "../utils/password";
 import { processAvatar, deleteAvatar, DEFAULT_AVATAR } from "../utils/avatarUpload";
 import { UsersModel } from "../orm/schemas/UserSchemas";
@@ -16,6 +16,7 @@ import { log } from "console";
 import { createResponse } from "../utils/resp";
 import { ComputeResourcePlan } from "../interfaces/ComputeResourcePlan";
 import { ComputeResourcePlanModel } from "../orm/schemas/ComputeResourcePlanSchemas";
+import { tar } from "compressing";
 
 
 export class UserService extends Service {
@@ -90,7 +91,7 @@ export class UserService extends Service {
                 email: user.email,
                 avatar_path: user.avatar_path || DEFAULT_AVATAR
             };
-            
+
             logger.info(`User ${user.username} updated profile successfully`);
             return createResponse(200, "Profile updated successfully", profile);
         } catch (error) {
@@ -137,7 +138,7 @@ export class UserService extends Service {
             if (!passwordStrengthCheckResult.isValid) {
                 return createResponse(400, `password does not meet the requirements: ${passwordStrengthCheckResult.missingRequirements.join(", ")}`);
             }
-            
+
             const hashedPassword = await generateHashedPassword(newPassword);
             user.password_hash = hashedPassword;
             await user.save();
@@ -237,11 +238,11 @@ export class UserService extends Service {
         }
     }
 
-/**
-     * get user's courses
-     * @param Request - Request object
-     * @returns resp<Array<CourseInfo> | undefined>
-     */
+    /**
+         * get user's courses
+         * @param Request - Request object
+         * @returns resp<Array<CourseInfo> | undefined>
+         */
     public async getUserCourses(Request: Request): Promise<resp<Array<CourseInfo> | undefined>> {
         try {
             // 1. 驗證 Token 並取得使用者資料 (此部分不變)
@@ -257,8 +258,8 @@ export class UserService extends Service {
             const courses = await CourseModel.find({
                 '_id': { $in: user.course_ids }
             })
-            .populate<{ submitter_user_id: { username: string } }>('submitter_user_id', 'username')
-            .lean();
+                .populate<{ submitter_user_id: { username: string } }>('submitter_user_id', 'username')
+                .lean();
 
             const courseInfo: CourseInfo[] = courses.map(course => ({
                 _id: course._id,
@@ -269,7 +270,7 @@ export class UserService extends Service {
                 rating: course.rating,
                 teacher_name: course.submitter_user_id?.username,
                 update_date: course.update_date,
-                status: course.status 
+                status: course.status
             }));
 
             if (!courseInfo || courseInfo.length === 0) {
@@ -301,6 +302,36 @@ export class UserService extends Service {
             }
 
             return createResponse(200, "User CRP retrieved successfully", crp);
+        } catch (error) {
+            logger.error(`Error getting user CRP: ${error}`);
+            return createResponse(500, "Internal server error");
+        }
+    }
+
+    // superadmin only
+    public async getUserById(Request: Request): Promise<resp<UserProfile | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetSuperAdminUser<UserProfile>(Request);
+            if (error) {
+                return error;
+            }
+
+            if (!user.isVerified) {
+                return createResponse(403, "user is not verified");
+            }
+
+            const target_user = await UsersModel.findById(Request.params.id).lean();
+            if (!target_user) {
+                return createResponse(404, "User not found");
+            }
+
+            const target_user_profile: UserProfile = {
+                username: target_user.username,
+                email: target_user.email,
+                avatar_path: target_user.avatar_path || DEFAULT_AVATAR
+            }
+
+            return createResponse(200, "User retrieved successfully", target_user_profile);
         } catch (error) {
             logger.error(`Error getting user CRP: ${error}`);
             return createResponse(500, "Internal server error");
