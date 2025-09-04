@@ -45,4 +45,14 @@ export class VMBoxController extends Controller {
     const resp = await this.service.getBoxReviews(Request);
     Response.status(resp.code).send(resp);
   }
+
+  public async getMyAnswerRecord(Request: Request, Response: Response) {
+    const resp = await this.service.getMyAnswerRecord(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async submitBoxAnswer(Request: Request, Response: Response) {
+    const resp = await this.service.submitBoxAnswer(Request);
+    Response.status(resp.code).send(resp);
+  }
 }

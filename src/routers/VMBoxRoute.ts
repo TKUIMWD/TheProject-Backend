@@ -47,5 +47,13 @@ export class VMBoxRoute extends Route{
         this.router.get(`${this.url}reviews`, (req, res) => {
             this.Controller.getBoxReviews(req, res);
         });
+
+        this.router.get(`${this.url}getMyAnswerRecord`, (req, res) => {
+            this.Controller.getMyAnswerRecord(req, res);
+        });
+
+        this.router.post(`${this.url}submitBoxAnswer`, (req, res) => {
+            this.Controller.submitBoxAnswer(req, res);
+        });
     }
 }

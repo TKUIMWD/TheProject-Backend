@@ -5,6 +5,7 @@ export interface VM {
     owner: string;
     is_box_vm?: boolean;
     box_id?: string;
+    answer_record?:string;
 }
 
 export interface VMConfig {
