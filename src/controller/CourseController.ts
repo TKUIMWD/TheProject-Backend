@@ -55,4 +55,9 @@ export class CourseController extends Controller {
     const resp = await this.service.UnApprovedCourseById(Request);
     Response.status(resp.code).send(resp);
   }
+
+  public async InviteToJoinCourse(Request: Request, Response: Response) {
+    const resp = await this.service.InviteToJoinCourse(Request);
+    Response.status(resp.code).send(resp);
+  }
 }

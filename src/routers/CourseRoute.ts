@@ -49,6 +49,10 @@ export class CourseRoute extends Route{
         this.router.post(`${this.url}/unapproved/:courseId`, (req, res) => {
             this.Controller.UnApprovedCourseById(req, res)
         });
+
+        this.router.post(`${this.url}/invite`, (req, res) => {
+            this.Controller.InviteToJoinCourse(req, res)
+        });
     }
 
 }

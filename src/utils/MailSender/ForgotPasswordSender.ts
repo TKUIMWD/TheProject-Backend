@@ -1,7 +1,6 @@
 require('dotenv').config();
 import {mailConfigurations,transporter} from "../../config/gmail";
 import { logger } from "../../middlewares/log";
-const BASE_URL = process.env.BASE_URL;
 
 export function sendForgotPasswordEmail(toMail: string, token: string) {
     const subject = '重置密碼';

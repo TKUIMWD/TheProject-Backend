@@ -17,6 +17,7 @@ import { JSDOM } from 'jsdom';
 import DOMPurify, { sanitize } from 'dompurify';
 import { sanitizeString, sanitizeArray } from "../utils/sanitize";
 import { SubmitterInfo } from "../interfaces/Course/SubmitterInfo";
+import { sendCourseInvitationsEmail } from "../utils/MailSender/CourseInviteSender";
 
 export class CourseService extends Service {
     /**
@@ -522,6 +523,44 @@ export class CourseService extends Service {
 
         }catch (err) {
             logger.error("Error in UnApprovedCourseById:", err);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    public async InviteToJoinCourse(Request: Request): Promise<resp<String | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetAdminUser<String>(Request);
+            if (error) {
+                return error;
+            }
+            const { course_id, emails } = Request.body;
+            console.log(Request.body);
+            if (!course_id || !Array.isArray(emails) || emails.length === 0) {
+                return createResponse(400, "Missing course_id or emails array");
+            }
+            const course = await CourseModel.findById(course_id).lean();
+            if (!course) {
+                return createResponse(404, "Course not found");
+            }
+            // 取得課程成員
+            const inviter = user.username;
+            const invited: string[] = [];
+            for (const email of emails) {
+                const invitedUser = await UsersModel.findOne({ email }).lean();
+                if (!invitedUser) {
+                    continue;
+                }
+                // 檢查用戶是否已經加入該課程
+                if (invitedUser.course_ids.includes(course_id)) {
+                    continue;
+                }
+                // 可選：發送郵件邀請
+                await sendCourseInvitationsEmail(email, course.course_name, course_id, inviter);
+                invited.push(email);
+            }
+            return createResponse(200, "Invitations sent");
+        } catch (err) {
+            logger.error("Error in InviteToJoinCourse:", err);
             return createResponse(500, "Internal Server Error");
         }
     }

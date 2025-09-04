@@ -1,7 +1,6 @@
 require('dotenv').config();
 import {mailConfigurations,transporter} from "../../config/gmail";
 import { logger } from "../../middlewares/log";
-const BASE_URL = process.env.BASE_URL;
 
 export function sendTemplateAuditResultEmail(toMail: string, templateName: string, status: string, rejectReason?: string) {
     const subject = `範本審核結果通知 - ${templateName}`;
