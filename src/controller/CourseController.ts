@@ -60,4 +60,9 @@ export class CourseController extends Controller {
     const resp = await this.service.InviteToJoinCourse(Request);
     Response.status(resp.code).send(resp);
   }
+
+  public async getFirstTemplateByCourseID(Request: Request, Response: Response) {
+    const resp = await this.service.getFirstTemplateByCourseID(Request);
+    Response.status(resp.code).send(resp);
+  }
 }

@@ -7,5 +7,6 @@ export interface Chapter {
     course_id: string,
     has_approved_content: string,
     waiting_for_approve_content: string,
-    saved_content: string
+    saved_content: string,
+    template_id?: string
 }

@@ -10,6 +10,7 @@ export const ChapterSchemas = new Schema<Chapter>({
     has_approved_content: { type: String },
     waiting_for_approve_content: { type: String, required: true },
     saved_content: { type: String },
+    template_id: { type: String, required: true },
 });
 
 export const ChapterModel = model<Chapter>('chapters', ChapterSchemas);

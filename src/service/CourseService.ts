@@ -564,4 +564,77 @@ export class CourseService extends Service {
             return createResponse(500, "Internal Server Error");
         }
     }
+
+    public async getFirstTemplateByCourseID(Request: Request): Promise<resp<String | { template_id: string } | undefined>> {
+        try {
+            const authResult = await this._getAuthorizedCourse(Request);
+            if (!authResult.success) {
+                return authResult.errorResp;
+            }
+
+            const { courseId } = Request.params;
+            if (!courseId || !mongoose.Types.ObjectId.isValid(courseId)) {
+                return createResponse(400, "Invalid course_id format");
+            }
+
+            const course = await CourseModel.findById(courseId).lean();
+            if (!course) {
+                return createResponse(404, "Course not found");
+            }
+            // 如果使用者未加入課程，維持權限一致性（和 getCourseMenu 類似可返回 403）
+            const { user , error } = await validateTokenAndGetUser<string>(Request);
+            if (error) {
+                return error;
+            }
+            // 檢查 user 是否已加入課程
+            // Debug: print user course_ids and whether it contains current courseId
+            const normalizedCourseIds = (user.course_ids || []).map((id: any) => id?.toString());
+            const isAuthorized = normalizedCourseIds.includes(courseId);
+            console.log('user.course_ids(normalized)=', normalizedCourseIds, 'includes courseId?', isAuthorized, 'courseId=', courseId);
+            if (!isAuthorized) {
+                return createResponse(403, "You are not authorized to access this course");
+            }
+
+            if (!course.class_ids || course.class_ids.length === 0) {
+                return createResponse(404, "No classes found in this course");
+            }
+
+            const classes = await ClassModel.find({ _id: { $in: course.class_ids } }).lean();
+            if (!classes || classes.length === 0) {
+                return createResponse(404, "Classes not found");
+            }
+            const sortedClasses = classes.sort((a: any, b: any) => a.class_order - b.class_order);
+
+            // 收集所有章節 id 一次查詢
+            const allChapterIds = sortedClasses.flatMap(c => c.chapter_ids || []);
+            if (allChapterIds.length === 0) {
+                return createResponse(404, "No chapters found in this course");
+            }
+            const chapters = await ChapterModel.find({ _id: { $in: allChapterIds } }).lean();
+            if (!chapters || chapters.length === 0) {
+                return createResponse(404, "Chapters not found");
+            }
+            const chapterMap = new Map(chapters.map(ch => [ch._id.toString(), ch]));
+
+            // 按班級順序、章節順序找第一個具有 template_id 的章節
+            for (const cls of sortedClasses) {
+                const chapterDocs = (cls.chapter_ids || [])
+                    .map((id: string) => chapterMap.get(id.toString()))
+                    .filter((c: any) => !!c);
+                // 章節依 chapter_order 排序
+                chapterDocs.sort((a: any, b: any) => a.chapter_order - b.chapter_order);
+                for (const ch of chapterDocs) {
+                    if (ch && typeof ch.template_id === 'string' && ch.template_id.trim() !== '') {
+                        return createResponse(200, "success", { template_id: ch.template_id });
+                    }
+                }
+            }
+
+            return createResponse(404, "No template_id found in any chapter of this course");
+        } catch (err) {
+            logger.error("Error in getFirstTemplateByCourseID:", err);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
 }
