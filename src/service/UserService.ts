@@ -311,7 +311,7 @@ export class UserService extends Service {
     // superadmin only
     public async getUserById(Request: Request): Promise<resp<UserProfile | undefined>> {
         try {
-            const { user, error } = await validateTokenAndGetSuperAdminUser<UserProfile>(Request);
+            const { user, error } = await validateTokenAndGetUser<UserProfile>(Request);
             if (error) {
                 return error;
             }

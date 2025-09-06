@@ -15,6 +15,7 @@ import { VMUtils } from "../utils/VMUtils";
 import { PVEUtils } from "../utils/PVEUtils";
 import { Reviews } from "../interfaces/Reviews";
 import { ReviewsModel } from "../orm/schemas/ReviewsSchemas";
+import { DEFAULT_AVATAR } from "../utils/avatarUpload";
 
 
 export class VMBoxService extends Service {
@@ -540,8 +541,10 @@ export class VMBoxService extends Service {
                         submitted_date: review.submitted_date,
                         reviewer_info: reviewer ? {
                             username: reviewer.username,
+                            avatar_path: reviewer.avatar_path || DEFAULT_AVATAR
                         } : {
                             username: "Unknown User",
+                            avatar_path: DEFAULT_AVATAR
                         }
                     };
                 })
