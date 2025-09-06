@@ -16,9 +16,34 @@ import { PVEUtils } from "../utils/PVEUtils";
 import { Reviews } from "../interfaces/Reviews";
 import { ReviewsModel } from "../orm/schemas/ReviewsSchemas";
 import { DEFAULT_AVATAR } from "../utils/avatarUpload";
+import { VMModel } from "../orm/schemas/VM/VMSchemas";
+import { AnswerRecordModel } from "../orm/schemas/VM/AnswerRecordSchemas";
 
 
 export class VMBoxService extends Service {
+
+    // 將可能的 Mongoose Map / 普通物件 / null 轉為普通物件
+    private _normalizeFlagAnswers(raw: any): Record<string, string> {
+        if (!raw) return {};
+        // Mongoose Map: has get / set / entries
+        if (raw instanceof Map) {
+            const obj: Record<string, string> = {};
+            for (const [k, v] of raw.entries()) {
+                if (typeof k === 'string' && typeof v === 'string') obj[k] = v;
+            }
+            return obj;
+        }
+        // Plain object
+        if (typeof raw === 'object') {
+            const obj: Record<string, string> = {};
+            for (const key of Object.keys(raw)) {
+                const val = raw[key];
+                if (typeof val === 'string') obj[key] = val;
+            }
+            return obj;
+        }
+        return {};
+    }
 
     // 私有輔助方法 - 獲取模板資訊
     private async _getTemplateInfo(node: string, vmid: string): Promise<resp<any>> {
@@ -567,4 +592,137 @@ export class VMBoxService extends Service {
             return createResponse(500, "Internal Server Error");
         }
     }
+
+    public async getMyAnswerRecord(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser(Request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return error;
+            }
+            const { vm_id } = Request.query;
+
+            if (!vm_id || typeof vm_id !== 'string') {
+                return createResponse(400, "Missing or invalid required parameter: vm_id");
+            }
+            // 檢查 VM 是否存在且屬於該用戶
+            const vm = await VMModel.findById(vm_id).exec();
+            if (!vm) {
+                return createResponse(404, "VM not found");
+            }
+            if (vm.owner !== user._id.toString()) {
+                return createResponse(403, "You do not have permission to access this VM");
+            }
+            if (!vm.is_box_vm || !vm.box_id) {
+                return createResponse(400, "This VM is not created from a box");
+            }
+            // 獲取 Box 的 flag_answers
+            const box = await VMBoxModel.findById(vm.box_id).exec();
+            if (!box) {
+                return createResponse(404, "Box not found");
+            }
+            // print answer_record for testing
+            console.log("Answer Record:", {
+                box_id: box._id,
+                flag_answers: box.flag_answers || {}
+            });
+
+
+            // 取得 / 建立 answer_records 文檔 (vm.answer_record 為其 _id)
+            let answerDoc: any = null;
+            if (vm.answer_record) {
+                try { answerDoc = await AnswerRecordModel.findById(vm.answer_record).lean(); }
+                catch (e) { console.warn(`Failed to load answer_record ${vm.answer_record}:`, e); }
+            }
+            if (!answerDoc) {
+                const created: any = await AnswerRecordModel.create({});
+                vm.answer_record = created._id.toString();
+                await vm.save();
+                answerDoc = created.toObject();
+            }
+
+            const flagAnswers = this._normalizeFlagAnswers(box.flag_answers);
+            const answerStatus: Record<string, boolean> = {};
+            for (const flag_id of Object.keys(flagAnswers)) {
+                answerStatus[flag_id] = answerDoc[flag_id] === true; // 布林代表是否已答對
+            }
+
+            return createResponse(200, "Answer record fetched successfully", { answer_record: answerStatus });
+        } catch (error) {
+            console.error("Error in getMyAnswerRecord:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+    /**
+     * 提交單個 flag 並檢查答案
+     */
+    public async submitBoxAnswer(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser(Request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return error;
+            }
+            const { vm_id, flag_id, flag_answer } = Request.body;
+            if (!vm_id || typeof vm_id !== 'string' || !flag_id || typeof flag_id !== 'string' || typeof flag_answer !== 'string') {
+                return createResponse(400, "Missing or invalid required parameters: vm_id, flag_id, flag_answer");
+            }
+            // 檢查 VM 是否存在且屬於該用戶
+            const vm = await VMModel.findById(vm_id).exec();
+            if (!vm) {
+                return createResponse(404, "VM not found");
+            }
+            if (vm.owner !== user._id.toString()) {
+                return createResponse(403, "You do not have permission to access this VM");
+            }
+            if (!vm.is_box_vm || !vm.box_id) {
+                return createResponse(400, "This VM is not created from a box");
+            }
+            // 獲取 Box 的 flag_answers
+            const box = await VMBoxModel.findById(vm.box_id).exec();
+            if (!box) {
+                return createResponse(404, "Box not found");
+            }
+            const flagAnswers = this._normalizeFlagAnswers(box.flag_answers);
+            if (!(flag_id in flagAnswers)) {
+                return createResponse(400, "Invalid flag_id or this box does not have the specified flag");
+            }
+            // 取得 / 建立 answer_records 文檔
+            let answerDoc: any = null;
+            if (vm.answer_record) {
+                try { answerDoc = await AnswerRecordModel.findById(vm.answer_record).exec(); }
+                catch (e) { console.warn(`Failed to load answer_record ${vm.answer_record}:`, e); }
+            }
+            if (!answerDoc) {
+                const created: any = await AnswerRecordModel.create({});
+                vm.answer_record = created._id.toString();
+                await vm.save();
+                answerDoc = created; 
+            }
+            // 已具備 flagAnswers 並驗證過 flag_id
+
+            if (answerDoc[flag_id] === true) {
+                return createResponse(200, "Flag already answered correctly", { flag_id, correct: true });
+            }
+
+            const isCorrect = flagAnswers[flag_id] === flag_answer;
+            if (isCorrect) {
+                // 以 Mongoose 正規方式設定動態欄位，確保變更被追蹤
+                if (typeof answerDoc.set === 'function') {
+                    answerDoc.set(flag_id, true);
+                } else {
+                    (answerDoc as any)[flag_id] = true;
+                }
+                // 標記此動態欄位已修改（對空 schema + strict:false 特別安全）
+                if (typeof answerDoc.markModified === 'function') {
+                    answerDoc.markModified(flag_id);
+                }
+                await answerDoc.save();
+            }
+            return createResponse(200, isCorrect ? "Correct answer!" : "Incorrect answer.", { flag_id, correct: isCorrect });
+        } catch (error) {
+            console.error("Error in submitBoxAnswer:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }   
 }

@@ -53,6 +53,10 @@ export class CourseRoute extends Route{
         this.router.post(`${this.url}/invite`, (req, res) => {
             this.Controller.InviteToJoinCourse(req, res)
         });
+
+        this.router.get(`${this.url}/getFirstTemplateByCourseID/:courseId`, (req, res) => {
+            this.Controller.getFirstTemplateByCourseID(req, res)
+        });
     }
 
 }
