@@ -111,39 +111,90 @@ export class VMBoxService extends Service {
     /**
      * 獲取提交的 Box 申請列表 (僅限 SuperAdmin)
      */
-    public async getSubmittedBoxes(Request: Request): Promise<resp<any>> {
+    public async getSubmittedBoxes(Request: Request): Promise<resp<(VM_Box_Info & { status: SubmittedBoxStatus })[] | undefined>> {
         try {
-            const { user, error } = await validateTokenAndGetSuperAdminUser(Request);
+            const { user, error } = await validateTokenAndGetSuperAdminUser<(VM_Box_Info & { status: SubmittedBoxStatus })[]>(Request);
             if (error) {
                 console.error("Error validating super admin token:", error);
                 return error;
             }
 
-            const submissions = await SubmittedBoxModel.find().exec();
+            const submissions = await SubmittedBoxModel.find().sort({ submitted_date: -1 }).exec();
 
-            const submissionInfos = await Promise.all(
-                submissions.map(async (submission: any) => {
-                    // 獲取提交者資訊
+            if (submissions.length === 0) {
+                return createResponse(200, "No submitted boxes found", []);
+            }
+
+            const boxInfoPromises = submissions.map(async (submission): Promise<VM_Box_Info & { status: SubmittedBoxStatus }> => {
+                // 獲取關聯的 VM Template 資訊
+                const template = await VMTemplateModel.findById(submission.vmtemplate_id).exec();
+
+                let templateInfo = {
+                    name: "Unknown Template",
+                    description: submission.box_setup_description,
+                    default_cpu_cores: 2,
+                    default_memory_size: 2048,
+                    default_disk_size: 20,
+                    owner: "Unknown"
+                };
+
+                // 如果找到關聯的 template，獲取其詳細資訊
+                if (template) {
+                    try {
+                        const configResp = await this._getTemplateInfo(template.pve_node, template.pve_vmid);
+                        if (configResp.code === 200 && configResp.body) {
+                            const qemuConfig = configResp.body;
+
+                            templateInfo = {
+                                name: qemuConfig.name || template.description,
+                                description: template.description,
+                                default_cpu_cores: PVEUtils.extractCpuCores(qemuConfig),
+                                default_memory_size: PVEUtils.extractMemorySize(qemuConfig),
+                                default_disk_size: PVEUtils.extractDiskSize(qemuConfig),
+                                owner: template.owner
+                            };
+                        }
+                    } catch (configError) {
+                        console.warn(`Failed to get config for template ${template._id}:`, configError);
+                        templateInfo.owner = template.owner;
+                    }
+                }
+
+                // 初始化 Box 資訊
+                const boxInfo: VM_Box_Info & { status: SubmittedBoxStatus } = {
+                    _id: submission._id,
+                    name: templateInfo.name,
+                    description: templateInfo.description,
+                    submitted_date: submission.submitted_date,
+                    owner: templateInfo.owner,
+                    default_cpu_cores: templateInfo.default_cpu_cores,
+                    default_memory_size: templateInfo.default_memory_size,
+                    default_disk_size: templateInfo.default_disk_size,
+                    is_public: submission.status === SubmittedBoxStatus.approved,
+                    box_setup_description: submission.box_setup_description,
+                    rating_score: undefined,
+                    review_count: undefined,
+                    updated_date: submission.status_updated_date || submission.submitted_date,
+                    status: submission.status,
+                    reject_reason: submission.reject_reason,
+                };
+
+                // 添加提交者資訊
+                if (submission.submitter_user_id) {
                     const submitterUser = await UsersModel.findById(submission.submitter_user_id).exec();
-
-                    return {
-                        _id: submission._id,
-                        vmtemplate_id: submission.vmtemplate_id,
-                        box_setup_description: submission.box_setup_description,
-                        submitted_date: submission.submitted_date,
-                        status: submission.status,
-                        audit_message: submission.audit_message,
-                        audited_by: submission.audited_by,
-                        audited_date: submission.audited_date,
-                        submitter_info: submitterUser ? {
+                    if (submitterUser) {
+                        boxInfo.submitter_user_info = {
                             username: submitterUser.username,
                             email: submitterUser.email
-                        } : null
-                    };
-                })
-            );
+                        };
+                    }
+                }
 
-            return createResponse(200, "Submitted boxes fetched successfully", submissionInfos);
+                return boxInfo;
+            });
+
+            const boxInfos = await Promise.all(boxInfoPromises);
+            return createResponse(200, "Submitted boxes fetched successfully", boxInfos);
 
         } catch (error) {
             console.error("Error in getSubmittedBoxes:", error);
