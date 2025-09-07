@@ -19,4 +19,5 @@ export interface VM_Box_Info extends VM_Template_Info {
     walkthroughs?: string[];
     updated_date: Date;
     update_log?: string // in json format
+    flag_count?: number;
 }

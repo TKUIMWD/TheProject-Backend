@@ -120,12 +120,12 @@ export class VMBoxService extends Service {
             }
 
             const submissions = await SubmittedBoxModel.find().exec();
-            
+
             const submissionInfos = await Promise.all(
                 submissions.map(async (submission: any) => {
                     // 獲取提交者資訊
                     const submitterUser = await UsersModel.findById(submission.submitter_user_id).exec();
-                    
+
                     return {
                         _id: submission._id,
                         vmtemplate_id: submission.vmtemplate_id,
@@ -206,7 +206,7 @@ export class VMBoxService extends Service {
                 });
 
                 await newBox.save();
-                
+
                 logger.info(`Submission ${submission_id} approved and VMBox ${newBox._id} created by ${user.email}`);
 
                 // 發送審核通過通知郵件給提交者
@@ -214,9 +214,9 @@ export class VMBoxService extends Service {
                 if (submitterUser?.email) {
                     try {
                         await sendBoxAuditResultEmail(
-                            submitterUser.email, 
-                            submittedBox.box_setup_description, 
-                            "approved", 
+                            submitterUser.email,
+                            submittedBox.box_setup_description,
+                            "approved",
                             "Your box submission has been approved and is now public."
                         );
                         logger.info(`Approval notification sent to ${submitterUser.email}`);
@@ -224,7 +224,7 @@ export class VMBoxService extends Service {
                         logger.error("Failed to send approval notification email:", emailError);
                     }
                 }
-                
+
                 console.log(`Box approved successfully: ${submittedBox._id}, VMBox created: ${newBox._id}`);
             } else if (status === SubmittedBoxStatus.rejected) {
                 logger.info(`Submission ${submission_id} rejected by ${user.email}`);
@@ -234,9 +234,9 @@ export class VMBoxService extends Service {
                 if (submitterUser?.email) {
                     try {
                         await sendBoxAuditResultEmail(
-                            submitterUser.email, 
-                            submittedBox.box_setup_description, 
-                            "rejected", 
+                            submitterUser.email,
+                            submittedBox.box_setup_description,
+                            "rejected",
                             reject_reason || "No reason provided"
                         );
                         logger.info(`Rejection notification sent to ${submitterUser.email}`);
@@ -308,20 +308,20 @@ export class VMBoxService extends Service {
             // 公式: 新平均分 = (當前平均分 * 當前評分次數 + 新評分) / (當前評分次數 + 1)
             const currentRatingScore = box.rating_score || 0;
             const currentReviewCount = box.review_count || 0;
-            
+
             // 計算總分 = 當前平均分 * 當前評分次數
             const currentTotalScore = currentRatingScore * currentReviewCount;
-            
+
             // 新的評分次數
             const newReviewCount = currentReviewCount + 1;
-            
+
             // 計算新的平均分
             const newRatingScore = (currentTotalScore + rating) / newReviewCount;
 
             // 更新評分資料
             box.rating_score = Math.round(newRatingScore * 100) / 100; // 保留兩位小數
             box.review_count = newReviewCount;
-            
+
             // 添加評論記錄到 Box
             box.reviews.push(newReview._id);
 
@@ -353,7 +353,7 @@ export class VMBoxService extends Service {
             }
 
             const boxes = await VMBoxModel.find({ is_public: true }).exec();
-            
+
             if (boxes.length === 0) {
                 return createResponse(200, "No public boxes found", []);
             }
@@ -361,7 +361,7 @@ export class VMBoxService extends Service {
             const boxInfoPromises = boxes.map(async (box): Promise<VM_Box_Info> => {
                 // 獲取關聯的 VM Template 資訊
                 const template = await VMTemplateModel.findById(box.vmtemplate_id).exec();
-                
+
                 let templateInfo = {
                     name: "Unknown Template",
                     description: box.box_setup_description,
@@ -376,7 +376,7 @@ export class VMBoxService extends Service {
                         const configResp = await this._getTemplateInfo(template.pve_node, template.pve_vmid);
                         if (configResp.code === 200 && configResp.body) {
                             const qemuConfig = configResp.body;
-                            
+
                             templateInfo = {
                                 name: qemuConfig.name || template.description,
                                 description: template.description,
@@ -405,7 +405,8 @@ export class VMBoxService extends Service {
                     rating_score: box.rating_score,
                     review_count: box.review_count,
                     updated_date: box.updated_date,
-                    update_log: box.update_log
+                    update_log: box.update_log,
+                    flag_count: Object.keys(this._normalizeFlagAnswers(box.flag_answers)).length,
                 };
 
                 // 添加提交者資訊
@@ -443,7 +444,7 @@ export class VMBoxService extends Service {
             }
 
             const boxes = await SubmittedBoxModel.find({ status: SubmittedBoxStatus.not_approved }).exec();
-            
+
             if (boxes.length === 0) {
                 return createResponse(200, "No pending boxes found", []);
             }
@@ -451,7 +452,7 @@ export class VMBoxService extends Service {
             const boxInfoPromises = boxes.map(async (box): Promise<VM_Box_Info> => {
                 // 獲取關聯的 VM Template 資訊
                 const template = await VMTemplateModel.findById(box.vmtemplate_id).exec();
-                
+
                 let templateInfo = {
                     name: "Unknown Template",
                     description: box.box_setup_description,
@@ -467,7 +468,7 @@ export class VMBoxService extends Service {
                         const configResp = await this._getTemplateInfo(template.pve_node, template.pve_vmid);
                         if (configResp.code === 200 && configResp.body) {
                             const qemuConfig = configResp.body;
-                            
+
                             templateInfo = {
                                 name: qemuConfig.name || template.description,
                                 description: template.description,
@@ -559,7 +560,7 @@ export class VMBoxService extends Service {
             const reviewsWithUserInfo = await Promise.all(
                 reviews.map(async (review) => {
                     const reviewer = await UsersModel.findById(review.reviewer_user_id).exec();
-                    
+
                     return {
                         rating_score: review.rating_score,
                         comment: review.comment,
@@ -576,7 +577,7 @@ export class VMBoxService extends Service {
             );
 
             // 按提交日期排序（最新的在前）
-            reviewsWithUserInfo.sort((a, b) => 
+            reviewsWithUserInfo.sort((a, b) =>
                 new Date(b.submitted_date).getTime() - new Date(a.submitted_date).getTime()
             );
 
@@ -697,7 +698,7 @@ export class VMBoxService extends Service {
                 const created: any = await AnswerRecordModel.create({});
                 vm.answer_record = created._id.toString();
                 await vm.save();
-                answerDoc = created; 
+                answerDoc = created;
             }
             // 已具備 flagAnswers 並驗證過 flag_id
 
@@ -724,5 +725,5 @@ export class VMBoxService extends Service {
             console.error("Error in submitBoxAnswer:", error);
             return createResponse(500, "Internal Server Error");
         }
-    }   
+    }
 }

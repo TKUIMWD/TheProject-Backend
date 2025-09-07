@@ -1439,7 +1439,7 @@ export class VMManageService extends Service {
             }
             const { template_info, qemuConfig } = templateResult.body;
 
-           // 檢查範本是否公開或用戶為 owner
+            // 檢查範本是否公開或用戶為 owner
             if (!template_info.is_public && (!template_info.owner || template_info.owner !== user._id.toString())) {
                 logger.warn(`User ${user.username} (${user._id}) is not allowed to use template ${box.vmtemplate_id}`);
                 return createResponse(403, "You do not have permission to use this template");
