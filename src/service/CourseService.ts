@@ -65,13 +65,13 @@ export class CourseService extends Service {
                 return authResult.errorResp;
             }
 
-            
+
             const { course } = authResult;
             const submitter = await UsersModel.findById(course.submitter_user_id).lean();
             if (!submitter) {
                 return createResponse(404, "Submitter not found");
             }
-            
+
             const courseData: CoursePageDTO = {
                 _id: course._id.toString(),
                 course_name: course.course_name,
@@ -87,9 +87,9 @@ export class CourseService extends Service {
                     username: submitter.username,
                     email: submitter.email,
                     avatar_path: submitter.avatar_path
-                }
+                },
             };
-            
+
             if (authResult.Joined === false) {
                 return createResponse(403, "You are not joined to this course", courseData);
             }
@@ -342,6 +342,7 @@ export class CourseService extends Service {
         }
     }
 
+    // 刪除課程（包含class, chapter 都會刪除）
     public async DeleteCourseById(Request: Request): Promise<resp<String | undefined>> {
         try {
             const { user, error } = await validateTokenAndGetAdminUser<String>(Request)
@@ -354,17 +355,40 @@ export class CourseService extends Service {
                 return createResponse(400, "Invalid course_id format");
             }
 
-            const deletedCourse = await CourseModel.findByIdAndDelete(courseId);
-            if (!deletedCourse) {
+            const courseToDelete = await CourseModel.findById(courseId).lean();
+            if (!courseToDelete) {
                 return createResponse(404, "Course not found");
             }
 
-            // Remove the course ID from user's course_ids array
-            user.course_ids = user.course_ids.filter((id: any) => id.toString() !== courseId);
-            await UsersModel.findByIdAndUpdate(user._id, { course_ids: user.course_ids });
+            // 如果課程下有class，則進行連動刪除
+            if (courseToDelete.class_ids && courseToDelete.class_ids.length > 0) {
+                // 找出所有class下的所有chapter ID
+                const classes = await ClassModel.find({ _id: { $in: courseToDelete.class_ids } }).select('chapter_ids').lean();
+                const chapterIdsToDelete = classes.flatMap(cls => cls.chapter_ids);
+
+                // 2. 刪除所有chapter
+                if (chapterIdsToDelete.length > 0) {
+                    await ChapterModel.deleteMany({ _id: { $in: chapterIdsToDelete } });
+                    logger.info(`Deleted ${chapterIdsToDelete.length} chapters for course ${courseId}`);
+                }
+
+                // 3. 刪除所有class
+                await ClassModel.deleteMany({ _id: { $in: courseToDelete.class_ids } });
+                logger.info(`Deleted ${courseToDelete.class_ids.length} classes for course ${courseId}`);
+            }
+
+            // 從所有已加入此課程的使用者中移除課程ID
+            await UsersModel.updateMany(
+                { course_ids: courseId },
+                { $pull: { course_ids: courseId } }
+            );
+            logger.info(`Removed course ${courseId} from all users' course lists`);
+
+            // 刪除課程本身
+            await CourseModel.findByIdAndDelete(courseId);
 
             logger.info(`Course deleted successfully: ${courseId}`);
-            return createResponse(200, "Course deleted successfully");
+            return createResponse(200, "Course and all its related classes and chapters deleted successfully");
 
         } catch (err) {
             logger.error("Error in DeleteCourseById:", err);
@@ -454,7 +478,7 @@ export class CourseService extends Service {
     }
 
     public async ApprovedCourseById(Request: Request): Promise<resp<String | undefined>> {
-        try{
+        try {
             const { user, error } = await validateTokenAndGetSuperAdminUser<String>(Request);
             if (error) {
                 return error;
@@ -483,15 +507,15 @@ export class CourseService extends Service {
 
             logger.info(`Course ${courseId} approved successfully by user ${user._id}`);
             return createResponse(200, "Course approved successfully");
-            
-        }catch (err) {
+
+        } catch (err) {
             logger.error("Error in ApprovedCourseById:", err);
             return createResponse(500, "Internal Server Error");
         }
     }
 
     public async UnApprovedCourseById(Request: Request): Promise<resp<String | undefined>> {
-        try{
+        try {
             const { user, error } = await validateTokenAndGetSuperAdminUser<String>(Request);
             if (error) {
                 return error;
@@ -521,7 +545,7 @@ export class CourseService extends Service {
             logger.info(`Course ${courseId} unapproved successfully by user ${user._id}`);
             return createResponse(200, "Course unapproved successfully");
 
-        }catch (err) {
+        } catch (err) {
             logger.error("Error in UnApprovedCourseById:", err);
             return createResponse(500, "Internal Server Error");
         }
@@ -582,7 +606,7 @@ export class CourseService extends Service {
                 return createResponse(404, "Course not found");
             }
             // 如果使用者未加入課程，維持權限一致性（和 getCourseMenu 類似可返回 403）
-            const { user , error } = await validateTokenAndGetUser<string>(Request);
+            const { user, error } = await validateTokenAndGetUser<string>(Request);
             if (error) {
                 return error;
             }

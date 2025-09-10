@@ -12,4 +12,5 @@ export interface CoursePageDTO {
     course_update_date: Date;
     class_ids: Array<string>;
     submitterInfo: SubmitterInfo;
+    template_id?: string;
 }

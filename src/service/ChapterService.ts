@@ -60,7 +60,8 @@ export class ChapterService extends Service {
                 chapter_name: chapter.chapter_name,
                 chapter_subtitle: chapter.chapter_subtitle,
                 chapter_order: chapter.chapter_order,
-                chapter_content: chapter.has_approved_content
+                chapter_content: chapter.has_approved_content,
+                template_id: chapter.template_id
             };
 
             return createResponse(200, "Chapter data retrieved successfully", chapterData);
@@ -231,14 +232,14 @@ export class ChapterService extends Service {
             }
 
             const requestBody = Request.body;
-            const requiredFieldKeys = ["chapter_name", "chapter_subtitle", "chapter_content", "chapter_order"];
+            const requiredFieldKeys = ["chapter_name", "chapter_subtitle", "chapter_content", "chapter_order", "template_id"];
             const missingKeys = requiredFieldKeys.filter(field => requestBody[field] === undefined);
 
             if (missingKeys.length > 0) {
                 return createResponse(400, `Missing required key(s) in request body: ${missingKeys.join(", ")}`);
             }
 
-            const { chapter_name, chapter_subtitle, chapter_content, chapter_order } = Request.body;
+            const { chapter_name, chapter_subtitle, chapter_content, chapter_order, template_id } = Request.body;
             if (typeof chapter_order !== "number" || chapter_order < 0) {
                 return createResponse(400, "chapter_order must be a non-negative number");
             }
@@ -287,7 +288,8 @@ export class ChapterService extends Service {
                 course_id: classData.course_id,
                 has_approved_content: "",
                 waiting_for_approve_content: sanitizedContent,
-                saved_content: ""
+                saved_content: "",
+                template_id: template_id
             });
 
             const savedChapter = await newChapter.save();

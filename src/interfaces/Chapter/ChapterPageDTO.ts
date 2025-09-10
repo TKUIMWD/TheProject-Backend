@@ -8,4 +8,5 @@ export interface ChapterPageDTO {
     chapter_subtitle: string;
     chapter_content: string;
     chapter_order: number;
+    template_id?: string;
 }
