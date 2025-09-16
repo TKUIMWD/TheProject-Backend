@@ -2,7 +2,7 @@ import { Request } from "express";
 import { Service } from "../abstract/Service";
 import { logger } from "../middlewares/log";
 import { createResponse, resp } from "../utils/resp";
-import { validateTokenAndGetSuperAdminUser } from "../utils/auth";
+import { validateTokenAndGetAdminUser, validateTokenAndGetSuperAdminUser } from "../utils/auth";
 import { ComputeResourcePlanModel } from '../orm/schemas/ComputeResourcePlanSchemas';
 import { ComputeResourcePlan } from '../interfaces/ComputeResourcePlan';
 import { User } from '../interfaces/User';
@@ -127,7 +127,7 @@ export class SuperAdminCRPService extends Service {
 
     public async getAllCRPs(request: Request): Promise<resp<ComputeResourcePlan[] | undefined>> {
         try {
-            const { user, error } = await validateTokenAndGetSuperAdminUser<User>(request);
+            const { user, error } = await validateTokenAndGetAdminUser<User>(request);
             if (error) {
                 console.error("Error validating token:", error);
                 return createResponse(error.code, error.message);
