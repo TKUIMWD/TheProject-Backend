@@ -566,6 +566,11 @@ export class VMManageService extends Service {
                 return createResponse(404, "VM not found");
             }
 
+            const vmStatus = await VMUtils.getVMStatus(vm.pve_node, vm.pve_vmid);
+            if (vmStatus && vmStatus.status === 'running') {
+                return createResponse(400, "VM is currently running. Please stop the VM before deletion.");
+            }
+
             // 在刪除 VM 之前，先獲取其配置用於資源回收
             let vmConfig: VMConfig | null = null;
             try {
