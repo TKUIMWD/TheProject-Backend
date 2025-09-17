@@ -232,14 +232,14 @@ export class ChapterService extends Service {
             }
 
             const requestBody = Request.body;
-            const requiredFieldKeys = ["chapter_name", "chapter_subtitle", "chapter_content", "chapter_order", "template_id"];
+            const requiredFieldKeys = ["chapter_name", "chapter_subtitle", "chapter_content", "chapter_order"];
             const missingKeys = requiredFieldKeys.filter(field => requestBody[field] === undefined);
 
             if (missingKeys.length > 0) {
                 return createResponse(400, `Missing required key(s) in request body: ${missingKeys.join(", ")}`);
             }
 
-            const { chapter_name, chapter_subtitle, chapter_content, chapter_order, template_id } = Request.body;
+            const { chapter_name, chapter_subtitle, chapter_content, chapter_order, template_id="" } = Request.body;
             if (typeof chapter_order !== "number" || chapter_order < 0) {
                 return createResponse(400, "chapter_order must be a non-negative number");
             }
