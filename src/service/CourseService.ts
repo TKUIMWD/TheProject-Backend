@@ -426,7 +426,7 @@ export class CourseService extends Service {
 
             const courses = (await Promise.all(coursesPromises)).filter((c): c is CourseInfo => c !== null);
 
-            if (!courses || courses.length === 0) {
+            if (!courses) {
                 return createResponse(404, "No public courses found");
             }
 
@@ -661,4 +661,201 @@ export class CourseService extends Service {
         }
     }
 
+    // superadmin only
+    // get all courses (for management)
+    public async getAllCourses(Request: Request): Promise<resp<String | CourseInfo[] | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetSuperAdminUser<String>(Request);
+            if (error) {
+                return error;
+            }
+
+            const courseDocs = await CourseModel.find().lean();
+            const coursesPromises = courseDocs.map(async (course): Promise<CourseInfo | null> => {
+                const submitter = await UsersModel.findById(course.submitter_user_id).lean();
+                if (!submitter) {
+                    logger.warn(`Submitter not found for course ${course._id}`);
+                    return null;
+                }
+
+                return {
+                    _id: course._id.toString(),
+                    course_name: course.course_name,
+                    course_subtitle: course.course_subtitle,
+                    duration_in_minutes: course.duration_in_minutes,
+                    difficulty: course.difficulty as "Easy" | "Medium" | "Hard",
+                    rating: course.rating,
+                    teacher_name: submitter.username,
+                    update_date: course.update_date,
+                    status: course.status as "公開" | "未公開" | "編輯中" | "審核中" | "審核未通過"
+                };
+            });
+
+            const courses = (await Promise.all(coursesPromises)).filter((c): c is CourseInfo => c !== null);
+
+            if (!courses || courses.length === 0) {
+                return createResponse(404, "No courses found");
+            }
+
+            return createResponse(200, "success", courses);
+        } catch (error) {
+            logger.error("Error in GetAllCourses:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+
+    }
+
+    // superadmin only
+    // 取得所有待審核的課程(status = "審核中")
+    public async getAllSubmittedCourses(Request: Request): Promise<resp<String | CourseInfo[] | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetSuperAdminUser<String>(Request);
+            if (error) {
+                return error;
+            }
+
+            const courseDocs = await CourseModel.find({ status: "審核中" }).lean();
+            const coursesPromises = courseDocs.map(async (course): Promise<CourseInfo | null> => {
+                const submitter = await UsersModel.findById(course.submitter_user_id).lean();
+                if (!submitter) {
+                    logger.warn(`Submitter not found for course ${course._id}`);
+                    return null;
+                }
+
+                return {
+                    _id: course._id.toString(),
+                    course_name: course.course_name,
+                    course_subtitle: course.course_subtitle,
+                    duration_in_minutes: course.duration_in_minutes,
+                    difficulty: course.difficulty as "Easy" | "Medium" | "Hard",
+                    rating: course.rating,
+                    teacher_name: submitter.username,
+                    update_date: course.update_date,
+                    status: course.status as "公開" | "未公開" | "編輯中" | "審核中" | "審核未通過"
+                };
+            });
+
+            const courses = (await Promise.all(coursesPromises)).filter((c): c is CourseInfo => c !== null);
+
+            if (!courses) {
+                return createResponse(404, "No pending courses found");
+            }
+
+            if (courses.length === 0) {
+                return createResponse(200, "No pending courses found", []);
+            }
+
+            return createResponse(200, "success", courses);
+        } catch (error) {
+            logger.error("Error in GetAllPendingCourses:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+
+    }
+
+    public async submitCourse(Request: Request): Promise<resp<String | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetAdminUser<String>(Request);
+            if (error) {
+                return error;
+            }
+
+            const { courseId } = Request.body;
+            if (!courseId || !mongoose.Types.ObjectId.isValid(courseId)) {
+                return createResponse(400, "Invalid course_id format");
+            }
+
+            // 檢查是不是課程擁有者的操作
+            const course = await CourseModel.findById(courseId);
+            if (!course) {
+                return createResponse(404, "Course not found");
+            }
+
+            if (course.submitter_user_id !== user._id.toString()) {
+                return createResponse(403, "You are not authorized to submit this course");
+            }
+
+            // 檢查課程是否至少有一個 class 和一個 chapter
+            if (!course.class_ids || course.class_ids.length === 0) {
+                return createResponse(400, "Course must have at least one class before submission");
+            }
+
+            const classes = await ClassModel.find({ _id: { $in: course.class_ids } }).lean();
+            if (!classes || classes.length === 0) {
+                return createResponse(400, "Course must have at least one class before submission");
+            }
+
+            let totalChapters = 0;
+            for (const cls of classes) {
+                if (cls.chapter_ids && cls.chapter_ids.length > 0) {
+                    totalChapters += cls.chapter_ids.length;
+                }
+            }
+
+            if (totalChapters === 0) {
+                return createResponse(400, "Course must have at least one chapter before submission");
+            }
+
+            // 更新課程狀態為審核中
+            course.status = "審核中";
+            const updatedCourse = await course.save();
+            if (!updatedCourse) {
+                return createResponse(500, "Failed to update course status");
+            }
+
+            logger.info(`Course ${courseId} submitted for review successfully by user ${user._id}`);
+            return createResponse(200, "Course submitted for review successfully");
+
+        } catch (err) {
+            logger.error("Error in submitCourse:", err);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    // set course status (公開、未公開) (admin only)
+    public async setCourseStatus(Request: Request): Promise<resp<String | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetAdminUser<String>(Request);
+            if (error) {
+                return error;
+            }
+
+            const { courseId, status } = Request.body;
+            if (!courseId || !mongoose.Types.ObjectId.isValid(courseId)) {
+                return createResponse(400, "Invalid course_id format");
+            }
+
+            if (status !== "公開" && status !== "未公開") {
+                return createResponse(400, "Status must be either '公開' or '未公開'");
+            }
+
+            // 檢查是不是課程擁有者的操作
+            const course = await CourseModel.findById(courseId);
+            if (!course) {
+                return createResponse(404, "Course not found");
+            }
+
+            if (course.submitter_user_id !== user._id.toString()) {
+                return createResponse(403, "You are not authorized to change the status of this course");
+            }
+
+            // 如果要設為公開，檢查課程是否已通過審核
+            if (status === "公開" && course.status !== "未公開") {
+                return createResponse(400, "Only courses with status '未公開' can be set to '公開'");
+            }
+
+            course.status = status;
+            const updatedCourse = await course.save();
+            if (!updatedCourse) {
+                return createResponse(500, "Failed to update course status");
+            }
+
+            logger.info(`Course ${courseId} status changed to ${status} by user ${user._id}`);
+            return createResponse(200, `Course status updated to ${status} successfully`);
+
+        } catch (err) {
+            logger.error("Error in setCourseStatus:", err);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
 }

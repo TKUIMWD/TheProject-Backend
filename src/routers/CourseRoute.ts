@@ -1,3 +1,4 @@
+import { th } from "date-fns/locale";
 import { Route } from "../abstract/Route"
 import { CourseController } from '../controller/CourseController'
 
@@ -56,6 +57,22 @@ export class CourseRoute extends Route{
 
         this.router.get(`${this.url}/getFirstTemplateByCourseID/:courseId`, (req, res) => {
             this.Controller.getFirstTemplateByCourseID(req, res)
+        });
+
+        this.router.get(`${this.url}/getAllCourses`, (req, res) => {
+            this.Controller.getAllCourses(req, res)
+        });
+
+        this.router.get(`${this.url}/getAllSubmittedCourses`, (req, res) => {
+            this.Controller.getAllSubmittedCourses(req, res)
+        });
+
+        this.router.post(`${this.url}/submit`, (req, res) => {
+            this.Controller.submitCourse(req, res)
+        });
+
+        this.router.post(`${this.url}/setCourseStatus`, (req, res) => {
+            this.Controller.setCourseStatus(req, res)
         });
     }
 

@@ -65,4 +65,24 @@ export class CourseController extends Controller {
     const resp = await this.service.getFirstTemplateByCourseID(Request);
     Response.status(resp.code).send(resp);
   }
+
+  public async getAllCourses(Request: Request, Response: Response) {
+    const resp = await this.service.getAllCourses(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async getAllSubmittedCourses(Request: Request, Response: Response) {
+    const resp = await this.service.getAllSubmittedCourses(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async submitCourse(Request: Request, Response: Response) {
+    const resp = await this.service.submitCourse(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async setCourseStatus(Request: Request, Response: Response) {
+    const resp = await this.service.setCourseStatus(Request);
+    Response.status(resp.code).send(resp);
+  }
 }
