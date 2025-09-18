@@ -443,6 +443,18 @@ export class TemplateService extends Service {
             }
             await submittedTemplate.save();
 
+            const template = await VMTemplateModel.findById(submittedTemplate.template_id).exec();
+            console.log(template);
+            if (!template) {
+                return createResponse(404, "Template not found for the submitted template");
+            }
+            const submittedTemplateQemu = await VMUtils.getBasicQemuConfig(template.pve_node, template.pve_vmid);
+
+            if (!submittedTemplateQemu) {
+                return createResponse(404, "Failed to retrieve submitted template QEMU config");
+            }
+            console.log(submittedTemplateQemu);
+
             // 如果範本被批准，則在 PVE 中克隆範本並在資料庫中建立新的資料
             if (status === SubmittedTemplateStatus.approved) {
                 const originalTemplate = await VMTemplateModel.findById(submittedTemplate.template_id).exec();
@@ -551,18 +563,16 @@ export class TemplateService extends Service {
                     { $addToSet: { owned_templates: newApprovedTemplate._id } }
                 );
 
-                console.log(`New approved template created with ID: ${newApprovedTemplate._id}, PVE VMID: ${newTemplateVmid}`);
-
                 // 發送審核結果通知郵件給提交者
                 const submitterUser = await UsersModel.findById(submittedTemplate.submitter_user_id).exec();
                 if (submitterUser?.email) {
-                    sendTemplateAuditResultEmail(submitterUser.email, originalTemplate.description, "approved");
+                    sendTemplateAuditResultEmail(submitterUser.email, submittedTemplateQemu.body?.name || "unknown", "approved");
                 }
             } else if (status === SubmittedTemplateStatus.rejected) {
                 // 發送拒絕通知郵件
                 const toMail = (await UsersModel.findById(submittedTemplate.submitter_user_id).exec())?.email;
                 if (toMail) {
-                    sendTemplateAuditResultEmail(toMail, submittedTemplate.template_id, "rejected", reject_reason);
+                    sendTemplateAuditResultEmail(toMail, submittedTemplateQemu.body?.name || "unknown", "rejected", reject_reason);
                 }
             }
 
