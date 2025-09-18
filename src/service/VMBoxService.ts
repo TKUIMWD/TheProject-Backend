@@ -241,6 +241,15 @@ export class VMBoxService extends Service {
             }
             await submittedBox.save();
 
+            const template = await VMTemplateModel.findById(submittedBox.vmtemplate_id).exec();
+            if (!template) {
+                return createResponse(404, "Template not found for the submitted box");
+            }
+            const templateQemu = await VMUtils.getBasicQemuConfig(template.pve_node, template.pve_vmid);
+            if (!templateQemu) {
+                return createResponse(404, "QEMU config not found for the template");
+            }
+
             // 如果 Box 被批准，創建正式的 VMBox 記錄
             if (status === SubmittedBoxStatus.approved) {
                 const newBox = new VMBoxModel({
@@ -266,7 +275,7 @@ export class VMBoxService extends Service {
                     try {
                         await sendBoxAuditResultEmail(
                             submitterUser.email,
-                            submittedBox.box_setup_description,
+                            templateQemu.body?.name || "unknown",
                             "approved",
                             "Your box submission has been approved and is now public."
                         );
@@ -286,7 +295,7 @@ export class VMBoxService extends Service {
                     try {
                         await sendBoxAuditResultEmail(
                             submitterUser.email,
-                            submittedBox.box_setup_description,
+                            templateQemu.body?.name || "unknown",
                             "rejected",
                             reject_reason || "No reason provided"
                         );
