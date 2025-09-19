@@ -110,7 +110,7 @@ export class PVEService extends Service {
 
     public async getNodes(Request: Request): Promise<resp<PVEResp | undefined>> {
         try {
-            const { user, error } = await validateTokenAndGetAdminUser<PVEResp>(Request);
+            const { user, error } = await validateTokenAndGetUser<PVEResp>(Request);
             if (error) {
                 console.error("Error validating token:", error);
                 return error;
