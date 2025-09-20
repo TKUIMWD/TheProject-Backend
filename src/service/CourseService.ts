@@ -504,6 +504,28 @@ export class CourseService extends Service {
                 return createResponse(400, "Course is not in '審核中' status");
             }
 
+            // --- 同步所有章節的內容 ---
+            logger.info(`Course ${courseId} is being approved. Syncing chapter content...`);
+            const classIds = course.class_ids;
+
+            if (classIds && classIds.length > 0) {
+                // 根據班級 ID 找出所有章節 ID
+                const classes = await ClassModel.find({ _id: { $in: classIds } }).select('chapter_ids').lean();
+                const allChapterIds = classes.flatMap(cls => cls.chapter_ids);
+
+                if (allChapterIds.length > 0) {
+                    // 使用 updateMany 一次性更新所有相關章節
+                    // 將 waiting_for_approve_content 的內容複製到 has_approved_content
+                    const updateResult = await ChapterModel.updateMany(
+                        { _id: { $in: allChapterIds } },
+                        [
+                            { $set: { has_approved_content: "$waiting_for_approve_content" } }
+                        ]
+                    );
+                    logger.info(`Synced content for ${updateResult.modifiedCount} chapters in course ${courseId}.`);
+                }
+            }
+
             course.status = "未公開"; // 更新狀態為未公開
             const updatedCourse = await course.save();
             if (!updatedCourse) {
