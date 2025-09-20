@@ -12,6 +12,7 @@ import { ClassModel } from "../orm/schemas/ClassSchemas";
 import DOMPurify from 'dompurify';
 import { sanitizeString, sanitizeArray } from "../utils/sanitize";
 import { create } from "domain";
+import Roles from "../enum/role";
 
 export class ChapterService extends Service {
     /**
@@ -43,11 +44,16 @@ export class ChapterService extends Service {
             // 使用者無權訪問包含此章節的課程
             const parentCourse = await CourseModel.findOne({ _id: chapter.course_id }).lean();
             if (!parentCourse) {
-                return createResponse(403, "You are not authorized to view this chapter.");
+                // 如果找不到課程，伺服器內部資料關聯問題
+                return createResponse(404, "Could not find parent course for this chapter");
             }
 
-            // user course_ids 有沒有 parentCourse._id
-            if (!user.course_ids || !user.course_ids.includes(parentCourse._id.toString())) {
+            // --- 權限檢查 ---
+            const isJoined = user.course_ids && user.course_ids.includes(parentCourse._id.toString());
+            const isSuperAdmin = user.role === Roles.SuperAdmin;
+
+            // 如果使用者未加入課程，且不是 SuperAdmin，則拒絕存取
+            if (!isJoined && !isSuperAdmin) {
                 return createResponse(403, "You are not authorized to view this chapter.");
             }
 
@@ -60,7 +66,9 @@ export class ChapterService extends Service {
                 chapter_name: chapter.chapter_name,
                 chapter_subtitle: chapter.chapter_subtitle,
                 chapter_order: chapter.chapter_order,
-                chapter_content: chapter.has_approved_content,
+                has_approved_content: chapter.has_approved_content,
+                waiting_for_approve_content: chapter.waiting_for_approve_content,
+                saved_content: chapter.saved_content,
                 template_id: chapter.template_id
             };
 

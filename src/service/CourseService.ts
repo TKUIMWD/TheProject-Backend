@@ -26,31 +26,35 @@ export class CourseService extends Service {
      * @returns A promise resolving to the course document or an error response.
      */
     private async _getAuthorizedCourse(Request: Request): Promise<
-        { success: true; Joined: true; course: Course } |
-        { success: false; errorResp: resp<undefined> } |
-        { success: true; Joined: false; course: Course }
+        { success: true; isAuthorized: boolean; course: Course; user: any; } |
+        { success: false; errorResp: resp<undefined> }
     > {
-        const { user, error } = await validateTokenAndGetUser<undefined>(Request);
-        if (error) {
-            return { success: false, errorResp: error };
+        // 1. 驗證使用者 Token 並取得 user 物件
+        const { user, error: userError } = await validateTokenAndGetUser<undefined>(Request);
+        if (userError) {
+            return { success: false, errorResp: userError };
         }
 
+        // 2. 驗證 courseId
         const { courseId } = Request.params;
         if (!courseId || !mongoose.Types.ObjectId.isValid(courseId)) {
             return { success: false, errorResp: createResponse(400, "Invalid course_id format") };
         }
 
+        // 3. 取得課程文件
         const course = await CourseModel.findById(courseId).lean();
-        const isAuthorized = user.course_ids.some((id: any) => id.toString() === courseId);
         if (!course) {
             return { success: false, errorResp: createResponse(404, "Course not found") };
         }
 
-        if (!isAuthorized) {
-            return { success: true, Joined: false, course };
-        }
+        // 4. 判斷授權狀態
+        const isJoined = user.course_ids.some((id: any) => id.toString() === courseId);
+        const isSuperAdmin = user.role === Roles.SuperAdmin;
 
-        return { success: true, Joined: true, course };
+        // 授權條件：使用者已加入課程，或是使用者為超級管理員
+        const isAuthorized = isJoined || isSuperAdmin;
+
+        return { success: true, isAuthorized, course, user };
     }
 
     /**
@@ -90,7 +94,8 @@ export class CourseService extends Service {
                 },
             };
 
-            if (authResult.Joined === false) {
+            // 如果未授權 (不是 SuperAdmin 也沒加入課程)，則拒絕存取
+            if (!authResult.isAuthorized) {
                 return createResponse(403, "You are not joined to this course", courseData);
             }
 
@@ -142,7 +147,7 @@ export class CourseService extends Service {
                 class_titles: classTitles
             };
 
-            if (authResult.Joined === false) {
+            if (!authResult.isAuthorized) {
                 return createResponse(403, "You are not joined to this course", courseMenuData);
             }
 
