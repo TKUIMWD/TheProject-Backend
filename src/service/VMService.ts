@@ -94,7 +94,6 @@ export class VMService extends Service {
                     try {
                         // 獲取基本配置
                         const basicConfig = await this._getBasicQemuConfig(vm.pve_node, vm.pve_vmid);
-                        
                         // 獲取實時狀態
                         const vmStatus = await VMUtils.getVMStatus(vm.pve_node, vm.pve_vmid);
                         
@@ -102,6 +101,7 @@ export class VMService extends Service {
                             _id: vm._id,
                             pve_vmid: vm.pve_vmid,
                             pve_node: vm.pve_node,
+                            pve_name: basicConfig.body?.name || "Unknown",
                             owner: (await UsersModel.findById(vm.owner).exec())?.username || "Unknown",
                             status: vmStatus ? {
                                 current_status: vmStatus.status,

@@ -74,6 +74,7 @@ export interface VMDetailWithBasicConfig {
     _id?: string;
     pve_vmid: string;
     pve_node: string;
+    pve_name?: string;
     owner?: string;
     config?: VMBasicConfig | null;
     status?: {
