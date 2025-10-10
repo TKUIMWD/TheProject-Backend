@@ -21,4 +21,5 @@ export interface VM_Box_Info extends VM_Template_Info {
     update_log?: string // in json format
     flag_count?: number;
     reject_reason?: string;
+    flag_answers?: Record<string, string>; // key: flag_id, value: answer
 }

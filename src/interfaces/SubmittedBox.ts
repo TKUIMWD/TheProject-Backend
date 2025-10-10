@@ -13,7 +13,7 @@ export interface SubmittedBox {
     submitted_date: Date;
     status_updated_date?: Date;
     reject_reason?: string;
-    flag_answers?: { [key: string]: string }; // key: flag_id, value: answer
+    flag_answers?: Record<string, string>; // key: flag_id, value: answer
 }
 
 export interface SubmittedBoxDetails extends SubmittedBox {

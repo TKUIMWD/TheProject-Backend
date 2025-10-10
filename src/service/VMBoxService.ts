@@ -177,6 +177,7 @@ export class VMBoxService extends Service {
                     updated_date: submission.status_updated_date || submission.submitted_date,
                     status: submission.status,
                     reject_reason: submission.reject_reason,
+                    flag_answers: submission.flag_answers,
                 };
 
                 // 添加提交者資訊
@@ -263,6 +264,7 @@ export class VMBoxService extends Service {
                     reviews: [],
                     walkthroughs: [],
                     updated_date: new Date(),
+                    flag_answers: submittedBox.flag_answers, 
                 });
 
                 await newBox.save();
