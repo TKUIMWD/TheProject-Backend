@@ -15,11 +15,13 @@ import { SuperAdminRoute } from "./routers/SuperAdminRoute";
 import { SuperAdminCRPRoute } from "./routers/SuperAdminCRPRoute";
 import { GuacamoleRoute } from "./routers/GuacamoleRoute";
 import { VMBoxRoute } from "./routers/VMBoxRoute";
+import { AIChatRoute } from "./routers/AIChatRoute";
 export const router: Array<Route> = [
     new PageRoute(),new UserRoute(),new AuthRoute(),
     new PVERoute(),new CourseRoute(), new ClassRoute(), new ChapterRoute(),
     new VMRoute(),new TemplateRoute(),new TemplateManageRoute(),
     new VMManageRoute(),new VMOperateRoute(),new SuperAdminRoute(),
-    new SuperAdminCRPRoute(),new GuacamoleRoute(),new VMBoxRoute()
+    new SuperAdminCRPRoute(),new GuacamoleRoute(),new VMBoxRoute(),
+    new AIChatRoute()
 ];
 
