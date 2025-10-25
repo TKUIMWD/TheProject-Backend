@@ -19,5 +19,13 @@ export class AIChatRoute extends Route {
         this.router.post(`${this.url}/box/hint-stream`, (req, res) => {
             this.Controller.getBoxHintStream(req, res);
         });
+
+        this.router.post(`${this.url}/platform/guide`, (req, res) => {
+            this.Controller.getPlatformGuide(req, res);
+        });
+
+        this.router.post(`${this.url}/platform/guide-stream`, (req, res) => {
+            this.Controller.getPlatformGuideStream(req, res);
+        });
     }
 }
