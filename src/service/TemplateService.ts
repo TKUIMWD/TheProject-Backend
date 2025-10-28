@@ -188,6 +188,27 @@ export class TemplateService extends Service {
                 return createResponse(404, "VM not found or you don't have permission to convert this VM");
             }
 
+            console.log('=== Debug VM Info ===');
+            console.log('ownedVM:', ownedVM);
+            console.log('ownedVM.fromTemplateId:', ownedVM.fromTemplateId);
+            console.log('typeof fromTemplateId:', typeof ownedVM.fromTemplateId);
+            console.log('====================');
+
+            if (ownedVM.fromTemplateId) {
+                const sourceTemplate = await VMTemplateModel.findById(ownedVM.fromTemplateId).exec();
+                
+                if (sourceTemplate) {
+                    // 檢查來源範本是否為私有
+                    if (!sourceTemplate.is_public) {
+                        // 檢查當前用戶是否為來源範本的 owner
+                        if (sourceTemplate.owner.toString() !== user._id.toString()) {
+                            return createResponse(403, "Cannot convert VM to template: source template is private");
+                        }
+                    }
+                }
+                // 如果 sourceTemplate 不存在(已被刪除),允許繼續轉換
+            }
+
             const node = ownedVM.pve_node;
             const vmid = ownedVM.pve_vmid;
 
