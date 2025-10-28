@@ -463,7 +463,7 @@ export class VMBoxService extends Service {
                     default_memory_size: templateInfo.default_memory_size,
                     default_disk_size: templateInfo.default_disk_size,
                     is_public: box.is_public,
-                    box_setup_description: box.box_setup_description,
+                    // box_setup_description: box.box_setup_description,
                     rating_score: box.rating_score,
                     review_count: box.review_count,
                     updated_date: box.updated_date,

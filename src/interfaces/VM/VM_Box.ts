@@ -12,7 +12,7 @@ export interface VM_Box extends VM_Template {
 
 export interface VM_Box_Info extends VM_Template_Info {
     _id?: string;
-    box_setup_description: string;
+    box_setup_description?: string;
     rating_score: number | undefined;
     review_count:number | undefined;
     reviews?: string[];
