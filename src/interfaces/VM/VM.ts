@@ -6,6 +6,7 @@ export interface VM {
     is_box_vm?: boolean;
     box_id?: string;
     answer_record?:string;
+    fromTemplateId?: string;
 }
 
 export interface VMConfig {

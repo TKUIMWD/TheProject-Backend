@@ -205,7 +205,7 @@ export class VMManageService extends Service {
             if (configResult.success) {
                 // 只有在所有操作都成功後才更新資源使用量和用戶 VM 列表
                 await this._updateUsedComputeResources(user._id.toString(), cpuCores, memorySize, diskSize);
-                const vmTableId = await this._updateUserOwnedVMs(user._id.toString(), nextId, target);
+                const vmTableId = await this._updateUserOwnedVMs(user._id.toString(), nextId, target, template_id);
                 await this._updateTaskStatus(task.task_id, VM_Task_Status.COMPLETED, cloneResult.upid);
 
                 logger.info(`VM ${nextId} created successfully for user ${user.username}, task ${task.task_id}`);
@@ -270,6 +270,7 @@ export class VMManageService extends Service {
         }
     }
 
+<<<<<<< HEAD
     private async _cleanupOrphanCloudInitDisk(pve_node: string, pve_vmid: string, storage: string): Promise<void> {
         if (!storage) return;
         const volume = `${storage}:${pve_vmid}/vm-${pve_vmid}-cloudinit.qcow2`;
@@ -291,12 +292,16 @@ export class VMManageService extends Service {
     }
 
     private async _updateUserOwnedVMs(userId: string, pve_vmid: string, pve_node: string): Promise<string> {
+=======
+    private async _updateUserOwnedVMs(userId: string, pve_vmid: string, pve_node: string, fromTemplateId?: string): Promise<string> {
+>>>>>>> 7dd2d9aaf558e5dd72849995389b49bdd4dc9f59
         try {
             // 創建新的 VM 記錄
             const newVM = await VMModel.create({
                 pve_vmid: pve_vmid,
                 pve_node: pve_node,
-                owner: userId  // 添加必需的 owner 字段
+                owner: userId,  // 添加必需的 owner 字段
+                fromTemplateId: fromTemplateId
             });
 
             // 更新用戶的 owned_vms 列表
@@ -1510,7 +1515,7 @@ export class VMManageService extends Service {
             if (configResult.success) {
                 // 只有在所有操作都成功後才更新資源使用量和用戶 VM 列表
                 await this._updateUsedComputeResources(user._id.toString(), cpuCores, memorySize, diskSize);
-                const vmTableId = await this._updateUserOwnedVMs(user._id.toString(), nextId, target);
+                const vmTableId = await this._updateUserOwnedVMs(user._id.toString(), nextId, target, box.vmtemplate_id);
                 await this._updateTaskStatus(task.task_id, VM_Task_Status.COMPLETED, cloneResult.upid);
 
                 // 修改 vm model，加入 box_id

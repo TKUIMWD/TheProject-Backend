@@ -8,7 +8,8 @@ export const VMSchema = new Schema<VM>({
     owner: { type: String, required: true },
     is_box_vm: { type: Boolean, default: false },
     box_id: { type: String },
-    answer_record: { type: String }
+    answer_record: { type: String },
+    fromTemplateId: { type: String } 
 
 });
 
