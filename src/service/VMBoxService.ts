@@ -9,7 +9,7 @@ import { SubmittedBox, SubmittedBoxStatus } from "../interfaces/SubmittedBox";
 import { VM_Box, VM_Box_Info } from "../interfaces/VM/VM_Box";
 import { UsersModel } from "../orm/schemas/UserSchemas";
 import { logger } from "../middlewares/log";
-import { Document } from "mongoose";
+import { Document, Types } from "mongoose";
 import { sendBoxAuditResultEmail } from "../utils/MailSender/BoxAuditResultSender";
 import { VMUtils } from "../utils/VMUtils";
 import { PVEUtils } from "../utils/PVEUtils";
@@ -18,6 +18,10 @@ import { ReviewsModel } from "../orm/schemas/ReviewsSchemas";
 import { DEFAULT_AVATAR } from "../utils/avatarUpload";
 import { VMModel } from "../orm/schemas/VM/VMSchemas";
 import { AnswerRecordModel } from "../orm/schemas/VM/AnswerRecordSchemas";
+import { sanitizeString } from "../utils/sanitize";
+import Roles from "../enum/role";
+import { BoxWriteupStatus } from "../interfaces/BoxWriteup";
+import { BoxWriteupModel } from "../orm/schemas/VM/BoxWriteupSchemas";
 
 
 export class VMBoxService extends Service {
@@ -43,6 +47,71 @@ export class VMBoxService extends Service {
             return obj;
         }
         return {};
+    }
+
+    private async _findPublishedBoxForSubmission(submission: any): Promise<any | null> {
+        const submissionId = submission?._id?.toString();
+        if (!submissionId) return null;
+
+        const linkedBox = await VMBoxModel.findOne({ submitted_box_id: submissionId }).exec();
+        if (linkedBox) return linkedBox;
+
+        return VMBoxModel.findOne({
+            vmtemplate_id: submission.vmtemplate_id,
+            submitter_user_id: submission.submitter_user_id,
+            submitted_date: submission.submitted_date,
+            is_public: true
+        }).exec();
+    }
+
+    private _canModerateBox(user: any, box: any): boolean {
+        if (!user || !box) return false;
+        if (user.role === Roles.SuperAdmin) return true;
+        return user.role === Roles.Admin && box.submitter_user_id?.toString() === user._id?.toString();
+    }
+
+    private async _toWriteupDTO(writeup: any, options: { viewer?: any; includePrivate?: boolean } = {}): Promise<any> {
+        const author = await UsersModel.findById(writeup.author_user_id).exec();
+        const reviewer = writeup.reviewed_by_user_id
+            ? await UsersModel.findById(writeup.reviewed_by_user_id).exec()
+            : null;
+        const box = await VMBoxModel.findById(writeup.box_id).exec();
+        const template = box ? await VMTemplateModel.findById(box.vmtemplate_id).exec() : null;
+        const canReview = Boolean(options.viewer && box && this._canModerateBox(options.viewer, box));
+        const canModify = Boolean(options.viewer && writeup.author_user_id?.toString() === options.viewer._id?.toString());
+
+        return {
+            _id: writeup._id?.toString(),
+            box_id: writeup.box_id,
+            title: writeup.title,
+            content_md: writeup.content_md,
+            status: writeup.status,
+            is_public: writeup.is_public === true,
+            submitted_date: writeup.submitted_date,
+            updated_date: writeup.updated_date,
+            reviewed_by_user_id: options.includePrivate ? writeup.reviewed_by_user_id : undefined,
+            reviewed_date: writeup.reviewed_date,
+            reject_reason: options.includePrivate || canModify ? writeup.reject_reason : undefined,
+            author_info: author ? {
+                username: author.username,
+                email: options.includePrivate ? author.email : undefined,
+                avatar_path: author.avatar_path || DEFAULT_AVATAR
+            } : {
+                username: "Unknown User",
+                avatar_path: DEFAULT_AVATAR
+            },
+            reviewer_info: reviewer && options.includePrivate ? {
+                username: reviewer.username,
+                email: reviewer.email
+            } : undefined,
+            box_info: box ? {
+                _id: box._id?.toString() || writeup.box_id,
+                name: template?.description || box.box_setup_description,
+                description: box.box_setup_description
+            } : undefined,
+            can_modify: canModify,
+            can_review: canReview
+        };
     }
 
     // 私有輔助方法 - 獲取模板資訊
@@ -74,7 +143,11 @@ export class VMBoxService extends Service {
 
             const {
                 vmtemplate_id,
-                box_setup_description
+                box_setup_description,
+                allow_ai_assistant = true,
+                design_md = "",
+                setup_md = "",
+                writeup_md = ""
             } = Request.body;
 
             // 驗證必要欄位
@@ -89,7 +162,11 @@ export class VMBoxService extends Service {
                 submitter_user_id: user._id,
                 submitted_date: new Date(),
                 status: SubmittedBoxStatus.not_approved,
-                flag_answers: Request.body.flag_answers || {}
+                flag_answers: Request.body.flag_answers || {},
+                allow_ai_assistant: allow_ai_assistant !== false,
+                design_md,
+                setup_md,
+                writeup_md
             });
 
             await newSubmission.save();
@@ -161,8 +238,14 @@ export class VMBoxService extends Service {
                 }
 
                 // 初始化 Box 資訊
+                const publishedBox = submission.status === SubmittedBoxStatus.approved
+                    ? await this._findPublishedBoxForSubmission(submission)
+                    : null;
+
                 const boxInfo: VM_Box_Info & { status: SubmittedBoxStatus } = {
                     _id: submission._id,
+                    submitted_box_id: submission._id?.toString(),
+                    published_box_id: publishedBox?._id?.toString(),
                     name: templateInfo.name,
                     description: templateInfo.description,
                     submitted_date: submission.submitted_date,
@@ -172,12 +255,16 @@ export class VMBoxService extends Service {
                     default_disk_size: templateInfo.default_disk_size,
                     is_public: submission.status === SubmittedBoxStatus.approved,
                     box_setup_description: submission.box_setup_description,
-                    rating_score: undefined,
-                    review_count: undefined,
-                    updated_date: submission.status_updated_date || submission.submitted_date,
+                    rating_score: publishedBox?.rating_score,
+                    review_count: publishedBox?.review_count,
+                    updated_date: publishedBox?.updated_date || submission.status_updated_date || submission.submitted_date,
                     status: submission.status,
                     reject_reason: submission.reject_reason,
                     flag_answers: submission.flag_answers,
+                    allow_ai_assistant: publishedBox ? publishedBox.allow_ai_assistant !== false : submission.allow_ai_assistant !== false,
+                    design_md: submission.design_md,
+                    setup_md: submission.setup_md,
+                    writeup_md: submission.writeup_md,
                 };
 
                 // 添加提交者資訊
@@ -264,7 +351,12 @@ export class VMBoxService extends Service {
                     reviews: [],
                     walkthroughs: [],
                     updated_date: new Date(),
-                    flag_answers: submittedBox.flag_answers, 
+                    flag_answers: submittedBox.flag_answers,
+                    allow_ai_assistant: submittedBox.allow_ai_assistant !== false,
+                    design_md: submittedBox.design_md,
+                    setup_md: submittedBox.setup_md,
+                    writeup_md: submittedBox.writeup_md,
+                    submitted_box_id: submittedBox._id?.toString(),
                 });
 
                 await newBox.save();
@@ -408,12 +500,6 @@ export class VMBoxService extends Service {
      */
     public async getPublicBoxes(Request: Request): Promise<resp<VM_Box_Info[] | undefined>> {
         try {
-            const { user, error } = await validateTokenAndGetUser<VM_Box_Info[]>(Request);
-            if (error) {
-                console.error("Error validating token:", error);
-                return error as resp<VM_Box_Info[] | undefined>;
-            }
-
             const boxes = await VMBoxModel.find({ is_public: true }).exec();
 
             if (boxes.length === 0) {
@@ -452,6 +538,12 @@ export class VMBoxService extends Service {
                     }
                 }
 
+                const publicWriteupCount = await BoxWriteupModel.countDocuments({
+                    box_id: box._id?.toString(),
+                    status: BoxWriteupStatus.approved,
+                    is_public: true
+                }).exec();
+
                 // 初始化 Box 資訊
                 const boxInfo: VM_Box_Info = {
                     _id: box._id,
@@ -469,6 +561,9 @@ export class VMBoxService extends Service {
                     updated_date: box.updated_date,
                     update_log: box.update_log,
                     flag_count: Object.keys(this._normalizeFlagAnswers(box.flag_answers)).length,
+                    allow_ai_assistant: box.allow_ai_assistant !== false,
+                    submitted_box_id: box.submitted_box_id,
+                    public_writeup_count: publicWriteupCount,
                 };
 
                 // 添加提交者資訊
@@ -561,6 +656,10 @@ export class VMBoxService extends Service {
                     rating_score: undefined, // 待審核的 Box 還沒有評分
                     review_count: undefined, // 待審核的 Box 還沒有評分次數
                     updated_date: box.status_updated_date || box.submitted_date,
+                    allow_ai_assistant: box.allow_ai_assistant !== false,
+                    design_md: box.design_md,
+                    setup_md: box.setup_md,
+                    writeup_md: box.writeup_md,
                 };
 
                 // 添加提交者資訊
@@ -582,6 +681,83 @@ export class VMBoxService extends Service {
 
         } catch (error) {
             console.error("Error in getPendingBoxes:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    /**
+     * Update whether a Box or SubmittedBox allows student AI assistant questions.
+     */
+    public async updateBoxAiAssistantSetting(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetAdminUser(Request);
+            if (error) {
+                console.error("Error validating admin token:", error);
+                return error;
+            }
+
+            const { box_id, submission_id, allow_ai_assistant } = Request.body;
+            if (typeof allow_ai_assistant !== 'boolean') {
+                return createResponse(400, "allow_ai_assistant must be a boolean");
+            }
+
+            if (!box_id && !submission_id) {
+                return createResponse(400, "box_id or submission_id is required");
+            }
+
+            if (box_id) {
+                const box = await VMBoxModel.findById(box_id).exec();
+                if (!box) return createResponse(404, "Box not found");
+                if (user.role !== 'superadmin' && box.submitter_user_id !== user._id.toString()) {
+                    return createResponse(403, "You do not have permission to update this box");
+                }
+                box.allow_ai_assistant = allow_ai_assistant;
+                box.updated_date = new Date();
+                await box.save();
+
+                if (box.submitted_box_id) {
+                    await SubmittedBoxModel.updateOne(
+                        { _id: box.submitted_box_id },
+                        { $set: { allow_ai_assistant, status_updated_date: new Date() } }
+                    ).exec();
+                }
+
+                return createResponse(200, "Box AI assistant setting updated", {
+                    box_id: box._id?.toString(),
+                    submission_id: box.submitted_box_id,
+                    allow_ai_assistant: box.allow_ai_assistant
+                });
+            }
+
+            const submittedBox = await SubmittedBoxModel.findById(submission_id).exec();
+            if (!submittedBox) return createResponse(404, "Submitted box not found");
+            if (user.role !== 'superadmin' && submittedBox.submitter_user_id !== user._id.toString()) {
+                return createResponse(403, "You do not have permission to update this submitted box");
+            }
+            submittedBox.allow_ai_assistant = allow_ai_assistant;
+            submittedBox.status_updated_date = new Date();
+            await submittedBox.save();
+
+            let publishedBox: any | null = null;
+            if (submittedBox.status === SubmittedBoxStatus.approved) {
+                publishedBox = await this._findPublishedBoxForSubmission(submittedBox);
+                if (publishedBox) {
+                    publishedBox.allow_ai_assistant = allow_ai_assistant;
+                    publishedBox.updated_date = new Date();
+                    if (!publishedBox.submitted_box_id) {
+                        publishedBox.submitted_box_id = submittedBox._id?.toString();
+                    }
+                    await publishedBox.save();
+                }
+            }
+
+            return createResponse(200, publishedBox ? "Box AI assistant setting updated" : "Submitted box AI assistant setting updated", {
+                submission_id: submittedBox._id?.toString(),
+                box_id: publishedBox?._id?.toString(),
+                allow_ai_assistant: submittedBox.allow_ai_assistant
+            });
+        } catch (error) {
+            console.error("Error in updateBoxAiAssistantSetting:", error);
             return createResponse(500, "Internal Server Error");
         }
     }
@@ -622,11 +798,15 @@ export class VMBoxService extends Service {
             const reviewsWithUserInfo = await Promise.all(
                 reviews.map(async (review) => {
                     const reviewer = await UsersModel.findById(review.reviewer_user_id).exec();
+                    const canModify = review.reviewer_user_id?.toString() === user._id.toString();
 
                     return {
+                        _id: review._id.toString(),
+                        reviewer_user_id: review.reviewer_user_id,
                         rating_score: review.rating_score,
                         comment: review.comment,
                         submitted_date: review.submitted_date,
+                        can_modify: canModify,
                         reviewer_info: reviewer ? {
                             username: reviewer.username,
                             avatar_path: reviewer.avatar_path || DEFAULT_AVATAR
@@ -652,6 +832,389 @@ export class VMBoxService extends Service {
 
         } catch (error) {
             console.error("Error in getBoxReviews:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    public async updateBoxReview(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser(Request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return error;
+            }
+
+            const { review_id } = Request.params;
+            const { box_id, rating, comment } = Request.body;
+            if (!review_id || !Types.ObjectId.isValid(review_id)) {
+                return createResponse(400, "Invalid review_id format");
+            }
+            if (!box_id || !Types.ObjectId.isValid(box_id)) {
+                return createResponse(400, "Invalid box_id format");
+            }
+            if (typeof rating !== 'number' || !Number.isInteger(rating) || rating < 1 || rating > 5) {
+                return createResponse(400, "Rating must be an integer between 1 and 5");
+            }
+            if (comment !== undefined && typeof comment !== 'string') {
+                return createResponse(400, "comment must be a string");
+            }
+
+            const sanitizedComment = typeof comment === 'string' ? sanitizeString(comment).trim() : "";
+            if (sanitizedComment.length > 1000) {
+                return createResponse(400, "comment exceeds maximum length of 1000 characters");
+            }
+
+            const box = await VMBoxModel.findById(box_id);
+            if (!box) {
+                return createResponse(404, "Box not found");
+            }
+            const reviewIds = (box.reviews || []).map((id: any) => id?.toString());
+            if (!reviewIds.includes(review_id)) {
+                return createResponse(404, "Review not found for this box");
+            }
+
+            const review = await ReviewsModel.findById(review_id);
+            if (!review) {
+                return createResponse(404, "Review not found");
+            }
+            if (review.reviewer_user_id?.toString() !== user._id.toString()) {
+                return createResponse(403, "You can only edit your own review");
+            }
+
+            review.rating_score = rating;
+            review.comment = sanitizedComment || undefined;
+            await review.save();
+
+            const reviews = await ReviewsModel.find({ _id: { $in: box.reviews } }).lean();
+            const totalRating = reviews.reduce((sum, item) => sum + item.rating_score, 0);
+            box.rating_score = reviews.length > 0 ? Math.round((totalRating / reviews.length) * 100) / 100 : 0;
+            box.review_count = reviews.length;
+            await box.save();
+
+            return createResponse(200, "Box review updated successfully", {
+                review_id,
+                new_rating_score: box.rating_score,
+                review_count: box.review_count
+            });
+        } catch (error) {
+            console.error("Error in updateBoxReview:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    public async deleteBoxReview(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser(Request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return error;
+            }
+
+            const { review_id } = Request.params;
+            const { box_id } = Request.query;
+            if (!review_id || !Types.ObjectId.isValid(review_id)) {
+                return createResponse(400, "Invalid review_id format");
+            }
+            if (!box_id || typeof box_id !== 'string' || !Types.ObjectId.isValid(box_id)) {
+                return createResponse(400, "Invalid box_id format");
+            }
+
+            const box = await VMBoxModel.findById(box_id);
+            if (!box) {
+                return createResponse(404, "Box not found");
+            }
+            const reviewIds = (box.reviews || []).map((id: any) => id?.toString());
+            if (!reviewIds.includes(review_id)) {
+                return createResponse(404, "Review not found for this box");
+            }
+
+            const review = await ReviewsModel.findById(review_id);
+            if (!review) {
+                return createResponse(404, "Review not found");
+            }
+            if (review.reviewer_user_id?.toString() !== user._id.toString()) {
+                return createResponse(403, "You can only delete your own review");
+            }
+
+            box.reviews = reviewIds.filter((id: string) => id !== review_id) as any;
+            await ReviewsModel.findByIdAndDelete(review_id);
+            const reviews = await ReviewsModel.find({ _id: { $in: box.reviews } }).lean();
+            const totalRating = reviews.reduce((sum, item) => sum + item.rating_score, 0);
+            box.rating_score = reviews.length > 0 ? Math.round((totalRating / reviews.length) * 100) / 100 : 0;
+            box.review_count = reviews.length;
+            await box.save();
+
+            return createResponse(200, "Box review deleted successfully", {
+                review_id,
+                new_rating_score: box.rating_score,
+                review_count: box.review_count
+            });
+        } catch (error) {
+            console.error("Error in deleteBoxReview:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    public async submitBoxWriteup(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser(Request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return error;
+            }
+
+            const { box_id, title, content_md } = Request.body;
+            if (!box_id || typeof box_id !== 'string' || !Types.ObjectId.isValid(box_id)) {
+                return createResponse(400, "Invalid box_id format");
+            }
+            if (typeof title !== 'string' || typeof content_md !== 'string') {
+                return createResponse(400, "title and content_md are required");
+            }
+
+            const sanitizedTitle = sanitizeString(title).trim();
+            const sanitizedContent = sanitizeString(content_md).trim();
+            if (sanitizedTitle.length < 3 || sanitizedTitle.length > 120) {
+                return createResponse(400, "title must be between 3 and 120 characters");
+            }
+            if (sanitizedContent.length < 80) {
+                return createResponse(400, "content_md must be at least 80 characters");
+            }
+            if (sanitizedContent.length > 200000) {
+                return createResponse(400, "content_md exceeds maximum length of 200000 characters");
+            }
+
+            const box = await VMBoxModel.findById(box_id).exec();
+            if (!box || !box.is_public) {
+                return createResponse(404, "Public box not found");
+            }
+
+            const activeExisting = await BoxWriteupModel.findOne({
+                box_id,
+                author_user_id: user._id.toString(),
+                status: { $in: [BoxWriteupStatus.pending, BoxWriteupStatus.approved] }
+            }).exec();
+            if (activeExisting) {
+                return createResponse(400, "You already have a pending or approved writeup for this box");
+            }
+
+            const writeup = new BoxWriteupModel({
+                box_id,
+                author_user_id: user._id.toString(),
+                title: sanitizedTitle,
+                content_md: sanitizedContent,
+                status: BoxWriteupStatus.pending,
+                is_public: false,
+                submitted_date: new Date(),
+                updated_date: new Date()
+            });
+            await writeup.save();
+
+            logger.info(`Box writeup ${writeup._id} submitted for box ${box_id} by ${user.email}`);
+            return createResponse(200, "Box writeup submitted for review", {
+                writeup: await this._toWriteupDTO(writeup, { viewer: user, includePrivate: true })
+            });
+        } catch (error) {
+            console.error("Error in submitBoxWriteup:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    public async getPublicBoxWriteups(Request: Request): Promise<resp<any>> {
+        try {
+            const { box_id } = Request.query;
+            if (!box_id || typeof box_id !== 'string' || !Types.ObjectId.isValid(box_id)) {
+                return createResponse(400, "Invalid box_id format");
+            }
+
+            const box = await VMBoxModel.findById(box_id).exec();
+            if (!box || !box.is_public) {
+                return createResponse(404, "Public box not found");
+            }
+
+            const writeups = await BoxWriteupModel.find({
+                box_id,
+                status: BoxWriteupStatus.approved,
+                is_public: true
+            }).sort({ reviewed_date: -1, submitted_date: -1 }).exec();
+
+            const dto = await Promise.all(writeups.map((writeup) => this._toWriteupDTO(writeup)));
+            return createResponse(200, "Public box writeups fetched successfully", {
+                box_id,
+                writeups: dto,
+                total_writeups: dto.length
+            });
+        } catch (error) {
+            console.error("Error in getPublicBoxWriteups:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    public async getMyBoxWriteups(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser(Request);
+            if (error) {
+                console.error("Error validating token:", error);
+                return error;
+            }
+
+            const { box_id } = Request.query;
+            const filter: any = { author_user_id: user._id.toString() };
+            if (box_id !== undefined) {
+                if (typeof box_id !== 'string' || !Types.ObjectId.isValid(box_id)) {
+                    return createResponse(400, "Invalid box_id format");
+                }
+                filter.box_id = box_id;
+            }
+
+            const writeups = await BoxWriteupModel.find(filter).sort({ submitted_date: -1 }).exec();
+            const dto = await Promise.all(writeups.map((writeup) => this._toWriteupDTO(writeup, { viewer: user })));
+            return createResponse(200, "My box writeups fetched successfully", {
+                writeups: dto,
+                total_writeups: dto.length
+            });
+        } catch (error) {
+            console.error("Error in getMyBoxWriteups:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    public async getBoxWriteupSubmissions(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetAdminUser(Request);
+            if (error) {
+                console.error("Error validating admin token:", error);
+                return error;
+            }
+
+            const { box_id, status } = Request.query;
+            const filter: any = {};
+
+            if (status !== undefined) {
+                if (typeof status !== 'string' || !Object.values(BoxWriteupStatus).includes(status as BoxWriteupStatus)) {
+                    return createResponse(400, "Invalid writeup status");
+                }
+                filter.status = status;
+            }
+
+            if (box_id !== undefined) {
+                if (typeof box_id !== 'string' || !Types.ObjectId.isValid(box_id)) {
+                    return createResponse(400, "Invalid box_id format");
+                }
+                const box = await VMBoxModel.findById(box_id).exec();
+                if (!box) return createResponse(404, "Box not found");
+                if (!this._canModerateBox(user, box)) {
+                    return createResponse(403, "You do not have permission to manage writeups for this box");
+                }
+                filter.box_id = box_id;
+            } else if (user.role !== Roles.SuperAdmin) {
+                const ownedBoxes = await VMBoxModel.find({ submitter_user_id: user._id.toString() }).select('_id').lean().exec();
+                filter.box_id = { $in: ownedBoxes.map((box: any) => box._id.toString()) };
+            }
+
+            const writeups = await BoxWriteupModel.find(filter).sort({ submitted_date: -1 }).exec();
+            const dto = await Promise.all(writeups.map((writeup) => this._toWriteupDTO(writeup, { viewer: user, includePrivate: true })));
+            return createResponse(200, "Box writeup submissions fetched successfully", {
+                writeups: dto,
+                total_writeups: dto.length
+            });
+        } catch (error) {
+            console.error("Error in getBoxWriteupSubmissions:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    public async reviewBoxWriteup(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetAdminUser(Request);
+            if (error) {
+                console.error("Error validating admin token:", error);
+                return error;
+            }
+
+            const { writeup_id } = Request.params;
+            const { status, reject_reason, is_public } = Request.body;
+            if (!writeup_id || !Types.ObjectId.isValid(writeup_id)) {
+                return createResponse(400, "Invalid writeup_id format");
+            }
+            if (![BoxWriteupStatus.approved, BoxWriteupStatus.rejected].includes(status)) {
+                return createResponse(400, "status must be approved or rejected");
+            }
+            if (is_public !== undefined && typeof is_public !== 'boolean') {
+                return createResponse(400, "is_public must be a boolean");
+            }
+
+            const writeup = await BoxWriteupModel.findById(writeup_id).exec();
+            if (!writeup) return createResponse(404, "Writeup not found");
+
+            const box = await VMBoxModel.findById(writeup.box_id).exec();
+            if (!box) return createResponse(404, "Box not found");
+            if (!this._canModerateBox(user, box)) {
+                return createResponse(403, "You do not have permission to review this writeup");
+            }
+
+            writeup.status = status;
+            writeup.reviewed_by_user_id = user._id.toString();
+            writeup.reviewed_date = new Date();
+            writeup.updated_date = new Date();
+
+            if (status === BoxWriteupStatus.approved) {
+                writeup.reject_reason = undefined;
+                writeup.is_public = is_public === true;
+            } else {
+                const sanitizedReason = sanitizeString(reject_reason).trim();
+                writeup.reject_reason = sanitizedReason || "No reason provided";
+                writeup.is_public = false;
+            }
+
+            await writeup.save();
+            logger.info(`Box writeup ${writeup_id} reviewed as ${status} by ${user.email}`);
+            return createResponse(200, "Box writeup reviewed successfully", {
+                writeup: await this._toWriteupDTO(writeup, { viewer: user, includePrivate: true })
+            });
+        } catch (error) {
+            console.error("Error in reviewBoxWriteup:", error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    public async updateBoxWriteupVisibility(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetAdminUser(Request);
+            if (error) {
+                console.error("Error validating admin token:", error);
+                return error;
+            }
+
+            const { writeup_id } = Request.params;
+            const { is_public } = Request.body;
+            if (!writeup_id || !Types.ObjectId.isValid(writeup_id)) {
+                return createResponse(400, "Invalid writeup_id format");
+            }
+            if (typeof is_public !== 'boolean') {
+                return createResponse(400, "is_public must be a boolean");
+            }
+
+            const writeup = await BoxWriteupModel.findById(writeup_id).exec();
+            if (!writeup) return createResponse(404, "Writeup not found");
+            if (writeup.status !== BoxWriteupStatus.approved) {
+                return createResponse(400, "Only approved writeups can be published");
+            }
+
+            const box = await VMBoxModel.findById(writeup.box_id).exec();
+            if (!box) return createResponse(404, "Box not found");
+            if (!this._canModerateBox(user, box)) {
+                return createResponse(403, "You do not have permission to manage this writeup");
+            }
+
+            writeup.is_public = is_public;
+            writeup.updated_date = new Date();
+            await writeup.save();
+
+            return createResponse(200, "Box writeup visibility updated", {
+                writeup: await this._toWriteupDTO(writeup, { viewer: user, includePrivate: true })
+            });
+        } catch (error) {
+            console.error("Error in updateBoxWriteupVisibility:", error);
             return createResponse(500, "Internal Server Error");
         }
     }

@@ -5,6 +5,7 @@ export interface GuacamoleConnectionRequest {
     username?: string;
     password?: string;
     port?: number;
+    font_size?: number;
     ip_address?: string; // 前端可以指定要連接的 IP 地址
 }
 
@@ -17,6 +18,10 @@ export interface GuacamoleConnection {
     target_ip?: string;
     available_ips?: string[];
     direct_url?: string; // Guacamole 直接連線 URL
+    guacamole_base_url?: string;
+    guacamole_token?: string;
+    guacamole_data_source?: string;
+    guacamole_connection_id?: string;
 }
 
 export interface GuacamoleAuthToken {

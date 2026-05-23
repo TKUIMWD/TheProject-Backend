@@ -41,8 +41,53 @@ export class VMBoxController extends Controller {
     Response.status(resp.code).send(resp);
   }
 
+  public async updateBoxAiAssistantSetting(Request: Request, Response: Response) {
+    const resp = await this.service.updateBoxAiAssistantSetting(Request);
+    Response.status(resp.code).send(resp);
+  }
+
   public async getBoxReviews(Request: Request, Response: Response) {
     const resp = await this.service.getBoxReviews(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async updateBoxReview(Request: Request, Response: Response) {
+    const resp = await this.service.updateBoxReview(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async deleteBoxReview(Request: Request, Response: Response) {
+    const resp = await this.service.deleteBoxReview(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async submitBoxWriteup(Request: Request, Response: Response) {
+    const resp = await this.service.submitBoxWriteup(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async getPublicBoxWriteups(Request: Request, Response: Response) {
+    const resp = await this.service.getPublicBoxWriteups(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async getMyBoxWriteups(Request: Request, Response: Response) {
+    const resp = await this.service.getMyBoxWriteups(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async getBoxWriteupSubmissions(Request: Request, Response: Response) {
+    const resp = await this.service.getBoxWriteupSubmissions(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async reviewBoxWriteup(Request: Request, Response: Response) {
+    const resp = await this.service.reviewBoxWriteup(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async updateBoxWriteupVisibility(Request: Request, Response: Response) {
+    const resp = await this.service.updateBoxWriteupVisibility(Request);
     Response.status(resp.code).send(resp);
   }
 

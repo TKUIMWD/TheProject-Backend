@@ -9,7 +9,11 @@ export const SubmittedBoxSchemas = new Schema<SubmittedBox>({
     submitted_date: { type: Date, required: true, default: Date.now },
     status_updated_date: { type: Date, required: false, default: null },
     reject_reason: { type: String, required: false },
-    flag_answers: { type: Map, of: String, default: {} } // key: flag_id, value: answer
+    flag_answers: { type: Map, of: String, default: {} }, // key: flag_id, value: answer
+    allow_ai_assistant: { type: Boolean, default: true },
+    design_md: { type: String, default: "" },
+    setup_md: { type: String, default: "" },
+    writeup_md: { type: String, default: "" }
 });
 
 export const SubmittedBoxModel = model<SubmittedBox>('submitted_boxes', SubmittedBoxSchemas);

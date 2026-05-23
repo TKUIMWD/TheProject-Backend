@@ -68,4 +68,15 @@ export class AIChatController extends Controller {
             res.status(500).json({ error: 'Internal server error' });
         }
     }
+
+    public async manageVM(req: Request, res: Response): Promise<void> {
+        try {
+            const result = await this.service.manageVM(req);
+            res.status(result.code).json(result);
+        } catch (error) {
+            logger.error('Error in manageVM controller:', error);
+            res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+
 }

@@ -27,5 +27,10 @@ export class AIChatRoute extends Route {
         this.router.post(`${this.url}/platform/guide-stream`, (req, res) => {
             this.Controller.getPlatformGuideStream(req, res);
         });
+
+
+        this.router.post(`${this.url}/vm/manage`, (req, res) => {
+            this.Controller.manageVM(req, res);
+        });
     }
 }

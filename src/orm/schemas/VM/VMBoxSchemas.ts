@@ -13,6 +13,11 @@ export interface VMBox extends Document {
     submitted_date: Date;
     is_public: boolean;
     flag_answers?: { [key: string]: string }; // key: flag_id, value: answer
+    allow_ai_assistant?: boolean;
+    design_md?: string;
+    setup_md?: string;
+    writeup_md?: string;
+    submitted_box_id?: string;
 }
 
 export const VMBoxSchemas = new Schema<VMBox>({
@@ -28,7 +33,12 @@ export const VMBoxSchemas = new Schema<VMBox>({
     submitter_user_id: { type: String, required: true },
     submitted_date: { type: Date, default: Date.now },
     is_public: { type: Boolean, default: false },
-    flag_answers: { type: Map, of: String, default: {} } // key: flag_id, value: answer
+    flag_answers: { type: Map, of: String, default: {} }, // key: flag_id, value: answer
+    allow_ai_assistant: { type: Boolean, default: true },
+    design_md: { type: String, default: "" },
+    setup_md: { type: String, default: "" },
+    writeup_md: { type: String, default: "" },
+    submitted_box_id: { type: String }
 });
 
 export const VMBoxModel = model<VMBox>('vm_boxes', VMBoxSchemas);

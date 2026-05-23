@@ -13,6 +13,8 @@ export const pve_api: PVEApiEndPoints = {
     nodes_qemu_cloudinit: (node: string, vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${vmid}/cloudinit`,
     nodes_qemu_agent: (node: string, vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${vmid}/agent`,
     nodes_qemu_agent_network: (node: string, vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${vmid}/agent/network-get-interfaces`,
+    nodes_qemu_agent_exec: (node: string, vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${vmid}/agent/exec`,
+    nodes_qemu_agent_exec_status: (node: string, vmid: string, pid: string | number) => `${pve_api_base}/nodes/${node}/qemu/${vmid}/agent/exec-status?pid=${encodeURIComponent(String(pid))}`,
     nodes_qemu_start: (node: string, vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${vmid}/status/start`,
     nodes_qemu_shutdown: (node: string, vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${vmid}/status/shutdown`,
     nodes_qemu_stop: (node: string, vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${vmid}/status/stop`,

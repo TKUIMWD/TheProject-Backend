@@ -14,6 +14,10 @@ export interface SubmittedBox {
     status_updated_date?: Date;
     reject_reason?: string;
     flag_answers?: Record<string, string>; // key: flag_id, value: answer
+    allow_ai_assistant?: boolean;
+    design_md?: string;
+    setup_md?: string;
+    writeup_md?: string;
 }
 
 export interface SubmittedBoxDetails extends SubmittedBox {

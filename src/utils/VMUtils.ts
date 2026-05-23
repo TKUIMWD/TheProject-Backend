@@ -11,6 +11,14 @@ export const PVE_API_ADMINMODE_TOKEN = process.env.PVE_API_ADMINMODE_TOKEN;
 export const PVE_API_SUPERADMINMODE_TOKEN = process.env.PVE_API_SUPERADMINMODE_TOKEN;
 export const PVE_API_USERMODE_TOKEN = process.env.PVE_API_USERMODE_TOKEN;
 
+export type GuestAgentCommandResult = {
+    success: boolean;
+    exitCode?: number;
+    stdout?: string;
+    stderr?: string;
+    errorMessage?: string;
+};
+
 
 /*
  * - validateVMCreationParams: 驗證VM創建參數
@@ -709,8 +717,13 @@ export class VMUtils {
             });
 
             if (networkResp && networkResp.data) {
+                const interfaces = Array.isArray(networkResp.data)
+                    ? networkResp.data
+                    : Array.isArray((networkResp.data as any).result)
+                        ? (networkResp.data as any).result
+                        : [];
                 logger.info(`Successfully retrieved network interfaces for VM ${vmid}`);
-                return { success: true, interfaces: networkResp.data };
+                return { success: true, interfaces };
             } else {
                 logger.warn(`No network interface data available for VM ${vmid} (Guest Agent may not be running)`);
                 return { success: true, interfaces: [] };
@@ -745,6 +758,132 @@ export class VMUtils {
         });
 
         return ipAddresses;
+    }
+
+    static async executeGuestAgentCommand(node: string, vmid: string, command: string, timeoutMs: number = 60000): Promise<GuestAgentCommandResult> {
+        try {
+            const execResp: PVEResp = await callWithUnauthorized('POST', pve_api.nodes_qemu_agent_exec(node, vmid), {
+                command: ['bash', '-lc', command]
+            }, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+                }
+            });
+
+            const pid = (execResp?.data as any)?.pid;
+            if (pid === undefined || pid === null) {
+                return { success: false, errorMessage: "QEMU guest agent did not return an exec pid" };
+            }
+
+            const startedAt = Date.now();
+            while (Date.now() - startedAt < timeoutMs) {
+                const statusResp: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_agent_exec_status(node, vmid, pid), undefined, {
+                    headers: {
+                        'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+                    }
+                });
+
+                const data = statusResp?.data as any;
+                if (data?.exited) {
+                    const exitCode = typeof data.exitcode === 'number' ? data.exitcode : -1;
+                    const stdout = typeof data['out-data'] === 'string' ? data['out-data'] : "";
+                    const stderr = typeof data['err-data'] === 'string' ? data['err-data'] : "";
+                    return {
+                        success: exitCode === 0,
+                        exitCode,
+                        stdout,
+                        stderr,
+                        errorMessage: exitCode === 0 ? undefined : `Guest command exited with code ${exitCode}`
+                    };
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+
+            return { success: false, errorMessage: `Guest command timed out after ${timeoutMs}ms` };
+        } catch (error) {
+            logger.error(`Error executing guest agent command for VM ${vmid}:`, error);
+            return { success: false, errorMessage: error instanceof Error ? error.message : "Unknown guest agent exec error" };
+        }
+    }
+
+    static async waitForGuestAgentCommand(node: string, vmid: string, command: string, timeoutMs: number = 120000): Promise<GuestAgentCommandResult> {
+        const deadline = Date.now() + timeoutMs;
+        let lastError = "QEMU guest agent was not ready";
+
+        while (Date.now() < deadline) {
+            const remaining = Math.max(5000, Math.min(30000, deadline - Date.now()));
+            const result = await this.executeGuestAgentCommand(node, vmid, command, remaining);
+            if (typeof result.exitCode === 'number') {
+                return result;
+            }
+            lastError = result.errorMessage || lastError;
+            await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+
+        return { success: false, errorMessage: lastError };
+    }
+
+    static async ensureUniqueGuestNetworkIdentity(node: string, vmid: string, timeoutMs: number = 180000): Promise<GuestAgentCommandResult> {
+        const script = [
+            'set -euo pipefail',
+            'marker="/var/lib/cstg/vm-network-identity-normalized"',
+            'if [ -f "$marker" ]; then',
+            '  echo "network_identity=already-normalized"',
+            '  printf "machine_id="; cat /etc/machine-id 2>/dev/null || true',
+            '  ip -4 -o addr show scope global || true',
+            '  exit 0',
+            'fi',
+            'iface="$(ip -o link show | awk -F\': \' \'$2 != "lo" {print $2; exit}\' | cut -d"@" -f1)"',
+            'if [ -z "$iface" ]; then echo "No non-loopback interface found"; exit 2; fi',
+            'old_id="$(cat /etc/machine-id 2>/dev/null || true)"',
+            'rm -f /etc/machine-id /var/lib/dbus/machine-id',
+            'systemd-machine-id-setup || dbus-uuidgen --ensure=/etc/machine-id',
+            'ln -sf /etc/machine-id /var/lib/dbus/machine-id || true',
+            "netplan_files=\"$(find /etc/netplan -maxdepth 1 -type f \\( -name '*.yaml' -o -name '*.yml' \\) 2>/dev/null || true)\"",
+            'if [ -n "$netplan_files" ] && grep -Rqs "dhcp4:[[:space:]]*true" /etc/netplan; then',
+            '  cp -a /etc/netplan "/etc/netplan.cstg-backup-$(date +%s)" 2>/dev/null || true',
+            '  rm -f /etc/netplan/99-cstg-dhcp-identity.yaml',
+            '  cat > /etc/netplan/50-cloud-init.yaml <<YAML',
+            'network:',
+            '  version: 2',
+            '  ethernets:',
+            '    ${iface}:',
+            '      dhcp4: true',
+            '      dhcp-identifier: mac',
+            'YAML',
+            '  chmod 600 /etc/netplan/50-cloud-init.yaml',
+            '  netplan generate || true',
+            'fi',
+            'if systemctl is-active --quiet systemd-networkd && [ -z "$netplan_files" ]; then',
+            '  mkdir -p /etc/systemd/network',
+            '  cat > /etc/systemd/network/99-cstg-dhcp-identity.network <<EOF',
+            '[Match]',
+            'Name=${iface}',
+            '',
+            '[Network]',
+            'DHCP=yes',
+            '',
+            '[DHCPv4]',
+            'ClientIdentifier=mac',
+            'EOF',
+            'fi',
+            'rm -f /run/systemd/netif/leases/* /var/lib/systemd/network/* /var/lib/systemd/networkd/* /var/lib/dhcp/* /var/lib/NetworkManager/*lease* /var/lib/NetworkManager/*leases* 2>/dev/null || true',
+            'ip addr flush dev "$iface" || true',
+            'if command -v netplan >/dev/null 2>&1; then timeout 40 netplan apply || true; fi',
+            'if systemctl is-active --quiet systemd-networkd; then networkctl renew "$iface" 2>/dev/null || systemctl restart systemd-networkd || true; fi',
+            'if systemctl is-active --quiet NetworkManager; then nmcli dev reapply "$iface" 2>/dev/null || nmcli con reload || true; fi',
+            'sleep 8',
+            'mkdir -p "$(dirname "$marker")"',
+            'touch "$marker"',
+            'echo "network_identity=normalized"',
+            'echo "interface=$iface"',
+            'echo "old_machine_id=$old_id"',
+            'printf "new_machine_id="; cat /etc/machine-id 2>/dev/null || true',
+            'ip -4 -o addr show dev "$iface" || true'
+        ].join('\n');
+
+        return this.waitForGuestAgentCommand(node, vmid, script, timeoutMs);
     }
 
     /**

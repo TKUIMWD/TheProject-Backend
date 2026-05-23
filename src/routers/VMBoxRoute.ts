@@ -44,8 +44,46 @@ export class VMBoxRoute extends Route{
         });
 
         // 獲取 Box 的評論列表
+        // Update Box AI assistant availability
+        this.router.patch(`${this.url}ai-assistant`, (req, res) => {
+            this.Controller.updateBoxAiAssistantSetting(req, res);
+        });
+
+        // Get Box reviews
         this.router.get(`${this.url}reviews`, (req, res) => {
             this.Controller.getBoxReviews(req, res);
+        });
+
+        this.router.patch(`${this.url}reviews/:review_id`, (req, res) => {
+            this.Controller.updateBoxReview(req, res);
+        });
+
+        this.router.delete(`${this.url}reviews/:review_id`, (req, res) => {
+            this.Controller.deleteBoxReview(req, res);
+        });
+
+        this.router.get(`${this.url}writeups/public`, (req, res) => {
+            this.Controller.getPublicBoxWriteups(req, res);
+        });
+
+        this.router.post(`${this.url}writeups`, (req, res) => {
+            this.Controller.submitBoxWriteup(req, res);
+        });
+
+        this.router.get(`${this.url}writeups/mine`, (req, res) => {
+            this.Controller.getMyBoxWriteups(req, res);
+        });
+
+        this.router.get(`${this.url}writeups/submissions`, (req, res) => {
+            this.Controller.getBoxWriteupSubmissions(req, res);
+        });
+
+        this.router.patch(`${this.url}writeups/:writeup_id/review`, (req, res) => {
+            this.Controller.reviewBoxWriteup(req, res);
+        });
+
+        this.router.patch(`${this.url}writeups/:writeup_id/visibility`, (req, res) => {
+            this.Controller.updateBoxWriteupVisibility(req, res);
         });
 
         this.router.get(`${this.url}getMyAnswerRecord`, (req, res) => {

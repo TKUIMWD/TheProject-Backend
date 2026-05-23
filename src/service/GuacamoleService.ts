@@ -30,6 +30,12 @@ export class GuacamoleService extends Service {
         return !!(GUACAMOLE_URL && GUACAMOLE_API_USERNAME && GUACAMOLE_API_PASSWORD && PROJECTUSER_GUACAMOLE_PASSWORD);
     }
 
+    private _normalizeTerminalFontSize(value: unknown): number {
+        const fontSize = typeof value === 'number' ? value : Number(value);
+        if (!Number.isFinite(fontSize)) return 14;
+        return Math.min(24, Math.max(10, Math.round(fontSize)));
+    }
+
     /**
      * 生成 Guacamole 直接連接 URL 的 Base64URL 編碼連接標識符
      * @param configId 配置 ID
@@ -803,7 +809,8 @@ export class GuacamoleService extends Service {
             }
 
             const { user, isSuperAdmin } = userValidation;
-            const { vm_id, username, password, port = 22, ip_address } = req.body as GuacamoleConnectionRequest;
+            const { vm_id, username, password, port = 22, font_size, ip_address } = req.body as GuacamoleConnectionRequest;
+            const sshFontSize = this._normalizeTerminalFontSize(font_size);
 
             if (!vm_id) {
                 return createResponse(400, "VM ID is required");
@@ -852,14 +859,15 @@ export class GuacamoleService extends Service {
                     hostname: networkInfo.ip,
                     port: port?.toString() || '22',
                     username: username || '',
-                    password: password || ''
+                    password: password || '',
+                    'font-size': String(sshFontSize)
                 }
             };
 
             // 調用 Guacamole API 建立連線
             try {
                 const dataSource = authTokenResult.body.dataSource || 'postgresql';
-                const connectionName = `SSH-${vmName}-${user.email}`;
+                const connectionName = `SSH-${vmName}-${username || 'root'}-${sshFontSize}pt-${Date.now()}-${user.email}`;
                 
                 // 第一步：檢查是否已存在相同名稱的配置
                 const connectionsListUrl = `${GUACAMOLE_URL}/api/session/data/${dataSource}/connections`;
@@ -909,6 +917,9 @@ export class GuacamoleService extends Service {
                             port: (port || 22).toString(),
                             username: username || 'root',
                             password: password || '',
+                            'font-size': String(sshFontSize),
+                            'disable-copy': 'false',
+                            'disable-paste': 'false',
                         },
                         attributes: {
                             'max-connections': '5',
@@ -971,7 +982,11 @@ export class GuacamoleService extends Service {
                     expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000), // 4小時後過期
                     target_ip: networkInfo.ip,
                     available_ips: networkInfo.allIPs,
-                    direct_url: directSSHUrl
+                    direct_url: directSSHUrl,
+                    guacamole_base_url: GUACAMOLE_URL,
+                    guacamole_token: authTokenResult.body.token,
+                    guacamole_data_source: dataSource,
+                    guacamole_connection_id: configId
                 };
 
                 logger.info(`SSH connection established for user ${user.username} to VM ${vm_id} (${vm.pve_vmid}) at ${networkInfo.ip}`);
@@ -1119,7 +1134,10 @@ export class GuacamoleService extends Service {
                             username: username,
                             password: password,
                             'ignore-cert': 'true',
-                            'security': 'any'
+                            'security': 'any',
+                            'disable-copy': 'false',
+                            'disable-paste': 'false',
+                            'normalize-clipboard': 'preserve'
                         },
                         attributes: {}
                     };
@@ -1171,7 +1189,11 @@ export class GuacamoleService extends Service {
                     expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000), // 4小時後過期
                     target_ip: networkInfo.ip,
                     available_ips: networkInfo.allIPs,
-                    direct_url: directRDPUrl
+                    direct_url: directRDPUrl,
+                    guacamole_base_url: GUACAMOLE_URL,
+                    guacamole_token: authTokenResult.body.token,
+                    guacamole_data_source: dataSource,
+                    guacamole_connection_id: configId
                 };
 
                 logger.info(`RDP connection established for user ${user.username} to VM ${vm_id} (${vm.pve_vmid}) at ${networkInfo.ip}`);
@@ -1257,14 +1279,15 @@ export class GuacamoleService extends Service {
                     hostname: networkInfo.ip,
                     port: port?.toString() || '5900',
                     password: password || '',
-                    'color-depth': '32'
+                    'color-depth': '32',
+                    'clipboard-encoding': 'UTF-8'
                 }
             };
 
             // 調用 Guacamole API 建立連線
             try {
                 const dataSource = authTokenResult.body.dataSource || 'postgresql';
-                const connectionName = `VNC-${vmName}-${user.email}`;
+                const connectionName = `VNC-${vmName}-${user.email}-utf8`;
                 
                 // 檢查是否已存在相同名稱的配置
                 const connectionsListUrl = `${GUACAMOLE_URL}/api/session/data/${dataSource}/connections`;
@@ -1313,7 +1336,10 @@ export class GuacamoleService extends Service {
                             hostname: networkInfo.ip,
                             port: (port || 5900).toString(),
                             password: password || '',
-                            'color-depth': '32'
+                            'color-depth': '32',
+                            'disable-copy': 'false',
+                            'disable-paste': 'false',
+                            'clipboard-encoding': 'UTF-8'
                         },
                         attributes: {}
                     };
@@ -1367,7 +1393,11 @@ export class GuacamoleService extends Service {
                     expires_at: new Date(Date.now() + 4 * 60 * 60 * 1000), // 4小時後過期
                     target_ip: networkInfo.ip,
                     available_ips: networkInfo.allIPs,
-                    direct_url: directVNCUrl
+                    direct_url: directVNCUrl,
+                    guacamole_base_url: GUACAMOLE_URL,
+                    guacamole_token: authTokenResult.body.token,
+                    guacamole_data_source: dataSource,
+                    guacamole_connection_id: configId
                 };
 
                 logger.info(`VNC connection established for user ${user.username} to VM ${vm_id} (${vm.pve_vmid}) at ${networkInfo.ip}`);

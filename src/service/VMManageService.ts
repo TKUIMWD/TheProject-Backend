@@ -189,6 +189,8 @@ export class VMManageService extends Service {
             const task = await this._createVMTask(template_id, user._id.toString(), nextId, template_info.pve_vmid, target);
             logger.info(`Created VM task ${task.task_id} for user ${user.username}, VM ID: ${nextId}`);
 
+            await this._cleanupOrphanCloudInitDisk(target, nextId, storage);
+
             const cloneResult = await VMUtils.cloneVM(template_info.pve_node, template_info.pve_vmid, nextId, sanitizedName, target, storage, full);
 
             await this._updateTaskStatus(task.task_id, cloneResult.success ? VM_Task_Status.IN_PROGRESS : VM_Task_Status.FAILED, cloneResult.upid, cloneResult.errorMessage);
@@ -265,6 +267,26 @@ export class VMManageService extends Service {
             await this._updateTaskStatus(taskId, VM_Task_Status.FAILED, undefined, "VM creation failed and resources have been cleaned up");
         } catch (error) {
             logger.error(`Error during failed VM cleanup:`, error);
+        }
+    }
+
+    private async _cleanupOrphanCloudInitDisk(pve_node: string, pve_vmid: string, storage: string): Promise<void> {
+        if (!storage) return;
+        const volume = `${storage}:${pve_vmid}/vm-${pve_vmid}-cloudinit.qcow2`;
+        try {
+            await callWithUnauthorized('DELETE', pve_api.nodes_storage_content(pve_node, storage, encodeURIComponent(volume)), undefined, {
+                headers: {
+                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
+                }
+            });
+            logger.info(`Deleted orphan cloud-init disk before clone: ${volume} on ${pve_node}`);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (/not found|does not exist|no such|404/i.test(message)) {
+                logger.info(`No orphan cloud-init disk found before clone: ${volume} on ${pve_node}`);
+                return;
+            }
+            logger.warn(`Unable to delete orphan cloud-init disk ${volume} on ${pve_node}: ${message}`);
         }
     }
 
@@ -439,6 +461,14 @@ export class VMManageService extends Service {
             logger.info(`Waiting additional time for VM ${vmid} disk to stabilize before resize...`);
             await new Promise(resolve => setTimeout(resolve, 5000));
 
+            const currentConfig = await VMUtils.getVMConfig(node, vmid);
+            const currentDiskSize = PVEUtils.extractDiskSizeFromConfig(currentConfig?.scsi0);
+            if (currentDiskSize !== null && currentDiskSize >= diskSize) {
+                logger.info(`Skipping disk resize for VM ${vmid}: current disk ${currentDiskSize}G >= requested ${diskSize}G`);
+                await this._updateTaskStep(taskId, stepIndex, VM_Task_Status.COMPLETED, `Disk resize skipped; current disk ${currentDiskSize}G >= requested ${diskSize}G`);
+                return { success: true };
+            }
+
             const resizeResult = await VMUtils.resizeVMDisk(node, vmid, diskSize);
 
             if (resizeResult.success) {
@@ -565,6 +595,7 @@ export class VMManageService extends Service {
             if (!vm) {
                 return createResponse(404, "VM not found");
             }
+            const vmResourceOwnerId = vm.owner;
 
             const vmStatus = await VMUtils.getVMStatus(vm.pve_node, vm.pve_vmid);
             if (vmStatus && vmStatus.status === 'running') {
@@ -618,8 +649,8 @@ export class VMManageService extends Service {
                 // 回收資源 - 使用之前獲取的配置
                 if (vmConfig) {
                     try {
-                        await this._reclaimVMResourcesWithConfig(user._id.toString(), vmConfig);
-                        logger.info(`[deleteUserVM] Successfully reclaimed resources for user ${user._id}`);
+                        await this._reclaimVMResourcesWithConfig(vmResourceOwnerId, vmConfig);
+                        logger.info(`[deleteUserVM] Successfully reclaimed resources for VM owner ${vmResourceOwnerId}`);
                     } catch (resourceError) {
                         logger.error(`[deleteUserVM] Error reclaiming resources for user ${user._id}:`, resourceError);
                         // 不影響刪除流程，繼續執行
@@ -632,8 +663,8 @@ export class VMManageService extends Service {
                 console.log(`[deleteUserVM] Deletion success, cleaning up database for vm_id: ${vm_id}`);
 
                 // 清理資料庫記錄 - 跳過資源回收因為已經在上面做過了
-                await this._cleanupVMFromDatabase(user._id.toString(), vm_id, vmConfig, true);
-                console.log(`[deleteUserVM] _cleanupVMFromDatabase called for user: ${user._id}, vm_id: ${vm_id}`);
+                await this._cleanupVMFromDatabase(vmResourceOwnerId, vm_id, vmConfig, true);
+                console.log(`[deleteUserVM] _cleanupVMFromDatabase called for VM owner: ${vmResourceOwnerId}, vm_id: ${vm_id}`);
 
                 const response: VMDeletionResponse = {
                     vm_id: vm_id,
@@ -1462,6 +1493,8 @@ export class VMManageService extends Service {
 
             const task = await this._createVMTask(box.vmtemplate_id, user._id.toString(), nextId, template_info.pve_vmid, target);
             logger.info(`Created VM task ${task.task_id} for user ${user.username}, VM ID: ${nextId}`);
+
+            await this._cleanupOrphanCloudInitDisk(target, nextId, storage);
 
             const cloneResult = await VMUtils.cloneVM(template_info.pve_node, template_info.pve_vmid, nextId, sanitizedName, target, storage, full);
 

@@ -11,13 +11,11 @@ import { UsersModel } from "../orm/schemas/UserSchemas";
 import { ChapterModel } from "../orm/schemas/ChapterSchemas";
 import { Course, CourseInfo } from "../interfaces/Course/Course";
 import { ClassModel } from "../orm/schemas/ClassSchemas";
-import { get } from "jquery";
 import Roles from "../enum/role";
-import { JSDOM } from 'jsdom';
-import DOMPurify, { sanitize } from 'dompurify';
-import { sanitizeString, sanitizeArray } from "../utils/sanitize";
-import { SubmitterInfo } from "../interfaces/Course/SubmitterInfo";
+import { sanitizeString } from "../utils/sanitize";
 import { sendCourseInvitationsEmail } from "../utils/MailSender/CourseInviteSender";
+import { ReviewsModel } from "../orm/schemas/ReviewsSchemas";
+import { DEFAULT_AVATAR } from "../utils/avatarUpload";
 
 export class CourseService extends Service {
     /**
@@ -403,10 +401,6 @@ export class CourseService extends Service {
 
     public async GetAllPublicCourses(Request: Request): Promise<resp<String | CourseInfo[] | undefined>> {
         try {
-            const { user, error } = await validateTokenAndGetUser<String>(Request);
-            if (error) {
-                return error;
-            }
 
             const courseDocs = await CourseModel.find({ status: "公開" }).lean();
             const coursesPromises = courseDocs.map(async (course): Promise<CourseInfo | null> => {
@@ -480,6 +474,272 @@ export class CourseService extends Service {
             return createResponse(500, "Internal Server Error");
         }
 
+    }
+
+    public async rateCourse(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser<any>(Request);
+            if (error) {
+                return error;
+            }
+
+            const { course_id, rating, comment } = Request.body;
+            if (!course_id || typeof rating !== 'number') {
+                return createResponse(400, "Missing required fields: course_id and rating");
+            }
+
+            if (!mongoose.Types.ObjectId.isValid(course_id)) {
+                return createResponse(400, "Invalid course_id format");
+            }
+
+            if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+                return createResponse(400, "Rating must be an integer between 1 and 5");
+            }
+
+            if (comment !== undefined && typeof comment !== 'string') {
+                return createResponse(400, "comment must be a string");
+            }
+
+            const sanitizedComment = typeof comment === 'string' ? sanitizeString(comment).trim() : "";
+            if (sanitizedComment.length > 1000) {
+                return createResponse(400, "comment exceeds maximum length of 1000 characters");
+            }
+
+            const course = await CourseModel.findById(course_id);
+            if (!course) {
+                return createResponse(404, "Course not found");
+            }
+
+            const userId = user._id.toString();
+            const joinedCourseIds = (user.course_ids || []).map((id: any) => id?.toString());
+            const canReview = course.status === "公開" && (
+                joinedCourseIds.includes(course_id) ||
+                course.submitter_user_id === userId ||
+                user.role === Roles.SuperAdmin
+            );
+            if (!canReview) {
+                return createResponse(403, "You must join this public course before reviewing it");
+            }
+
+            const existingReview = await ReviewsModel.findOne({
+                _id: { $in: course.reviews },
+                reviewer_user_id: userId
+            });
+            if (existingReview) {
+                return createResponse(400, "You have already reviewed this course");
+            }
+
+            const newReview = await ReviewsModel.create({
+                reviewer_user_id: userId,
+                rating_score: rating,
+                comment: sanitizedComment || undefined,
+                submitted_date: new Date()
+            });
+
+            course.reviews.push(newReview._id.toString());
+            const reviews = await ReviewsModel.find({ _id: { $in: course.reviews } }).lean();
+            const totalRating = reviews.reduce((sum, review) => sum + review.rating_score, 0);
+            course.rating = reviews.length > 0 ? Math.round((totalRating / reviews.length) * 100) / 100 : 0;
+            await course.save();
+
+            logger.info(`Course ${course_id} rated ${rating} by ${user.email}`);
+            return createResponse(200, "Course rated successfully", {
+                new_rating_score: course.rating,
+                review_count: course.reviews.length,
+                review_id: newReview._id
+            });
+        } catch (err) {
+            logger.error("Error in rateCourse:", err);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    public async getCourseReviews(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser<any>(Request);
+            if (error) {
+                return error;
+            }
+
+            const { course_id } = Request.query;
+            if (!course_id || typeof course_id !== 'string') {
+                return createResponse(400, "course_id is required");
+            }
+
+            if (!mongoose.Types.ObjectId.isValid(course_id)) {
+                return createResponse(400, "Invalid course_id format");
+            }
+
+            const course = await CourseModel.findById(course_id);
+            if (!course) {
+                return createResponse(404, "Course not found");
+            }
+
+            const userId = user._id.toString();
+            const joinedCourseIds = (user.course_ids || []).map((id: any) => id?.toString());
+            const canView = course.status === "公開" ||
+                joinedCourseIds.includes(course_id) ||
+                course.submitter_user_id === userId ||
+                user.role === Roles.SuperAdmin;
+            if (!canView) {
+                return createResponse(403, "Cannot view reviews for this course");
+            }
+
+            const reviews = await ReviewsModel.find({
+                _id: { $in: course.reviews }
+            }).lean();
+
+            const reviewsWithUserInfo = await Promise.all(
+                reviews.map(async (review) => {
+                    const reviewer = await UsersModel.findById(review.reviewer_user_id).lean();
+                    const canModify = review.reviewer_user_id?.toString() === userId;
+                    return {
+                        _id: review._id.toString(),
+                        reviewer_user_id: review.reviewer_user_id,
+                        rating_score: review.rating_score,
+                        comment: review.comment,
+                        submitted_date: review.submitted_date,
+                        can_modify: canModify,
+                        reviewer_info: reviewer ? {
+                            username: reviewer.username,
+                            avatar_path: reviewer.avatar_path || DEFAULT_AVATAR
+                        } : {
+                            username: "Unknown User",
+                            avatar_path: DEFAULT_AVATAR
+                        }
+                    };
+                })
+            );
+
+            reviewsWithUserInfo.sort((a, b) =>
+                new Date(b.submitted_date).getTime() - new Date(a.submitted_date).getTime()
+            );
+
+            return createResponse(200, "Course reviews fetched successfully", {
+                course_id,
+                reviews: reviewsWithUserInfo,
+                total_reviews: reviewsWithUserInfo.length,
+                average_rating: course.rating
+            });
+        } catch (err) {
+            logger.error("Error in getCourseReviews:", err);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    public async updateCourseReview(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser<any>(Request);
+            if (error) {
+                return error;
+            }
+
+            const { review_id } = Request.params;
+            const { course_id, rating, comment } = Request.body;
+            if (!review_id || !mongoose.Types.ObjectId.isValid(review_id)) {
+                return createResponse(400, "Invalid review_id format");
+            }
+            if (!course_id || !mongoose.Types.ObjectId.isValid(course_id)) {
+                return createResponse(400, "Invalid course_id format");
+            }
+            if (typeof rating !== 'number' || !Number.isInteger(rating) || rating < 1 || rating > 5) {
+                return createResponse(400, "Rating must be an integer between 1 and 5");
+            }
+            if (comment !== undefined && typeof comment !== 'string') {
+                return createResponse(400, "comment must be a string");
+            }
+
+            const sanitizedComment = typeof comment === 'string' ? sanitizeString(comment).trim() : "";
+            if (sanitizedComment.length > 1000) {
+                return createResponse(400, "comment exceeds maximum length of 1000 characters");
+            }
+
+            const course = await CourseModel.findById(course_id);
+            if (!course) {
+                return createResponse(404, "Course not found");
+            }
+            const reviewIds = (course.reviews || []).map((id: any) => id?.toString());
+            if (!reviewIds.includes(review_id)) {
+                return createResponse(404, "Review not found for this course");
+            }
+
+            const review = await ReviewsModel.findById(review_id);
+            if (!review) {
+                return createResponse(404, "Review not found");
+            }
+            if (review.reviewer_user_id?.toString() !== user._id.toString()) {
+                return createResponse(403, "You can only edit your own review");
+            }
+
+            review.rating_score = rating;
+            review.comment = sanitizedComment || undefined;
+            await review.save();
+
+            const reviews = await ReviewsModel.find({ _id: { $in: course.reviews } }).lean();
+            const totalRating = reviews.reduce((sum, item) => sum + item.rating_score, 0);
+            course.rating = reviews.length > 0 ? Math.round((totalRating / reviews.length) * 100) / 100 : 0;
+            await course.save();
+
+            return createResponse(200, "Course review updated successfully", {
+                review_id,
+                new_rating_score: course.rating,
+                review_count: reviews.length
+            });
+        } catch (err) {
+            logger.error("Error in updateCourseReview:", err);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    public async deleteCourseReview(Request: Request): Promise<resp<any>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser<any>(Request);
+            if (error) {
+                return error;
+            }
+
+            const { review_id } = Request.params;
+            const { course_id } = Request.query;
+            if (!review_id || !mongoose.Types.ObjectId.isValid(review_id)) {
+                return createResponse(400, "Invalid review_id format");
+            }
+            if (!course_id || typeof course_id !== 'string' || !mongoose.Types.ObjectId.isValid(course_id)) {
+                return createResponse(400, "Invalid course_id format");
+            }
+
+            const course = await CourseModel.findById(course_id);
+            if (!course) {
+                return createResponse(404, "Course not found");
+            }
+            const reviewIds = (course.reviews || []).map((id: any) => id?.toString());
+            if (!reviewIds.includes(review_id)) {
+                return createResponse(404, "Review not found for this course");
+            }
+
+            const review = await ReviewsModel.findById(review_id);
+            if (!review) {
+                return createResponse(404, "Review not found");
+            }
+            if (review.reviewer_user_id?.toString() !== user._id.toString()) {
+                return createResponse(403, "You can only delete your own review");
+            }
+
+            course.reviews = reviewIds.filter((id: string) => id !== review_id);
+            await ReviewsModel.findByIdAndDelete(review_id);
+            const reviews = await ReviewsModel.find({ _id: { $in: course.reviews } }).lean();
+            const totalRating = reviews.reduce((sum, item) => sum + item.rating_score, 0);
+            course.rating = reviews.length > 0 ? Math.round((totalRating / reviews.length) * 100) / 100 : 0;
+            await course.save();
+
+            return createResponse(200, "Course review deleted successfully", {
+                review_id,
+                new_rating_score: course.rating,
+                review_count: reviews.length
+            });
+        } catch (err) {
+            logger.error("Error in deleteCourseReview:", err);
+            return createResponse(500, "Internal Server Error");
+        }
     }
 
     public async ApprovedCourseById(Request: Request): Promise<resp<String | undefined>> {

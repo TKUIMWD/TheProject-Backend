@@ -46,6 +46,26 @@ export class CourseController extends Controller {
     Response.status(resp.code).send(resp);
   }
 
+  public async rateCourse(Request: Request, Response: Response) {
+    const resp = await this.service.rateCourse(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async getCourseReviews(Request: Request, Response: Response) {
+    const resp = await this.service.getCourseReviews(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async updateCourseReview(Request: Request, Response: Response) {
+    const resp = await this.service.updateCourseReview(Request);
+    Response.status(resp.code).send(resp);
+  }
+
+  public async deleteCourseReview(Request: Request, Response: Response) {
+    const resp = await this.service.deleteCourseReview(Request);
+    Response.status(resp.code).send(resp);
+  }
+
   public async ApprovedCourseById(Request: Request, Response: Response) {
     const resp = await this.service.ApprovedCourseById(Request);
     Response.status(resp.code).send(resp);

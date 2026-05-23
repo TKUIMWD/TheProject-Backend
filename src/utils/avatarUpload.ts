@@ -7,8 +7,8 @@ import { Request, Response, NextFunction } from 'express';
 import { logger } from '../middlewares/log';
 
 // 允許的圖片類型
-const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
+const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif'];
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const UPLOAD_DIR = path.join(__dirname, '../../uploads/avatars');
 const DEFAULT_AVATAR = '/uploads/avatars/default-avatar.jpg';
@@ -19,13 +19,23 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 }
 
 // 檢查文件是否為真實圖片（檢查文件頭）
-const isValidImageFile = async (buffer: Buffer): Promise<boolean> => {
+const getImageMetadata = async (buffer: Buffer): Promise<{ width?: number; height?: number; format?: string } | null> => {
     try {
-        const metadata = await sharp(buffer).metadata();
-        return !!(metadata.width && metadata.height && metadata.format);
+        return await sharp(buffer, { animated: true }).metadata();
     } catch (error) {
-        return false;
+        return null;
     }
+};
+
+const isSupportedImageMetadata = (metadata: { width?: number; height?: number; format?: string } | null): boolean => {
+    if (!metadata?.width || !metadata.height || !metadata.format) return false;
+    return ['jpeg', 'jpg', 'png', 'webp', 'gif'].includes(metadata.format);
+};
+
+const isGifAvatar = (file: Express.Multer.File, metadata: { format?: string } | null): boolean => {
+    return file.mimetype === 'image/gif'
+        || path.extname(file.originalname).toLowerCase() === '.gif'
+        || metadata?.format === 'gif';
 };
 
 // 檢查文件名安全性
@@ -59,7 +69,7 @@ const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilt
         // 檢查 MIME 類型
         if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
             logger.warn(`Invalid file type attempted: ${file.mimetype}`);
-            return cb(new Error('只允許上傳 JPEG、PNG 或 WebP 格式的圖片'));
+            return cb(new Error('Only JPEG, PNG, WebP, or GIF images are allowed'));
         }
         
         // 檢查文件副檔名
@@ -95,9 +105,24 @@ export const upload = multer({
 export const processAvatar = async (file: Express.Multer.File): Promise<string> => {
     try {
         // 雙重檢查：驗證文件內容是否真的是圖片
-        const isValidImage = await isValidImageFile(file.buffer);
-        if (!isValidImage) {
+        const metadata = await getImageMetadata(file.buffer);
+        if (!isSupportedImageMetadata(metadata)) {
             throw new Error('文件內容不是有效的圖片格式');
+        }
+
+        if (isGifAvatar(file, metadata)) {
+            if (metadata?.format !== 'gif') {
+                throw new Error('GIF avatar content does not match its file type');
+            }
+
+            const randomFilename = `${uuidv4()}.gif`;
+            const outputPath = path.join(UPLOAD_DIR, randomFilename);
+            fs.writeFileSync(outputPath, file.buffer);
+
+            const relativePath = `/uploads/avatars/${randomFilename}`;
+            logger.info(`Animated avatar saved: ${relativePath}`);
+
+            return relativePath;
         }
         
         // 生成隨機文件名

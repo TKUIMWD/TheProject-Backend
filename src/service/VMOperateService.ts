@@ -17,7 +17,7 @@ export class VMOperateService extends Service {
     /**
      * 啟動 VM (boot)
      */
-    public async bootVM(Request: Request): Promise<resp<{ upid?: string } | undefined>> {
+    public async bootVM(Request: Request): Promise<resp<{ upid?: string; network_identity_warning?: string } | undefined>> {
         try {
             const { user, error } = await validateTokenAndGetUser<User>(Request);
             if (error) {
@@ -59,8 +59,34 @@ export class VMOperateService extends Service {
                 return createResponse(500, result.errorMessage || "Failed to start VM");
             }
 
+            if (result.upid) {
+                const waitResult = await VMUtils.waitForTaskCompletion(vm.pve_node, result.upid, "VM start");
+                if (!waitResult.success) {
+                    logger.error(`VM ${vm_id} start task failed:`, waitResult.errorMessage);
+                    return createResponse(500, waitResult.errorMessage || "VM start task failed");
+                }
+            }
+
+            let networkIdentityWarning: string | undefined;
+            if (process.env.VM_BOOT_NORMALIZE_GUEST_NETWORK !== "false") {
+                const identityResult = await VMUtils.ensureUniqueGuestNetworkIdentity(
+                    vm.pve_node,
+                    vm.pve_vmid,
+                    Number(process.env.VM_BOOT_GUEST_IDENTITY_TIMEOUT_MS || 120000)
+                );
+                if (!identityResult.success) {
+                    networkIdentityWarning = identityResult.errorMessage || "Guest network identity normalization failed";
+                    logger.warn(`VM ${vm_id} guest network identity normalization failed: ${networkIdentityWarning}`);
+                } else {
+                    logger.info(`VM ${vm_id} guest network identity normalized: ${(identityResult.stdout || "").split(/\r?\n/).slice(-5).join(" | ")}`);
+                }
+            }
+
             logger.info(`VM ${vm_id} started successfully by user ${user.username}, UPID: ${result.upid}`);
-            return createResponse(200, "VM started successfully", { upid: result.upid });
+            return createResponse(200, "VM started successfully", {
+                upid: result.upid,
+                network_identity_warning: networkIdentityWarning
+            });
 
         } catch (error) {
             logger.error("Error in bootVM:", error);

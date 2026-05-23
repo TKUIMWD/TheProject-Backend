@@ -43,6 +43,22 @@ export class CourseRoute extends Route{
             this.Controller.JoinCourseById(req, res)
         });
 
+        this.router.post(`${this.url}/rate`, (req, res) => {
+            this.Controller.rateCourse(req, res)
+        });
+
+        this.router.get(`${this.url}/reviews`, (req, res) => {
+            this.Controller.getCourseReviews(req, res)
+        });
+
+        this.router.patch(`${this.url}/reviews/:review_id`, (req, res) => {
+            this.Controller.updateCourseReview(req, res)
+        });
+
+        this.router.delete(`${this.url}/reviews/:review_id`, (req, res) => {
+            this.Controller.deleteCourseReview(req, res)
+        });
+
         this.router.post(`${this.url}/approved/:courseId`, (req, res) => {
             this.Controller.ApprovedCourseById(req, res)
         });
