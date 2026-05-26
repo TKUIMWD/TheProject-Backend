@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `33d6b5d docs update template manage service refactor progress`
+Latest remote baseline before this snapshot: `a822432 docs update super admin service refactor progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -47,6 +47,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - `SuperAdminCRPService` now shares one request-context helper for user/body/params forwarding into `ComputeResourcePlanRequestAdapterService`.
 - `TemplateManageService` now shares one request-context helper for user/body forwarding into `TemplateManageRequestAdapterService`.
 - `SuperAdminService` now shares one request-context helper for actor/body forwarding into `SuperAdminRequestAdapterService`.
+- `VMOperateService` no longer accepts raw Express `Request`; `VMOperateController` owns request token/body extraction and forwards DTO inputs.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -74,11 +75,13 @@ The latest recorded full gate is green after these slices:
 - targeted CRP adapter tests: `npx vitest run tests/compute-resource-plan-request-adapter-service.test.ts tests/compute-resource-plan-management-service.test.ts tests/compute-resource-plan-policy.test.ts` (`3` files, `19` tests)
 - targeted SuperAdmin adapter tests: `npx vitest run tests/super-admin-request-adapter-service.test.ts tests/super-admin-user-management-service.test.ts tests/super-admin-user-mutation-policy.test.ts` (`3` files, `12` tests)
 - targeted User tests: `npx vitest run tests/user-profile-service.test.ts tests/user-read-service.test.ts` (`2` files, `19` tests)
-- `npm test` (`182` files, `919` tests)
+- targeted VM operation facade tests: `npx vitest run tests/vm-operate-service.test.ts tests/vm-operation-execution-service.test.ts tests/vm-operation-policy.test.ts` (`3` files, `13` tests)
+- `npm test` (`183` files, `920` tests)
 - `npm run build`
 - `npm audit --audit-level=moderate` (`0` vulnerabilities)
 - merge-conflict marker scan
 - backend `console.*` scan
+- `src/modules` reverse-import scan
 - `git diff --check`
 
 ## Completed Highlights
@@ -127,6 +130,7 @@ The latest recorded full gate is green after these slices:
 - VM status/network reads now share one service-level actor-context resolver.
 - VM read/list/status/network route-to-workflow adapter logic now lives in `VMReadRequestAdapterService`.
 - VM operation execution now lives in `VMOperationExecutionService`; `VMOperateService` is a route/auth adapter.
+- `VMOperateService` now exposes DTO-style VM operation methods; Express `Request` handling remains in `VMOperateController`.
 - VM deletion ownership and workflow dispatch now lives in `VMDeletionAccessService`; `VMManageService` delegates delete DTOs.
 - PVE request query/body mapping now lives in `PVERequestAdapterService`; `PVEService` is a token/role adapter for PVE workflows.
   - `PVEService` now uses shared request-context forwarding for body/query adapter calls.
@@ -161,7 +165,7 @@ Current facade/service file sizes:
 | `src/service/VMService.ts` | 90 | Thin read facade around VM read request adapter. |
 | `src/service/ChapterService.ts` | 89 | Thin token wrapper around course structure request adapter. |
 | `src/service/SuperAdminCRPService.ts` | 87 | Thin token/role wrapper around CRP request adapter with shared request-context forwarding. |
-| `src/service/VMOperateService.ts` | 81 | Thin request adapter delegating operation execution. |
+| `src/service/VMOperateService.ts` | 65 | Thin DTO facade delegating operation execution; no Express `Request` import. |
 | `src/service/AuthService.ts` | 74 | Thin token wrapper around Auth workflow/session services. |
 | `src/service/TemplateManageService.ts` | 70 | Thin token/role wrapper around Template Manage request adapter with shared request-context forwarding. |
 | `src/service/SuperAdminService.ts` | 67 | Thin token wrapper around SuperAdmin request adapter with shared request-context forwarding. |
@@ -177,7 +181,6 @@ Current services still importing `Request` from Express include:
 - `CourseService`
 - `GuacamoleService`
 - `TemplateManageService`
-- `VMOperateService`
 - `UserService`
 - `VMManageService`
 - `SuperAdminCRPService`
@@ -217,31 +220,7 @@ No extracted module currently imports Express `Request`; remaining `Request` imp
 
 Use small, isolated commits:
 
-1. `refactor vm operation deletion module boundaries`
-2. `refactor ai chat platform guide service`
-3. `refactor pve request adapter service`
-4. `refactor vm manage request adapter service`
-5. `refactor template manage request adapter service`
-6. `refactor crp request adapter service`
-7. `refactor super admin request adapter service`
-8. `refactor auth session service`
-9. `refactor course structure request adapter service`
-10. `refactor template request adapter service`
-11. `refactor vm read request adapter service`
-12. `refactor ai box build request adapter service`
-13. `refactor ai chat request adapter service`
-14. `refactor guacamole request adapter service`
-15. `refactor vm box request adapter coverage`
-16. `refactor course request adapter coverage`
-17. `refactor pve service request context forwarding`
-18. `refactor template service request context forwarding`
-19. `refactor ai box build service request context forwarding`
-20. `refactor user service request context forwarding`
-21. `refactor guacamole service request context forwarding`
-22. `refactor ai chat service request context forwarding`
-23. `refactor crp service request context forwarding`
-24. `refactor template manage service request context forwarding`
-25. `refactor super admin service request context forwarding`
-26. `docs update backend refactor progress`
+1. `refactor remaining facade request boundaries`
+2. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.
