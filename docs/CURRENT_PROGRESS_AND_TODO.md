@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `5d50e06 docs update pve refactor progress`
+Latest remote baseline before this snapshot: `f66ea2f docs update template service refactor progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -40,6 +40,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - Course route-to-workflow request adapter now has injectable dependencies and direct mapping coverage; `CourseService` shares one request-context helper for body/query/params forwarding.
 - `PVEService` now shares one request-context helper for body/query forwarding into `PVERequestAdapterService`.
 - `TemplateService` now shares one token/error wrapper and one request-context helper for Template request adapter calls.
+- `AIBoxBuildService` now shares one request-context helper for params/body/authorization forwarding into `AIBoxBuildRequestAdapterService`.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -104,6 +105,7 @@ The latest recorded full gate is green after these slices:
   - AI Chat VM management now accepts body/user context and calls VM read, VM operation, and VM deletion module ports instead of cloning Express requests or importing service facades.
   - AI Box Build provisioning now calls VM creation workflow DTOs directly instead of constructing an Express-like request.
   - AI Box Build job/run route-to-workflow adapter logic now lives in `AIBoxBuildRequestAdapterService`.
+  - `AIBoxBuildService` now shares one request-context helper for params/body/authorization forwarding into the request adapter.
   - AI Chat hint/platform-guide/VM-management route-to-workflow adapter logic now lives in `AIChatRequestAdapterService`.
 - Course, Template, VM Box, and Review domains have many extracted/tested service and policy slices, including create/update/list/review/membership/submission/audit/writeup/answer flows.
 - Course request adapter mapping is now directly tested with injected workflow ports, and `CourseService` now uses one shared request-context helper for forwarding actor/body/query/params into the adapter.
@@ -142,7 +144,7 @@ Current facade/service file sizes:
 | `src/service/AIChatService.ts` | 125 | Thin auth/error wrapper around AI Chat request adapter. |
 | `src/service/VMManageService.ts` | 120 | Thin token/role wrapper around VM Manage request adapter. |
 | `src/service/UserService.ts` | 118 | Thin auth/error wrapper around profile/read modules. |
-| `src/service/AIBoxBuildService.ts` | 101 | Thin token wrapper around AI Box Build request adapter. |
+| `src/service/AIBoxBuildService.ts` | 100 | Thin token wrapper around AI Box Build request adapter with shared request-context forwarding. |
 | `src/service/TemplateService.ts` | 93 | Thin token wrapper around Template request adapter with shared request-context forwarding. |
 | `src/service/VMService.ts` | 90 | Thin read facade around VM read request adapter. |
 | `src/service/ChapterService.ts` | 89 | Thin token wrapper around course structure request adapter. |
@@ -221,6 +223,7 @@ Use small, isolated commits:
 16. `refactor course request adapter coverage`
 17. `refactor pve service request context forwarding`
 18. `refactor template service request context forwarding`
-19. `docs update backend refactor progress`
+19. `refactor ai box build service request context forwarding`
+20. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.
