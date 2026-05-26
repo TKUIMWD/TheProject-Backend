@@ -1,98 +1,84 @@
 import { Request } from "express";
 import { Service } from "../abstract/Service";
+import { ComputeResourcePlan } from "../interfaces/ComputeResourcePlan";
+import { User } from "../interfaces/User";
 import { logger } from "../middlewares/log";
-import { createResponse, resp } from "../utils/resp";
+import { computeResourcePlanRequestAdapterService } from "../modules/crp/ComputeResourcePlanRequestAdapterService";
 import { validateTokenAndGetSuperAdminUser, validateTokenAndGetUser } from "../utils/auth";
-import { ComputeResourcePlan } from '../interfaces/ComputeResourcePlan';
-import { User } from '../interfaces/User';
-import { computeResourcePlanManagementService } from "../modules/crp/ComputeResourcePlanManagementService";
+import { createResponse, resp } from "../utils/resp";
 
-/**
- * Service for SuperAdmins to manage Compute Resource Plans (CRPs).
- */
+type TokenValidator = (request: Request) => Promise<{ user: User; error?: resp<any> }>;
+
 export class SuperAdminCRPService extends Service {
     public async createCRP(request: Request): Promise<resp<ComputeResourcePlan | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetSuperAdminUser<User>(request);
-            if (error) {
-                logger.warn(`Token validation failed in createCRP: ${error.message}`);
-                return createResponse(error.code, error.message);
-            }
-
-            return computeResourcePlanManagementService.createPlan({
+        return this.withSuperAdmin(request, "createCRP", "Error creating CRP", (user) =>
+            computeResourcePlanRequestAdapterService.createCRP({
                 user,
                 body: request.body
-            });
-        } catch (error: any) {
-            logger.error(`Error creating CRP: ${error.message}`);
-            return createResponse(500, "Internal Server Error: " + error.message);
-        }
+            })
+        );
     }
 
     public async updateCRP(request: Request): Promise<resp<ComputeResourcePlan | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetSuperAdminUser<User>(request);
-            if (error) {
-                logger.warn(`Token validation failed in updateCRP: ${error.message}`);
-                return createResponse(error.code, error.message);
-            }
-
-            return computeResourcePlanManagementService.updatePlan({
+        return this.withSuperAdmin(request, "updateCRP", "Error updating CRP", (user) =>
+            computeResourcePlanRequestAdapterService.updateCRP({
                 user,
-                planId: request.params.crpId,
+                params: request.params,
                 body: request.body
-            });
-        } catch (error: any) {
-            logger.error(`Error updating CRP: ${error.message}`);
-            return createResponse(500, "Internal Server Error: " + error.message);
-        }
+            })
+        );
     }
 
     public async deleteCRP(request: Request): Promise<resp<undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetSuperAdminUser<User>(request);
-            if (error) {
-                logger.warn(`Token validation failed in deleteCRP: ${error.message}`);
-                return createResponse(error.code, error.message);
-            }
-
-            return computeResourcePlanManagementService.deletePlan({
+        return this.withSuperAdmin(request, "deleteCRP", "Error deleting CRP", (user) =>
+            computeResourcePlanRequestAdapterService.deleteCRP({
                 user,
-                planId: request.params.crpId
-            });
-        } catch (error: any) {
-            logger.error(`Error deleting CRP: ${error.message}`);
-            return createResponse(500, "Internal Server Error: " + error.message);
-        }
+                params: request.params
+            })
+        );
     }
 
     public async getAllCRPs(request: Request): Promise<resp<ComputeResourcePlan[] | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetUser<User>(request);
-            if (error) {
-                logger.warn(`Token validation failed in getAllCRPs: ${error.message}`);
-                return createResponse(error.code, error.message);
-            }
-
-            return computeResourcePlanManagementService.listPlans();
-        } catch (error) {
-            logger.error("Error in getAllCRPs:", error);
-            return createResponse(500, "Internal Server Error");
-        }
+        return this.withValidatedUser(request, "getAllCRPs", validateTokenAndGetUser, () =>
+            computeResourcePlanRequestAdapterService.getAllCRPs(), "Error in getAllCRPs"
+        );
     }
 
     public async getCRPById(request: Request): Promise<resp<ComputeResourcePlan | undefined>> {
+        return this.withSuperAdmin(request, "getCRPById", "Error retrieving CRP", () =>
+            computeResourcePlanRequestAdapterService.getCRPById({
+                params: request.params
+            })
+        );
+    }
+
+    private withSuperAdmin<T>(
+        request: Request,
+        operation: string,
+        errorLogPrefix: string,
+        action: (user: User) => Promise<resp<T | undefined>>
+    ): Promise<resp<T | undefined>> {
+        return this.withValidatedUser(request, operation, validateTokenAndGetSuperAdminUser, action, errorLogPrefix);
+    }
+
+    private async withValidatedUser<T>(
+        request: Request,
+        operation: string,
+        validator: TokenValidator,
+        action: (user: User) => Promise<resp<T | undefined>>,
+        errorLogPrefix: string
+    ): Promise<resp<T | undefined>> {
         try {
-            const { user, error } = await validateTokenAndGetSuperAdminUser<User>(request);
+            const { user, error } = await validator(request);
             if (error) {
-                logger.warn(`Token validation failed in getCRPById: ${error.message}`);
+                logger.warn(`Token validation failed in ${operation}: ${error.message}`);
                 return createResponse(error.code, error.message);
             }
 
-            return computeResourcePlanManagementService.getPlanById(request.params.crpId);
+            return action(user);
         } catch (error: any) {
-            logger.error(`Error retrieving CRP: ${error.message}`);
-            return createResponse(500, "Internal Server Error: " + error.message);
+            logger.error(`${errorLogPrefix}: ${error.message}`);
+            return createResponse(500, `Internal Server Error: ${error.message}`);
         }
     }
 }
