@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `df98bd7 docs update ai box build service refactor progress`
+Latest remote baseline before this snapshot: `5e91400 docs update user service refactor progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -42,6 +42,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - `TemplateService` now shares one token/error wrapper and one request-context helper for Template request adapter calls.
 - `AIBoxBuildService` now shares one request-context helper for params/body/authorization forwarding into `AIBoxBuildRequestAdapterService`.
 - `UserService` now shares one request-context helper for user/body/params/avatar-file forwarding into user profile/read modules.
+- `GuacamoleService` now shares one request-context helper for user/body/permission forwarding into `GuacamoleRequestAdapterService`.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -101,6 +102,7 @@ The latest recorded full gate is green after these slices:
   - auth/user lifecycle, connection management, shared preflight, get-or-create config, SSH/RDP/VNC establishment, disconnect, delete/list DTOs, and VM lookup boundaries are extracted/tested.
   - SSH/RDP/VNC establishment and preflight now accept user/request DTO inputs instead of raw Express `Request`.
   - Guacamole connection/disconnect/list/delete request mapping now lives behind `GuacamoleRequestAdapterService`, leaving `GuacamoleService` as a token/permission facade.
+  - `GuacamoleService` now shares one request-context forwarding helper for user/body/permission adapter calls.
 - AI service refactor has substantial coverage:
   - AI Box Build job/draft/agent/runtime/run/workspace/provisioning/SSH execution flows are extracted/tested;
   - AI Chat request validation, language policy, hint workflow, platform-guide workflow, VM management workflow, target selection, pending-action flow, and response formatting are extracted/tested.
@@ -142,7 +144,7 @@ Current facade/service file sizes:
 | `src/service/VMBoxService.ts` | 169 | Thin auth/error wrapper around VM Box request adapter with shared request-context forwarding. |
 | `src/service/CourseService.ts` | 157 | Thin auth/error wrapper around Course request adapter with shared request-context forwarding. |
 | `src/service/PVEService.ts` | 147 | Thin token/role wrapper around PVE request adapter with shared request-context forwarding. |
-| `src/service/GuacamoleService.ts` | 134 | Thin token/permission wrapper around Guacamole request adapter. |
+| `src/service/GuacamoleService.ts` | 127 | Thin token/permission wrapper around Guacamole request adapter with shared request-context forwarding. |
 | `src/service/UserService.ts` | 127 | Thin auth/error wrapper around profile/read modules with shared request-context forwarding. |
 | `src/service/AIChatService.ts` | 125 | Thin auth/error wrapper around AI Chat request adapter. |
 | `src/service/VMManageService.ts` | 120 | Thin token/role wrapper around VM Manage request adapter. |
@@ -227,6 +229,7 @@ Use small, isolated commits:
 18. `refactor template service request context forwarding`
 19. `refactor ai box build service request context forwarding`
 20. `refactor user service request context forwarding`
-21. `docs update backend refactor progress`
+21. `refactor guacamole service request context forwarding`
+22. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.
