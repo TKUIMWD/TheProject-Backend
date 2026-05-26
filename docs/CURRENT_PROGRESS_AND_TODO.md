@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `f66ea2f docs update template service refactor progress`
+Latest remote baseline before this snapshot: `df98bd7 docs update ai box build service refactor progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -41,6 +41,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - `PVEService` now shares one request-context helper for body/query forwarding into `PVERequestAdapterService`.
 - `TemplateService` now shares one token/error wrapper and one request-context helper for Template request adapter calls.
 - `AIBoxBuildService` now shares one request-context helper for params/body/authorization forwarding into `AIBoxBuildRequestAdapterService`.
+- `UserService` now shares one request-context helper for user/body/params/avatar-file forwarding into user profile/read modules.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -67,6 +68,7 @@ The latest recorded full gate is green after these slices:
 - targeted Template Manage adapter tests: `npx vitest run tests/template-manage-request-adapter-service.test.ts tests/template-config-update-service.test.ts tests/template-deletion-service.test.ts tests/template-clone-service.test.ts tests/template-list-service.test.ts tests/template-conversion-service.test.ts tests/template-audit-service.test.ts` (`7` files, `40` tests)
 - targeted CRP adapter tests: `npx vitest run tests/compute-resource-plan-request-adapter-service.test.ts tests/compute-resource-plan-management-service.test.ts tests/compute-resource-plan-policy.test.ts` (`3` files, `19` tests)
 - targeted SuperAdmin adapter tests: `npx vitest run tests/super-admin-request-adapter-service.test.ts tests/super-admin-user-management-service.test.ts tests/super-admin-user-mutation-policy.test.ts` (`3` files, `12` tests)
+- targeted User tests: `npx vitest run tests/user-profile-service.test.ts tests/user-read-service.test.ts` (`2` files, `19` tests)
 - `npm test` (`182` files, `919` tests)
 - `npm run build`
 - `npm audit --audit-level=moderate` (`0` vulnerabilities)
@@ -113,7 +115,7 @@ The latest recorded full gate is green after these slices:
 - Template list, accessible-template list, and submitted-template detail assembly now live in `TemplateListService`.
 - Template list/convert/submit/audit route-to-workflow adapter logic now lives in `TemplateRequestAdapterService`.
   - `TemplateService` now shares one token/error wrapper and request-context forwarding helper for user/admin/superadmin template routes.
-- User profile/read facade methods now share a thin auth/error wrapper while delegating to extracted user modules.
+- User profile/read facade methods now share a thin auth/error wrapper and request-context forwarding helper while delegating to extracted user modules.
 - Guacamole SSH/RDP/VNC establishment now shares one service-level adapter helper.
 - VM status/network reads now share one service-level actor-context resolver.
 - VM read/list/status/network route-to-workflow adapter logic now lives in `VMReadRequestAdapterService`.
@@ -141,9 +143,9 @@ Current facade/service file sizes:
 | `src/service/CourseService.ts` | 157 | Thin auth/error wrapper around Course request adapter with shared request-context forwarding. |
 | `src/service/PVEService.ts` | 147 | Thin token/role wrapper around PVE request adapter with shared request-context forwarding. |
 | `src/service/GuacamoleService.ts` | 134 | Thin token/permission wrapper around Guacamole request adapter. |
+| `src/service/UserService.ts` | 127 | Thin auth/error wrapper around profile/read modules with shared request-context forwarding. |
 | `src/service/AIChatService.ts` | 125 | Thin auth/error wrapper around AI Chat request adapter. |
 | `src/service/VMManageService.ts` | 120 | Thin token/role wrapper around VM Manage request adapter. |
-| `src/service/UserService.ts` | 118 | Thin auth/error wrapper around profile/read modules. |
 | `src/service/AIBoxBuildService.ts` | 100 | Thin token wrapper around AI Box Build request adapter with shared request-context forwarding. |
 | `src/service/TemplateService.ts` | 93 | Thin token wrapper around Template request adapter with shared request-context forwarding. |
 | `src/service/VMService.ts` | 90 | Thin read facade around VM read request adapter. |
@@ -224,6 +226,7 @@ Use small, isolated commits:
 17. `refactor pve service request context forwarding`
 18. `refactor template service request context forwarding`
 19. `refactor ai box build service request context forwarding`
-20. `docs update backend refactor progress`
+20. `refactor user service request context forwarding`
+21. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.
