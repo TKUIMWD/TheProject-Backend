@@ -12,4 +12,6 @@ export const ComputeResourcePlanSchemas = new Schema<ComputeResourcePlan>({
     max_vms: { type: Number, required: true }
 });
 
+ComputeResourcePlanSchemas.index({ name: 1 });
+
 export const ComputeResourcePlanModel = model<ComputeResourcePlan>('compute_resource_plans', ComputeResourcePlanSchemas);

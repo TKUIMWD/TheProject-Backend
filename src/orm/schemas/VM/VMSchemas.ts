@@ -13,4 +13,9 @@ export const VMSchema = new Schema<VM>({
 
 });
 
+VMSchema.index({ owner: 1 });
+VMSchema.index({ pve_node: 1, pve_vmid: 1 });
+VMSchema.index({ is_box_vm: 1, box_id: 1 });
+VMSchema.index({ fromTemplateId: 1 });
+
 export const VMModel = model<VM>('vms', VMSchema);

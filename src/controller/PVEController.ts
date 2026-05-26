@@ -1,7 +1,6 @@
 import { Controller } from "../abstract/Controller";
 import { Request, Response } from "express";
 import { PVEService } from "../service/PVEService";
-require('dotenv').config()
 
 export class PVEController extends Controller {
   protected service: PVEService;

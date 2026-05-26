@@ -1,6 +1,7 @@
 import { PVEApiEndPoints } from "../interfaces/ApiEndPoints";
+import { env } from "../config/env";
 
-const pve_api_base = process.env.PVE_API_BASE_URL;
+const pve_api_base = env.pve.baseUrl;
 
 export const pve_api: PVEApiEndPoints = {
     test: `${pve_api_base}/test`,

@@ -8,4 +8,7 @@ export const ReviewsSchemas = new Schema<Reviews>({
     submitted_date: { type: Date, default: Date.now }
 });
 
+ReviewsSchemas.index({ reviewer_user_id: 1, submitted_date: -1 });
+ReviewsSchemas.index({ rating_score: 1 });
+
 export const ReviewsModel = model<Reviews>('reviews', ReviewsSchemas);

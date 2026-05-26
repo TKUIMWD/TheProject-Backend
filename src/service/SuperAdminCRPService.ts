@@ -6,6 +6,8 @@ import { validateTokenAndGetSuperAdminUser, validateTokenAndGetUser } from "../u
 import { ComputeResourcePlanModel } from '../orm/schemas/ComputeResourcePlanSchemas';
 import { ComputeResourcePlan } from '../interfaces/ComputeResourcePlan';
 import { User } from '../interfaces/User';
+import { validateObjectIdInput } from "../modules/common/ObjectIdPolicy";
+import { validateComputeResourcePlanInput } from "../modules/crp/ComputeResourcePlanPolicy";
 
 
 /**
@@ -26,14 +28,15 @@ export class SuperAdminCRPService extends Service {
         try {
             const { user, error } = await validateTokenAndGetSuperAdminUser<User>(request);
             if (error) {
-                console.error("Error validating token:", error);
+                logger.warn(`Token validation failed in createCRP: ${error.message}`);
                 return createResponse(error.code, error.message);
             }
 
-            const planData: ComputeResourcePlan = request.body;
-            if (!planData.name) {
-                return createResponse(400, "Bad Request: Missing required field 'name'")
+            const planValidation = validateComputeResourcePlanInput(request.body);
+            if (!planValidation.valid) {
+                return createResponse(400, `Bad Request: ${planValidation.message}`);
             }
+            const planData = planValidation.value as ComputeResourcePlan;
 
 
             const existingPlan = await ComputeResourcePlanModel.findOne({ name: planData.name });
@@ -64,13 +67,21 @@ export class SuperAdminCRPService extends Service {
         try {
             const { user, error } = await validateTokenAndGetSuperAdminUser<User>(request);
             if (error) {
-                console.error("Error validating token:", error);
+                logger.warn(`Token validation failed in updateCRP: ${error.message}`);
                 return createResponse(error.code, error.message);
             }
 
-            const { crpId } = request.params;
+            const crpIdResult = validateObjectIdInput(request.params.crpId, "crpId");
+            if (!crpIdResult.valid) {
+                return createResponse(400, crpIdResult.message);
+            }
+            const crpId = crpIdResult.value;
 
-            const updateData: Partial<ComputeResourcePlan> = request.body;
+            const planValidation = validateComputeResourcePlanInput(request.body, { partial: true });
+            if (!planValidation.valid) {
+                return createResponse(400, `Bad Request: ${planValidation.message}`);
+            }
+            const updateData = planValidation.value;
 
             const updateCRP = await ComputeResourcePlanModel.findByIdAndUpdate(crpId, updateData, { new: true });
             if (!updateCRP) {
@@ -97,11 +108,15 @@ export class SuperAdminCRPService extends Service {
         try {
             const { user, error } = await validateTokenAndGetSuperAdminUser<User>(request);
             if (error) {
-                console.error("Error validating token:", error);
+                logger.warn(`Token validation failed in deleteCRP: ${error.message}`);
                 return createResponse(error.code, error.message);
             }
 
-            const { crpId } = request.params;
+            const crpIdResult = validateObjectIdInput(request.params.crpId, "crpId");
+            if (!crpIdResult.valid) {
+                return createResponse(400, crpIdResult.message);
+            }
+            const crpId = crpIdResult.value;
 
             const deletedCRP = await ComputeResourcePlanModel.findByIdAndDelete(crpId);
 
@@ -129,14 +144,14 @@ export class SuperAdminCRPService extends Service {
         try {
             const { user, error } = await validateTokenAndGetUser<User>(request);
             if (error) {
-                console.error("Error validating token:", error);
+                logger.warn(`Token validation failed in getAllCRPs: ${error.message}`);
                 return createResponse(error.code, error.message);
             }
 
             const CRPs = await ComputeResourcePlanModel.find();
             return createResponse(200, "CRPs retrieved successfully", CRPs);
         } catch (error) {
-            console.error("Error in getAllCRPs:", error);
+            logger.error("Error in getAllCRPs:", error);
             return createResponse(500, "Internal Server Error");
         }
     }
@@ -145,11 +160,15 @@ export class SuperAdminCRPService extends Service {
         try {
             const { user, error } = await validateTokenAndGetSuperAdminUser<User>(request);
             if (error) {
-                console.error("Error validating token:", error);
+                logger.warn(`Token validation failed in getCRPById: ${error.message}`);
                 return createResponse(error.code, error.message);
             }
 
-            const { crpId } = request.params;
+            const crpIdResult = validateObjectIdInput(request.params.crpId, "crpId");
+            if (!crpIdResult.valid) {
+                return createResponse(400, crpIdResult.message);
+            }
+            const crpId = crpIdResult.value;
 
             const crp = await ComputeResourcePlanModel.findById(crpId);
             if (!crp) {

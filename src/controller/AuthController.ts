@@ -3,7 +3,6 @@ import { Request, response, Response } from "express";
 import { resp } from "../utils/resp";
 import { DBResp } from "../interfaces/Response/DBResp";
 import { AuthService } from "../service/AuthService";
-require('dotenv').config()
 
 export class AuthController extends Controller {
     protected service: AuthService;

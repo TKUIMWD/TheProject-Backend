@@ -1,22 +1,16 @@
-import bcrypt from "bcrypt";
 import { Service } from "../abstract/Service";
 import { logger } from "../middlewares/log";
-import { Document, Types } from "mongoose"
+import { Document } from "mongoose"
 import { DBResp } from "../interfaces/Response/DBResp";
 import { resp } from "../utils/resp";
 import { UserProfile } from "../interfaces/User";
 import { Request } from "express";
 import { validateTokenAndGetSuperAdminUser, validateTokenAndGetUser } from "../utils/auth";
-import { generateHashedPassword, passwordStrengthCheck } from "../utils/password";
-import { processAvatar, deleteAvatar, DEFAULT_AVATAR } from "../utils/avatarUpload";
-import { UsersModel } from "../orm/schemas/UserSchemas";
-import { Course, CourseInfo } from "../interfaces/Course/Course";
-import { CourseModel } from "../orm/schemas/CourseSchemas";
-import { log } from "console";
+import { CourseInfo } from "../interfaces/Course/Course";
 import { createResponse } from "../utils/resp";
 import { ComputeResourcePlan } from "../interfaces/ComputeResourcePlan";
-import { ComputeResourcePlanModel } from "../orm/schemas/ComputeResourcePlanSchemas";
-import { tar } from "compressing";
+import { userProfileService } from "../modules/users/UserProfileService";
+import { userReadService } from "../modules/users/UserReadService";
 
 
 export class UserService extends Service {
@@ -45,17 +39,7 @@ export class UserService extends Service {
                 return error;
             }
 
-            if (!user.isVerified) {
-                return createResponse(403, "user is not verified");
-            }
-
-            const profile: UserProfile = {
-                username: user.username,
-                email: user.email,
-                avatar_path: user.avatar_path || DEFAULT_AVATAR
-            };
-
-            return createResponse(200, "Profile retrieved successfully", profile);
+            return userProfileService.getProfile(user as any);
         } catch (error) {
             logger.error(`Error getting user profile: ${error}`);
             return createResponse(500, "Internal server error");
@@ -73,27 +57,14 @@ export class UserService extends Service {
                 return error;
             }
 
-            const { username } = Request.body;
-            if (!username) {
-                return createResponse(400, "missing required field: username");
+            const response = await userProfileService.updateProfile({
+                user: user as any,
+                body: Request.body
+            });
+            if (response.code === 200) {
+                logger.info(`User ${user.username} updated profile successfully`);
             }
-
-            const existingUser = await UsersModel.findOne({ username, _id: { $ne: user._id } });
-            if (existingUser) {
-                return createResponse(400, "unable to update profile");
-            }
-
-            user.username = username;
-            await user.save();
-
-            const profile: UserProfile = {
-                username: user.username,
-                email: user.email,
-                avatar_path: user.avatar_path || DEFAULT_AVATAR
-            };
-
-            logger.info(`User ${user.username} updated profile successfully`);
-            return createResponse(200, "Profile updated successfully", profile);
+            return response;
         } catch (error) {
             logger.error(`Error updating profile: ${error}`);
             return createResponse(500, "Internal server error");
@@ -111,39 +82,14 @@ export class UserService extends Service {
                 return error;
             }
 
-            if (!user.isVerified) {
-                return createResponse(403, "user is not verified");
+            const response = await userProfileService.changePassword({
+                user: user as any,
+                body: Request.body
+            });
+            if (response.code === 200) {
+                logger.info(`User ${user.username} changed password successfully`);
             }
-
-            const { oldPassword, newPassword, confirmPassword } = Request.body;
-
-            if (!oldPassword || !newPassword || !confirmPassword) {
-                const missingFields = [];
-                if (!oldPassword) missingFields.push("oldPassword");
-                if (!newPassword) missingFields.push("newPassword");
-                if (!confirmPassword) missingFields.push("confirmPassword");
-                return createResponse(400, `missing required fields: ${missingFields.join(", ")}`);
-            }
-
-            if (newPassword !== confirmPassword) {
-                return createResponse(400, "newPassword and confirmPassword do not match");
-            }
-
-            const isMatch = await bcrypt.compare(oldPassword, user.password_hash);
-            if (!isMatch) {
-                return createResponse(400, "oldPassword is incorrect");
-            }
-
-            const passwordStrengthCheckResult = passwordStrengthCheck(newPassword);
-            if (!passwordStrengthCheckResult.isValid) {
-                return createResponse(400, `password does not meet the requirements: ${passwordStrengthCheckResult.missingRequirements.join(", ")}`);
-            }
-
-            const hashedPassword = await generateHashedPassword(newPassword);
-            user.password_hash = hashedPassword;
-            await user.save();
-            logger.info(`User ${user.username} changed password successfully`);
-            return createResponse(200, "Password changed successfully");
+            return response as resp<DBResp<Document> | undefined>;
         } catch (error) {
             logger.error(`Error changing password: ${error}`);
             return createResponse(500, "Internal server error");
@@ -162,34 +108,14 @@ export class UserService extends Service {
                 return error;
             }
 
-            if (!user.isVerified) {
-                return createResponse(403, "user is not verified");
+            const response = await userProfileService.uploadAvatar({
+                user: user as any,
+                file: (Request as any).file as Express.Multer.File
+            });
+            if (response.code === 200) {
+                logger.info(`User ${user.username} uploaded avatar successfully`);
             }
-
-            // 檢查是否有文件上傳
-            const file = (Request as any).file as Express.Multer.File;
-            if (!file) {
-                return createResponse(400, "no file uploaded");
-            }
-
-            // 如果用戶已有頭像，先刪除舊的
-            if (user.avatar_path && user.avatar_path !== DEFAULT_AVATAR) {
-                deleteAvatar(user.avatar_path);
-            }
-
-            // 處理新頭像
-            const avatarPath = await processAvatar(file);
-            user.avatar_path = avatarPath;
-            await user.save();
-
-            const profile: UserProfile = {
-                username: user.username,
-                email: user.email,
-                avatar_path: user.avatar_path
-            };
-
-            logger.info(`User ${user.username} uploaded avatar successfully`);
-            return createResponse(200, "Avatar uploaded successfully", profile);
+            return response;
         } catch (error) {
             logger.error(`Error uploading avatar: ${error}`);
             return createResponse(500, error instanceof Error ? error.message : "Internal server error");
@@ -208,30 +134,13 @@ export class UserService extends Service {
                 return error;
             }
 
-            if (!user.isVerified) {
-                return createResponse(403, "user is not verified");
+            const response = await userProfileService.deleteAvatar({
+                user: user as any
+            });
+            if (response.code === 200) {
+                logger.info(`User ${user.username} deleted avatar successfully`);
             }
-
-            // 檢查用戶是否有自定義頭像
-            if (!user.avatar_path || user.avatar_path === DEFAULT_AVATAR) {
-                return createResponse(400, "no custom avatar to delete");
-            }
-
-            // 刪除頭像文件
-            deleteAvatar(user.avatar_path);
-
-            // 重置為默認頭像
-            user.avatar_path = DEFAULT_AVATAR;
-            await user.save();
-
-            const profile: UserProfile = {
-                username: user.username,
-                email: user.email,
-                avatar_path: user.avatar_path
-            };
-
-            logger.info(`User ${user.username} deleted avatar successfully`);
-            return createResponse(200, "Avatar deleted successfully", profile);
+            return response;
         } catch (error) {
             logger.error(`Error deleting avatar: ${error}`);
             return createResponse(500, "Internal server error");
@@ -251,33 +160,7 @@ export class UserService extends Service {
                 return error;
             }
 
-            if (!user.isVerified) {
-                return createResponse(403, "user is not verified");
-            }
-
-            const courses = await CourseModel.find({
-                '_id': { $in: user.course_ids }
-            })
-                .populate<{ submitter_user_id: { username: string } }>('submitter_user_id', 'username')
-                .lean();
-
-            const courseInfo: CourseInfo[] = courses.map(course => ({
-                _id: course._id,
-                course_name: course.course_name,
-                course_subtitle: course.course_subtitle,
-                duration_in_minutes: course.duration_in_minutes,
-                difficulty: course.difficulty,
-                rating: course.rating,
-                teacher_name: course.submitter_user_id?.username,
-                update_date: course.update_date,
-                status: course.status
-            }));
-
-            if (!courseInfo || courseInfo.length === 0) {
-                return createResponse(200, "User has no courses", []);
-            }
-
-            return createResponse(200, "User courses retrieved successfully", courseInfo);
+            return userReadService.getUserCourses(user);
         } catch (error) {
             logger.error(`Error getting user courses: ${error}`);
             return createResponse(500, "Internal server error");
@@ -292,16 +175,7 @@ export class UserService extends Service {
                 return error;
             }
 
-            if (!user.isVerified) {
-                return createResponse(403, "user is not verified");
-            }
-
-            const crp = await ComputeResourcePlanModel.findOne({ _id: user.compute_resource_plan_id }).lean();
-            if (!crp) {
-                return createResponse(404, "User CRP not found");
-            }
-
-            return createResponse(200, "User CRP retrieved successfully", crp);
+            return userReadService.getUserCRP(user);
         } catch (error) {
             logger.error(`Error getting user CRP: ${error}`);
             return createResponse(500, "Internal server error");
@@ -311,27 +185,15 @@ export class UserService extends Service {
     // superadmin only
     public async getUserById(Request: Request): Promise<resp<UserProfile | undefined>> {
         try {
-            const { user, error } = await validateTokenAndGetUser<UserProfile>(Request);
+            const { user, error } = await validateTokenAndGetSuperAdminUser<UserProfile>(Request);
             if (error) {
                 return error;
             }
 
-            if (!user.isVerified) {
-                return createResponse(403, "user is not verified");
-            }
-
-            const target_user = await UsersModel.findById(Request.params.id).lean();
-            if (!target_user) {
-                return createResponse(404, "User not found");
-            }
-
-            const target_user_profile: UserProfile = {
-                username: target_user.username,
-                email: target_user.email,
-                avatar_path: target_user.avatar_path || DEFAULT_AVATAR
-            }
-
-            return createResponse(200, "User retrieved successfully", target_user_profile);
+            return userReadService.getUserById({
+                actor: user,
+                targetUserId: Request.params.id
+            });
         } catch (error) {
             logger.error(`Error getting user CRP: ${error}`);
             return createResponse(500, "Internal server error");

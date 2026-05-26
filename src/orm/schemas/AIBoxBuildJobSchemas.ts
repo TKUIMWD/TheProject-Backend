@@ -79,6 +79,10 @@ export const AIBoxBuildJobSchema = new Schema<AIBoxBuildJob>({
     updated_at: { type: Date, default: Date.now }
 });
 
+AIBoxBuildJobSchema.index({ requester_user_id: 1, updated_at: -1 });
+AIBoxBuildJobSchema.index({ execution_status: 1, updated_at: 1 });
+AIBoxBuildJobSchema.index({ status: 1, updated_at: -1 });
+
 AIBoxBuildJobSchema.pre('save', function(next) {
     this.updated_at = new Date();
     next();

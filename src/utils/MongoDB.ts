@@ -1,4 +1,4 @@
-import { Schema, model, connect, Mongoose } from 'mongoose';
+import { connect, Mongoose } from 'mongoose';
 import { logger } from '../middlewares/log';
 import { MongoInfo } from '../interfaces/MongoInfo';
 export class MongoDB {
@@ -9,15 +9,16 @@ export class MongoDB {
     constructor(info: MongoInfo) {
 
         const url = `mongodb://${info.name}:${encodeURIComponent(info.password)}@${info.host}:${info.port}/${info.dbName}`;
+        const safeLocation = `${info.host}:${info.port}/${info.dbName}`;
 
         this.init(url).then(() => {
 
-            logger.info(`suscess: connet to mongoDB @${url}`);
+            logger.info(`success: connected to mongoDB @${safeLocation}`);
             this.isConneted = true;
 
         }).catch(() => {
 
-            logger.error(`error: cannt connet to mongoDB @${url}`);
+            logger.error(`error: cannot connect to mongoDB @${safeLocation}`);
 
         })
 
@@ -25,7 +26,7 @@ export class MongoDB {
 
     async init(url: string) {
         this.DB = await connect(url).catch(err=>{
-            logger.error(`error: cannt connet to mongoDB ${err}`);
+            logger.error(`error: cannot connect to mongoDB ${err instanceof Error ? err.message : String(err)}`);
         });
     }
 
@@ -33,4 +34,3 @@ export class MongoDB {
         return this.isConneted;
     }
 }
-

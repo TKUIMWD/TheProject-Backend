@@ -1,7 +1,6 @@
 import { Controller } from "../abstract/Controller";
 import { Request, Response } from "express";
 import { GuacamoleService } from "../service/GuacamoleService";
-require('dotenv').config()
 
 export class GuacamoleController extends Controller {
   protected service: GuacamoleService;

@@ -1,4 +1,5 @@
 import { AIBoxBuildJob } from "../../interfaces/AIBoxBuildJob";
+import { env } from "../../config/env";
 
 export class AIBoxBuildPrompts {
     private static clipArtifact(value: string | undefined, maxLength = 900): string {
@@ -10,7 +11,7 @@ export class AIBoxBuildPrompts {
     }
 
     private static ubuntuBaseline(): string {
-        return process.env.OPENAI_BOX_BUILD_UBUNTU_SERVER_LTS || '26.04';
+        return env.openai.boxBuildUbuntuServerLts;
     }
 
     static readonly SYSTEM_INIT = `You are an internal CTF/penetration-testing lab builder agent for an authorized education platform.

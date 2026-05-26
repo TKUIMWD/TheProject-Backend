@@ -3,7 +3,7 @@ import {Request, Response} from "express";
 import { logger } from "../middlewares/log";
 import { Service } from "../abstract/Service";
 import { PageService } from "../service/PageService";
-require('dotenv').config()
+import { env } from "../config/env";
 
 export class PageController extends Controller {
   protected service: Service;
@@ -14,6 +14,6 @@ export class PageController extends Controller {
   }
   
   public sendPage(Request:Request, Response:Response){
-    Response.sendFile(process.env.HomePagePath as string)
+    Response.sendFile(env.server.homePagePath)
   }
 }

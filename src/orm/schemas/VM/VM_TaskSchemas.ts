@@ -22,4 +22,9 @@ export const VM_TaskSchemas = new Schema<VM_Task>({
         error_message: { type: String, default: '' }
     }]
 });
+
+VM_TaskSchemas.index({ task_id: 1 });
+VM_TaskSchemas.index({ user_id: 1, created_at: -1 });
+VM_TaskSchemas.index({ status: 1, updated_at: -1 });
+
 export const VM_TaskModel = model<VM_Task>('vm_tasks', VM_TaskSchemas);

@@ -1,6 +1,6 @@
-require('dotenv').config();
+import { env } from './env';
 
-const senderEmail = process.env.SENDER_EMAIL;
+const senderEmail = env.mail.senderEmail;
 const nodemailer = require('nodemailer');
 
 if (!senderEmail) {
@@ -20,7 +20,7 @@ export const mailConfigurations = (toMail:string,subject:string,text:string) => 
 export const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: process.env.SENDER_EMAIL,
-        pass: process.env.GOOGLE_APP_PASSWORD
+        user: env.mail.senderEmail,
+        pass: env.mail.googleAppPassword
     }
 });

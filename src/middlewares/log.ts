@@ -1,6 +1,6 @@
 import { createLogger, format, transports , addColors} from 'winston';
 import DailyRotateFile from 'winston-daily-rotate-file';
-require('dotenv').config()
+import { env } from '../config/env';
 
 const colors = {
   error: 'red',
@@ -19,7 +19,7 @@ const customFormat = format.combine(
 );
 
 const transport: DailyRotateFile = new DailyRotateFile({
-  filename: `${process.env.LogPath}/%DATE%.log`,
+  filename: `${env.logging.path}/%DATE%.log`,
   datePattern: 'YYYY-MM-DD-HH',
   zippedArchive: false,
   maxSize: '20m',

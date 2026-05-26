@@ -2,10 +2,12 @@ import { Request } from "express";
 import { Service } from "../abstract/Service";
 import { logger } from "../middlewares/log";
 import { createResponse, resp } from "../utils/resp";
-import { validateTokenAndGetSuperAdminUser, validateTokenAndGetUser } from "../utils/auth";
+import { validateTokenAndGetSuperAdminUser } from "../utils/auth";
 import { UsersModel } from '../orm/schemas/UserSchemas';
 import { User } from '../interfaces/User';
 import { ComputeResourcePlanModel } from "../orm/schemas/ComputeResourcePlanSchemas";
+import { validateObjectIdInput } from "../modules/common/ObjectIdPolicy";
+import { validateAssignableUserRole } from "../modules/super-admin/SuperAdminUserMutationPolicy";
 
 /**
  * Service for SuperAdmins to manage user-related administrative tasks.
@@ -24,25 +26,25 @@ export class SuperAdminService extends Service {
 
         try {
 
-            const { user: adminuser, error } = await validateTokenAndGetUser<User>(request);
+            const { user: adminuser, error } = await validateTokenAndGetSuperAdminUser<User>(request);
             if (error) {
-                return createResponse(401, "Unauthorized: Invalid token");
-            }
-            if (adminuser.role !== 'superadmin') {
-                return createResponse(403, "Forbidden: requires superadmin role");
+                return createResponse(error.code, error.message);
             }
 
             const { userId, newRole } = request.body;
 
-            if (!userId) {
-                return createResponse(400, "Missing 'userId' field");
+            const userIdResult = validateObjectIdInput(userId, "userId");
+            if (!userIdResult.valid) {
+                return createResponse(400, userIdResult.message);
+            }
+            const normalizedUserId = userIdResult.value;
+
+            const roleResult = validateAssignableUserRole(newRole);
+            if (!roleResult.valid) {
+                return createResponse(400, roleResult.message);
             }
 
-            if (!newRole || !['user', "admin"].includes(newRole)) {
-                return createResponse(400, "Invalid or missing 'newRole' field. Can only be 'user' or 'admin'.");
-            };
-
-            const targetUser = await UsersModel.findById(userId);
+            const targetUser = await UsersModel.findById(normalizedUserId);
             if (!targetUser) {
                 return createResponse(404, "Target user not found");
             }
@@ -50,10 +52,10 @@ export class SuperAdminService extends Service {
                 return createResponse(403, "Cannot change role of a superadmin");
             }
 
-            targetUser.role = newRole;
+            targetUser.role = roleResult.role;
             await targetUser.save();
 
-            logger.info(`SuperAdmin ${adminuser.username} changed user ${targetUser.username}'s role to ${newRole}`);
+            logger.info(`SuperAdmin ${adminuser.username} changed user ${targetUser.username}'s role to ${roleResult.role}`);
             return createResponse(200, "User role updated successfully");
 
         } catch (e: any) {
@@ -72,26 +74,25 @@ export class SuperAdminService extends Service {
 
         try {
 
-            const { user: adminuser, error } = await validateTokenAndGetUser<User>(request);
+            const { user: adminuser, error } = await validateTokenAndGetSuperAdminUser<User>(request);
             if (error) {
-                return createResponse(401, "Unauthorized: Invalid token");
-            }
-            if (adminuser.role !== 'superadmin') {
-                return createResponse(403, "Forbidden: requires superadmin role");
+                return error;
             }
 
             const { userId, planId } = request.body;
 
-            if (!userId) {
-                return createResponse(400, "Missing 'userId' field");
+            const userIdResult = validateObjectIdInput(userId, "userId");
+            if (!userIdResult.valid) {
+                return createResponse(400, userIdResult.message);
             }
-            if (!planId) {
-                return createResponse(400, "Missing 'planId' field");
+            const planIdResult = validateObjectIdInput(planId, "planId");
+            if (!planIdResult.valid) {
+                return createResponse(400, planIdResult.message);
             }
 
             const [targetUser, CRP] = await Promise.all([
-                UsersModel.findById(userId),
-                ComputeResourcePlanModel.findById(planId)
+                UsersModel.findById(userIdResult.value),
+                ComputeResourcePlanModel.findById(planIdResult.value)
             ]);
 
             if (!targetUser) {

@@ -1,4 +1,3 @@
-require('dotenv').config();
 import {mailConfigurations,transporter} from "../../config/gmail";
 import { logger } from "../../middlewares/log";
 
@@ -17,10 +16,8 @@ export function sendTemplateAuditResultEmail(toMail: string, templateName: strin
     transporter.sendMail({
         ...mailConfigurations(toMail, subject, text)
     }).then((info: any) => {
-        console.log(info);
-        logger.info(`Template audit result email sent to ${toMail}`);
+        logger.info(`Template audit result email sent to ${toMail}: ${info.messageId}`);
     }).catch((err: any) => {
-        console.log(err);
-        logger.error(`Failed to send template audit result email to ${toMail}`);
+        logger.error(`Failed to send template audit result email to ${toMail}:`, err);
     });
 }

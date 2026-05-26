@@ -1,4 +1,3 @@
-require('dotenv').config();
 import {mailConfigurations,transporter} from "../../config/gmail";
 import { logger } from "../../middlewares/log";
 
@@ -18,10 +17,8 @@ export function sendBoxAuditResultEmail(toMail: string, boxDescription: string, 
     transporter.sendMail({
         ...mailConfigurations(toMail, subject, text)
     }).then((info: any) => {
-        console.log(info);
-        logger.info(`Box audit result email sent to ${toMail}`);
+        logger.info(`Box audit result email sent to ${toMail}: ${info.messageId}`);
     }).catch((err: any) => {
-        console.log(err);
-        logger.error(`Failed to send box audit result email to ${toMail}`);
+        logger.error(`Failed to send box audit result email to ${toMail}:`, err);
     });
 }

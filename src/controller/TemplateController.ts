@@ -2,7 +2,6 @@ import { Controller } from "../abstract/Controller";
 import { Request, Response } from "express";
 import { logger } from "../middlewares/log";
 import { TemplateService } from "../service/TemplateService";
-require('dotenv').config()
 
 export class TemplateController extends Controller {
   protected service: TemplateService;

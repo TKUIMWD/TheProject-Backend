@@ -3,6 +3,7 @@ import { verifyToken } from "./token";
 import { UsersModel } from "../orm/schemas/UserSchemas";
 import { resp, createResponse } from "./resp";
 import Roles from "../enum/role";
+import { validateTokenUserId } from "../modules/auth/AuthTokenPolicy";
 
 function extractAndValidateToken(Request: Request): {
     token: string | null;
@@ -92,7 +93,15 @@ export async function validateTokenAndGetUser<T>(Request: Request): Promise<{
     }
 
     const { _id } = decoded as { _id: string };
-    const user = await UsersModel.findById(_id);
+    const userIdResult = validateTokenUserId(_id);
+    if (!userIdResult.valid) {
+        return {
+            user: null,
+            error: createResponse(401, userIdResult.message)
+        };
+    }
+
+    const user = await UsersModel.findById(userIdResult.userId);
     if (!user) {
         return {
             user: null,
@@ -155,7 +164,15 @@ export async function validateTokenAndGetUserWithPermission<T>(
         };
     }
 
-    const user = await UsersModel.findById(_id);
+    const userIdResult = validateTokenUserId(_id);
+    if (!userIdResult.valid) {
+        return {
+            user: null,
+            error: createResponse(401, userIdResult.message)
+        };
+    }
+
+    const user = await UsersModel.findById(userIdResult.userId);
     if (!user) {
         return {
             user: null,

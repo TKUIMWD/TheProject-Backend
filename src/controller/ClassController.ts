@@ -1,7 +1,6 @@
 import { Controller } from "../abstract/Controller";
 import { Request, Response } from "express";
 import { ClassService } from "../service/ClassService";
-require('dotenv').config()
 
 export class ClassController extends Controller {
   protected service: ClassService;

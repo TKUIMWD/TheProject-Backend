@@ -1,13 +1,9 @@
-require('dotenv').config();
 import jwt from 'jsonwebtoken';
 
 import Roles from '../enum/role';
+import { env } from '../config/env';
 
-const secret = process.env.JWT_SECRET;
-
-if (!secret) {
-    throw new Error('JWT_SECRET is not defined in the environment variables');
-}
+const secret = env.security.jwtSecret;
 
 export const generateToken = (_id: string, role: Roles , username:string):string => {
     return jwt.sign({ _id, username, role }, secret, { expiresIn: '1d' });

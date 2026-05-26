@@ -4,7 +4,6 @@ import { UserService } from "../service/UserService";
 import { resp } from "../utils/resp";
 import { DBResp } from "../interfaces/Response/DBResp";
 import { upload, handleMulterError } from "../utils/avatarUpload";
-require('dotenv').config()
 
 export class UserController extends Controller {
     protected service: UserService;

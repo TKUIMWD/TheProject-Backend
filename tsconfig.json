@@ -15,6 +15,7 @@
     ]
   },
   "exclude": [
-    "chatLogMangerFront"
+    "chatLogMangerFront",
+    "tests"
   ]
 }

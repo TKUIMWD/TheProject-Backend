@@ -21,4 +21,10 @@ export const UsersSchemas = new Schema<User>({
     owned_templates: { type: [String], default: [] }
 });
 
+UsersSchemas.index({ email: 1 });
+UsersSchemas.index({ username: 1 });
+UsersSchemas.index({ role: 1 });
+UsersSchemas.index({ course_ids: 1 });
+UsersSchemas.index({ owned_vms: 1 });
+
 export const UsersModel = model<User>('users', UsersSchemas);

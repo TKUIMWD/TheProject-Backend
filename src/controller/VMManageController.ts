@@ -1,7 +1,6 @@
 import { Controller } from "../abstract/Controller";
 import { Request, Response } from "express";
 import { VMManageService } from "../service/VMManageService";
-require('dotenv').config()
 
 export class VMManageController extends Controller {
     protected service: VMManageService;

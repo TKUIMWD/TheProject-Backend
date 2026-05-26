@@ -1,7 +1,6 @@
 import { Controller } from "../abstract/Controller";
 import { Request, Response } from "express";
 import { TemplateManageService } from "../service/TemplateManageService";
-require('dotenv').config()
 
 export class TemplateManageController extends Controller {
     protected service: TemplateManageService;

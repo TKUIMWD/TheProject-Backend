@@ -2,7 +2,6 @@ import { Controller } from "../abstract/Controller";
 import { Request, Response } from "express";
 import { logger } from "../middlewares/log";
 import { VMService } from "../service/VMService";
-require('dotenv').config()
 
 export class VMController extends Controller {
   protected service: VMService;

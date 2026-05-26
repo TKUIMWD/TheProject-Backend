@@ -1,4 +1,3 @@
-import { callWithUnauthorized } from "./fetch";
 import { pve_api } from "../enum/PVE_API";
 import { PVEResp } from "../interfaces/Response/PVEResp";
 import { resp, createResponse } from "./resp";
@@ -6,10 +5,7 @@ import { VMBasicConfig, VMDetailedConfig, NetworkInterface, NetworkInterfacesRes
 import { PVE_qemu_config, PVE_Task_Status_Response, PVE_TASK_STATUS, PVE_TASK_EXIT_STATUS } from "../interfaces/PVE";
 import { logger } from "../middlewares/log";
 import { PVEUtils } from "./PVEUtils";
-
-export const PVE_API_ADMINMODE_TOKEN = process.env.PVE_API_ADMINMODE_TOKEN;
-export const PVE_API_SUPERADMINMODE_TOKEN = process.env.PVE_API_SUPERADMINMODE_TOKEN;
-export const PVE_API_USERMODE_TOKEN = process.env.PVE_API_USERMODE_TOKEN;
+import { PVEClientRequestOptions, PVEHttpMethod, pveClient } from "../modules/pve/PVEClient";
 
 export type GuestAgentCommandResult = {
     success: boolean;
@@ -19,6 +15,17 @@ export type GuestAgentCommandResult = {
     errorMessage?: string;
 };
 
+function callPVE<T = unknown>(
+    method: PVEHttpMethod,
+    url: string,
+    body?: Record<string, unknown> | FormData,
+    options: PVEClientRequestOptions = {}
+): Promise<T> {
+    return pveClient.request<T>(method, url, body, {
+        mode: options.mode,
+        headers: options.headers
+    });
+}
 
 /*
  * - validateVMCreationParams: 驗證VM創建參數
@@ -56,11 +63,7 @@ export class VMUtils {
      */
     static async getBasicQemuConfig(node: string, vmid: string): Promise<resp<VMBasicConfig | undefined>> {
         try {
-            const qemuResp: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(node, vmid), undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                }
-            });
+            const qemuResp: PVEResp = await callPVE('GET', pve_api.nodes_qemu_config(node, vmid), undefined);
 
             if (qemuResp && qemuResp.data) {
                 const config: VMBasicConfig = {
@@ -77,7 +80,7 @@ export class VMUtils {
                 return createResponse(404, "VM config not found or invalid response");
             }
         } catch (error) {
-            console.error("Error in getBasicQemuConfig:", error);
+            logger.error("Error in getBasicQemuConfig:", error);
             return createResponse(500, "Internal Server Error");
         }
     }
@@ -87,11 +90,7 @@ export class VMUtils {
      */
     static async getDetailedQemuConfig(node: string, vmid: string): Promise<resp<VMDetailedConfig | undefined>> {
         try {
-            const qemuResp: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(node, vmid), undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                }
-            });
+            const qemuResp: PVEResp = await callPVE('GET', pve_api.nodes_qemu_config(node, vmid), undefined);
 
             if (qemuResp && qemuResp.data) {
                 const config: VMDetailedConfig = {
@@ -112,7 +111,7 @@ export class VMUtils {
                 return createResponse(404, "VM config not found or invalid response");
             }
         } catch (error) {
-            console.error("Error in getDetailedQemuConfig:", error);
+            logger.error("Error in getDetailedQemuConfig:", error);
             return createResponse(500, "Internal Server Error");
         }
     }
@@ -122,14 +121,10 @@ export class VMUtils {
      */
     static async getNextVMId(): Promise<resp<PVEResp | undefined>> {
         try {
-            const nextId: PVEResp = await callWithUnauthorized('GET', pve_api.cluster_next_id, undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_USERMODE_TOKEN}`
-                }
-            });
+            const nextId: PVEResp = await callPVE('GET', pve_api.cluster_next_id, undefined, { mode: 'user' });
             return createResponse(200, "Next ID fetched successfully", nextId);
         } catch (error) {
-            console.error("Error in getNextVMId:", error);
+            logger.error("Error in getNextVMId:", error);
             return createResponse(500, "Internal Server Error");
         }
     }
@@ -139,11 +134,7 @@ export class VMUtils {
      */
     static async getTemplateInfo(node: string, vmid: string): Promise<resp<PVE_qemu_config | undefined>> {
         try {
-            const qemuResp: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(node, vmid), undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                }
-            });
+            const qemuResp: PVEResp = await callPVE('GET', pve_api.nodes_qemu_config(node, vmid), undefined);
 
             if (qemuResp && qemuResp.data) {
                 return createResponse(200, "Template info fetched successfully", qemuResp.data);
@@ -151,7 +142,7 @@ export class VMUtils {
                 return createResponse(404, "Template not found or invalid response");
             }
         } catch (error) {
-            console.error("Error in getTemplateInfo:", error);
+            logger.error("Error in getTemplateInfo:", error);
             return createResponse(500, "Internal Server Error");
         }
     }
@@ -161,11 +152,7 @@ export class VMUtils {
      */
     static async getVMConfig(pve_node: string, pve_vmid: string): Promise<any> {
         try {
-            const configResp: any = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(pve_node, pve_vmid), undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                }
-            });
+            const configResp: any = await callPVE('GET', pve_api.nodes_qemu_config(pve_node, pve_vmid), undefined);
             
             return configResp?.data || null;
         } catch (error) {
@@ -207,11 +194,7 @@ export class VMUtils {
                         const volumeId = parts[1].split(',')[0]; // 移除其他參數
                         
                         // 嘗試刪除磁碟
-                        await callWithUnauthorized('DELETE', pve_api.nodes_storage_content(pve_node, storage, `${storage}:${volumeId}`), undefined, {
-                            headers: {
-                                'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                            }
-                        });
+                        await callPVE('DELETE', pve_api.nodes_storage_content(pve_node, storage, `${storage}:${volumeId}`), undefined);
                         logger.info(`Successfully deleted disk ${storage}:${volumeId} from VM ${pve_vmid}`);
                     }
                 } catch (diskError) {
@@ -228,27 +211,23 @@ export class VMUtils {
      */
     static async waitForVMDiskReady(target_node: string, vmid: string, maxRetries: number = 10): Promise<{ success: boolean, errorMessage?: string }> {
         try {
-            console.log(`Waiting for VM ${vmid} disk to be ready...`);
+            logger.info(`Waiting for VM ${vmid} disk to be ready...`);
             
             let retries = 0;
             while (retries < maxRetries) {
                 try {
-                    const configResp: any = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(target_node, vmid), undefined, {
-                        headers: {
-                            'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                        }
-                    });
+                    const configResp: any = await callPVE('GET', pve_api.nodes_qemu_config(target_node, vmid), undefined);
                     
                     if (configResp && configResp.data && configResp.data.scsi0) {
-                        console.log(`VM ${vmid} disk is ready, found scsi0: ${configResp.data.scsi0}`);
+                        logger.info(`VM ${vmid} disk is ready`);
                         return { success: true };
                     }
                     
-                    console.log(`VM ${vmid} disk not ready yet, retrying in 3 seconds... (${retries + 1}/${maxRetries})`);
+                    logger.debug(`VM ${vmid} disk not ready yet, retrying in 3 seconds... (${retries + 1}/${maxRetries})`);
                     await new Promise(resolve => setTimeout(resolve, 3000));
                     retries++;
                 } catch (error) {
-                    console.log(`Error checking VM ${vmid} disk status: ${error}, retrying... (${retries + 1}/${maxRetries})`);
+                    logger.warn(`Error checking VM ${vmid} disk status, retrying... (${retries + 1}/${maxRetries}):`, error);
                     await new Promise(resolve => setTimeout(resolve, 3000));
                     retries++;
                 }
@@ -256,7 +235,7 @@ export class VMUtils {
             
             return { success: false, errorMessage: `VM ${vmid} disk not ready after ${maxRetries} retries` };
         } catch (error) {
-            console.error(`Error waiting for VM ${vmid} disk to be ready:`, error);
+            logger.error(`Error waiting for VM ${vmid} disk to be ready:`, error);
             return { success: false, errorMessage: `Error waiting for VM ${vmid} disk to be ready` };
         }
     }
@@ -272,11 +251,7 @@ export class VMUtils {
                 'destroy-unreferenced-disks': 1
             };
             
-            const deleteResp: PVEResp = await callWithUnauthorized('DELETE', pve_api.nodes_qemu_vm(pve_node, pve_vmid), deleteParams, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                }
-            });
+            const deleteResp: PVEResp = await callPVE('DELETE', pve_api.nodes_qemu_vm(pve_node, pve_vmid), deleteParams);
 
             if (deleteResp && deleteResp.data) {
                 logger.info(`Successfully deleted VM ${pve_vmid} from PVE node ${pve_node} with disk cleanup`);
@@ -304,39 +279,35 @@ export class VMUtils {
      */
     static async waitForPVETaskCompletion(node: string, upid: string, operationType: string): Promise<{ success: boolean, errorMessage?: string }> {
         try {
-            console.log(`Waiting for ${operationType} completion with UPID ${upid} on node ${node}`);
+            logger.info(`Waiting for ${operationType} completion with UPID ${upid} on node ${node}`);
             
             const maxRetries = 120; // 最多等待 600 秒 (120 * 5 秒)
             let retries = 0;
             
             while (retries < maxRetries) {
                 try {
-                    const statusResp: any = await callWithUnauthorized('GET', pve_api.nodes_tasks_status(node, upid), undefined, {
-                        headers: {
-                            'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                        }
-                    });
+                    const statusResp: any = await callPVE('GET', pve_api.nodes_tasks_status(node, upid), undefined);
                     
                     if (statusResp && statusResp.data) {
                         const { status, exitstatus } = statusResp.data;
                         
                         if (status === 'stopped') {
                             if (exitstatus === 'OK') {
-                                console.log(`${operationType} task ${upid} completed successfully`);
+                                logger.info(`${operationType} task ${upid} completed successfully`);
                                 return { success: true };
                             } else {
-                                console.log(`${operationType} task ${upid} failed with exit status: ${exitstatus}`);
+                                logger.warn(`${operationType} task ${upid} failed with exit status: ${exitstatus}`);
                                 return { success: false, errorMessage: `Task failed with exit status: ${exitstatus}` };
                             }
                         } else if (status === 'running') {
-                            console.log(`${operationType} task ${upid} is still running...`);
+                            logger.debug(`${operationType} task ${upid} is still running...`);
                         }
                     }
                     
                     await new Promise(resolve => setTimeout(resolve, 5000));
                     retries++;
                 } catch (error) {
-                    console.log(`Error checking ${operationType} task status: ${error}, retrying... (${retries + 1}/${maxRetries})`);
+                    logger.warn(`Error checking ${operationType} task status, retrying... (${retries + 1}/${maxRetries}):`, error);
                     await new Promise(resolve => setTimeout(resolve, 5000));
                     retries++;
                 }
@@ -344,7 +315,7 @@ export class VMUtils {
             
             return { success: false, errorMessage: `${operationType} task ${upid} did not complete within timeout` };
         } catch (error) {
-            console.error(`Error waiting for ${operationType} task completion:`, error);
+            logger.error(`Error waiting for ${operationType} task completion:`, error);
             return { success: false, errorMessage: `Error waiting for ${operationType} task completion` };
         }
     }
@@ -389,22 +360,18 @@ export class VMUtils {
      */
     static async cloneVM(sourceNode: string, sourceVmid: string, newVmid: string, vmName: string, targetNode: string, storage: string, full: string): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
         try {
-            console.log(`Cloning template ${sourceVmid} from node ${sourceNode} to ${targetNode} with new ID ${newVmid}`);
+            logger.info(`Cloning template ${sourceVmid} from node ${sourceNode} to ${targetNode} with new ID ${newVmid}`);
 
             // 克隆任務在源節點上執行，通過 target 參數指定目標節點
-            const cloneResp: PVEResp = await callWithUnauthorized('POST', pve_api.nodes_qemu_clone(sourceNode, sourceVmid), {
+            const cloneResp: PVEResp = await callPVE('POST', pve_api.nodes_qemu_clone(sourceNode, sourceVmid), {
                 newid: newVmid,
                 name: vmName,
                 target: targetNode,  // 指定目標節點
                 storage: storage,
                 full: full,
-            }, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                }
             });
 
-            console.log(`Clone API response:`, JSON.stringify(cloneResp, null, 2));
+            logger.debug(`Clone API response received for VM ${newVmid}: dataType=${typeof cloneResp?.data}, hasErrors=${Boolean(cloneResp?.errors)}`);
 
             // 檢查響應是否成功
             if (!cloneResp) {
@@ -457,12 +424,8 @@ export class VMUtils {
      */
     static async configureVMCPU(node: string, vmid: string, cpuCores: number): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
         try {
-            const configResp: PVEResp = await callWithUnauthorized('PUT', pve_api.nodes_qemu_config(node, vmid), {
+            const configResp: PVEResp = await callPVE('PUT', pve_api.nodes_qemu_config(node, vmid), {
                 cores: cpuCores
-            }, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                }
             });
 
             // CPU 配置通常是立即執行，不返回 UPID
@@ -487,12 +450,8 @@ export class VMUtils {
      */
     static async configureVMMemory(node: string, vmid: string, memorySize: number): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
         try {
-            const configResp: PVEResp = await callWithUnauthorized('PUT', pve_api.nodes_qemu_config(node, vmid), {
+            const configResp: PVEResp = await callPVE('PUT', pve_api.nodes_qemu_config(node, vmid), {
                 memory: memorySize
-            }, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                }
             });
 
             // Memory 配置通常是立即執行，不返回 UPID
@@ -517,13 +476,9 @@ export class VMUtils {
      */
     static async resizeVMDisk(node: string, vmid: string, diskSize: number): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
         try {
-            const resizeResp: PVEResp = await callWithUnauthorized('PUT', pve_api.nodes_qemu_resize(node, vmid), {
+            const resizeResp: PVEResp = await callPVE('PUT', pve_api.nodes_qemu_resize(node, vmid), {
                 disk: 'scsi0',
                 size: `${diskSize}G`
-            }, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                }
             });
 
             // Disk resize 通常是立即執行，不返回 UPID
@@ -560,11 +515,7 @@ export class VMUtils {
                 return { success: true };
             }
 
-            const configResp: PVEResp = await callWithUnauthorized('PUT', pve_api.nodes_qemu_config(node, vmid), configData, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                }
-            });
+            const configResp: PVEResp = await callPVE('PUT', pve_api.nodes_qemu_config(node, vmid), configData);
 
             // Cloud-Init 配置通常是立即執行，不返回 UPID
             if (configResp && configResp.data === null) {
@@ -592,11 +543,7 @@ export class VMUtils {
 
         while (retries < maxRetries) {
             try {
-                const taskStatus: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_tasks_status(node, upid), undefined, {
-                    headers: {
-                        'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                    }
-                });
+                const taskStatus: PVEResp = await callPVE('GET', pve_api.nodes_tasks_status(node, upid), undefined);
 
                 if (taskStatus && taskStatus.data) {
                     const status = taskStatus.data as PVE_Task_Status_Response;
@@ -629,11 +576,7 @@ export class VMUtils {
      */
     static async getCurrentVMConfig(node: string, vmid: string): Promise<any> {
         try {
-            const configResp: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_config(node, vmid), undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                }
-            });
+            const configResp: PVEResp = await callPVE('GET', pve_api.nodes_qemu_config(node, vmid), undefined);
 
             if (configResp && configResp.data) {
                 return configResp.data;
@@ -650,11 +593,7 @@ export class VMUtils {
      */
     static async getVMStatus(node: string, vmid: string): Promise<{ status: string; uptime?: number } | null> {
         try {
-            const statusResp: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_status(node, vmid), undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                }
-            });
+            const statusResp: PVEResp = await callPVE('GET', pve_api.nodes_qemu_status(node, vmid), undefined);
 
             if (statusResp && statusResp.data) {
                 return {
@@ -677,12 +616,7 @@ export class VMUtils {
             logger.info(`Regenerating cloud-init for VM ${vmid} on node ${node}`);
             
             // 使用 PUT 請求觸發 cloud-init 重新生成
-            const regenResp: PVEResp = await callWithUnauthorized('PUT', pve_api.nodes_qemu_cloudinit(node, vmid), undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`,
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                }
-            });
+            const regenResp: PVEResp = await callPVE('PUT', pve_api.nodes_qemu_cloudinit(node, vmid), undefined, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
 
             // Cloud-init 重新生成成功時可能返回空 data，這是正常的
             if (regenResp) {
@@ -710,11 +644,7 @@ export class VMUtils {
         try {
             logger.info(`Getting network interfaces for VM ${vmid} on node ${node} via QEMU Guest Agent`);
             
-            const networkResp: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_agent_network(node, vmid), undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                }
-            });
+            const networkResp: PVEResp = await callPVE('GET', pve_api.nodes_qemu_agent_network(node, vmid), undefined);
 
             if (networkResp && networkResp.data) {
                 const interfaces = Array.isArray(networkResp.data)
@@ -762,12 +692,8 @@ export class VMUtils {
 
     static async executeGuestAgentCommand(node: string, vmid: string, command: string, timeoutMs: number = 60000): Promise<GuestAgentCommandResult> {
         try {
-            const execResp: PVEResp = await callWithUnauthorized('POST', pve_api.nodes_qemu_agent_exec(node, vmid), {
+            const execResp: PVEResp = await callPVE('POST', pve_api.nodes_qemu_agent_exec(node, vmid), {
                 command: ['bash', '-lc', command]
-            }, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                }
             });
 
             const pid = (execResp?.data as any)?.pid;
@@ -777,11 +703,7 @@ export class VMUtils {
 
             const startedAt = Date.now();
             while (Date.now() - startedAt < timeoutMs) {
-                const statusResp: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_agent_exec_status(node, vmid, pid), undefined, {
-                    headers: {
-                        'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                    }
-                });
+                const statusResp: PVEResp = await callPVE('GET', pve_api.nodes_qemu_agent_exec_status(node, vmid, pid), undefined);
 
                 const data = statusResp?.data as any;
                 if (data?.exited) {
@@ -893,12 +815,7 @@ export class VMUtils {
         try {
             logger.info(`Starting VM ${vmid} on node ${node}`);
             
-            const startResp: PVEResp = await callWithUnauthorized('POST', pve_api.nodes_qemu_start(node, vmid), undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`,
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                }
-            });
+            const startResp: PVEResp = await callPVE('POST', pve_api.nodes_qemu_start(node, vmid), undefined, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
 
             if (startResp && startResp.data) {
                 logger.info(`VM ${vmid} start command executed, UPID: ${startResp.data}`);
@@ -920,12 +837,7 @@ export class VMUtils {
         try {
             logger.info(`Shutting down VM ${vmid} on node ${node}`);
             
-            const shutdownResp: PVEResp = await callWithUnauthorized('POST', pve_api.nodes_qemu_shutdown(node, vmid), undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`,
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                }
-            });
+            const shutdownResp: PVEResp = await callPVE('POST', pve_api.nodes_qemu_shutdown(node, vmid), undefined, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
 
             if (shutdownResp && shutdownResp.data) {
                 logger.info(`VM ${vmid} shutdown command executed, UPID: ${shutdownResp.data}`);
@@ -947,12 +859,7 @@ export class VMUtils {
         try {
             logger.info(`Stopping VM ${vmid} on node ${node} (force)`);
             
-            const stopResp: PVEResp = await callWithUnauthorized('POST', pve_api.nodes_qemu_stop(node, vmid), undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`,
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                }
-            });
+            const stopResp: PVEResp = await callPVE('POST', pve_api.nodes_qemu_stop(node, vmid), undefined, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
 
             if (stopResp && stopResp.data) {
                 logger.info(`VM ${vmid} stop command executed, UPID: ${stopResp.data}`);
@@ -974,12 +881,7 @@ export class VMUtils {
         try {
             logger.info(`Rebooting VM ${vmid} on node ${node}`);
             
-            const rebootResp: PVEResp = await callWithUnauthorized('POST', pve_api.nodes_qemu_reboot(node, vmid), undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`,
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                }
-            });
+            const rebootResp: PVEResp = await callPVE('POST', pve_api.nodes_qemu_reboot(node, vmid), undefined, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
 
             if (rebootResp && rebootResp.data) {
                 logger.info(`VM ${vmid} reboot command executed, UPID: ${rebootResp.data}`);
@@ -1001,12 +903,7 @@ export class VMUtils {
         try {
             logger.info(`Resetting VM ${vmid} on node ${node}`);
             
-            const resetResp: PVEResp = await callWithUnauthorized('POST', pve_api.nodes_qemu_reset(node, vmid), undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`,
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                }
-            });
+            const resetResp: PVEResp = await callPVE('POST', pve_api.nodes_qemu_reset(node, vmid), undefined, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
 
             if (resetResp && resetResp.data) {
                 logger.info(`VM ${vmid} reset command executed, UPID: ${resetResp.data}`);
@@ -1027,11 +924,7 @@ export class VMUtils {
     static async getVMResourceUsage(node: string, vmid: string): Promise<{ success: boolean, cpu?: number, memory?: number, errorMessage?: string }> {
         try {
             // 首先嘗試獲取當前狀態，這會提供實時的資源使用情況
-            const statusResp: PVEResp = await callWithUnauthorized('GET', pve_api.nodes_qemu_status(node, vmid), undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                }
-            });
+            const statusResp: PVEResp = await callPVE('GET', pve_api.nodes_qemu_status(node, vmid), undefined);
 
             if (statusResp && statusResp.data) {
                 // 從狀態 API 獲取實時資源使用情況
@@ -1047,11 +940,7 @@ export class VMUtils {
             }
 
             // 如果狀態 API 沒有提供資源使用數據，則回退到 RRD 數據（最近 5 分鐘，最高解析度）
-            const rrdResp: PVEResp = await callWithUnauthorized('GET', `${pve_api.nodes_qemu_rrddata(node, vmid)}?timeframe=5min&cf=AVERAGE`, undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                }
-            });
+            const rrdResp: PVEResp = await callPVE('GET', `${pve_api.nodes_qemu_rrddata(node, vmid)}?timeframe=5min&cf=AVERAGE`, undefined);
 
             if (rrdResp && rrdResp.data && Array.isArray(rrdResp.data)) {
                 // 獲取最新的數據點
@@ -1082,12 +971,8 @@ export class VMUtils {
         try {
             logger.info(`Updating VM ${vmid} name to: ${vmName}`);
             
-            const nameUpdateResp: PVEResp = await callWithUnauthorized('PUT', pve_api.nodes_qemu_config(node, vmid), {
+            const nameUpdateResp: PVEResp = await callPVE('PUT', pve_api.nodes_qemu_config(node, vmid), {
                 name: vmName
-            }, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                }
             });
 
             // 名稱更新通常是立即執行，不返回 UPID
@@ -1134,12 +1019,7 @@ export class VMUtils {
             }
             
             // 將 VM 轉換為模板
-            const convertResp: PVEResp = await callWithUnauthorized('POST', pve_api.nodes_qemu_template(node, vmid), undefined, {
-                headers: {
-                    'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`,
-                    'Content-Type': 'application/x-www-form-urlencoded'
-                }
-            });
+            const convertResp: PVEResp = await callPVE('POST', pve_api.nodes_qemu_template(node, vmid), undefined, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
 
             // 模板轉換通常是立即執行，不返回 UPID
             if (convertResp && convertResp.data === null) {
@@ -1165,27 +1045,20 @@ export class VMUtils {
      */
     static async deleteTemplate(pve_node: string, pve_vmid: string): Promise<{ success: boolean, upid?: string, errorMessage?: string }> {
         try {
-            console.log(`[VMUtils.deleteTemplate] Attempting to delete template from PVE: node=${pve_node}, vmid=${pve_vmid}`);
-            console.log(`[VMUtils.deleteTemplate] Target URL: ${pve_api.nodes_qemu_vm(pve_node, pve_vmid)}`);
+            logger.info(`[VMUtils.deleteTemplate] Attempting to delete template from PVE: node=${pve_node}, vmid=${pve_vmid}`);
 
             // 按照 PVE API 標準，直接使用 DELETE 方法，不需要 body 參數
-            const deleteResp: PVEResp = await callWithUnauthorized(
+            const deleteResp: PVEResp = await callPVE(
                 'DELETE', 
                 pve_api.nodes_qemu_vm(pve_node, pve_vmid), 
-                undefined, // DELETE 請求不需要 body
-                {
-                    headers: {
-                        'Authorization': `PVEAPIToken=${PVE_API_SUPERADMINMODE_TOKEN}`
-                    }
-                }
+                undefined // DELETE 請求不需要 body
             );
             
-            console.log(`[VMUtils.deleteTemplate] Delete response type:`, typeof deleteResp);
-            console.log(`[VMUtils.deleteTemplate] Delete result:`, JSON.stringify(deleteResp, null, 2));
+            logger.debug(`[VMUtils.deleteTemplate] Delete response received with type: ${typeof deleteResp}`);
             
             // 檢查響應
             if (typeof deleteResp === 'string') {
-                console.log(`[VMUtils.deleteTemplate] Received string response: "${deleteResp}"`);
+                logger.debug(`[VMUtils.deleteTemplate] Received string response`);
                 // 如果響應是錯誤信息字符串
                 if (deleteResp.includes('Unexpected content') || deleteResp.includes('error')) {
                     return { 
@@ -1200,19 +1073,19 @@ export class VMUtils {
             // 檢查是否有任務 ID 需要等待
             if (deleteResp && deleteResp.data && typeof deleteResp.data === 'string') {
                 const taskId = deleteResp.data;
-                console.log(`[VMUtils.deleteTemplate] Template deletion initiated with UPID: ${taskId}`);
+                logger.info(`[VMUtils.deleteTemplate] Template deletion initiated with UPID: ${taskId}`);
                 return { success: true, upid: taskId };
             } else {
-                console.log(`[VMUtils.deleteTemplate] Template deletion completed immediately (no UPID)`);
+                logger.info(`[VMUtils.deleteTemplate] Template deletion completed immediately (no UPID)`);
                 return { success: true };
             }
 
         } catch (error) {
-            console.error(`[VMUtils.deleteTemplate] Error deleting template from PVE:`, error);
+            logger.error(`[VMUtils.deleteTemplate] Error deleting template from PVE:`, error);
             
             // 檢查是否是因為模板不存在而失敗 (404 錯誤)
             if (error instanceof Error && error.message.includes('404')) {
-                console.log(`[VMUtils.deleteTemplate] Template ${pve_vmid} not found in PVE`);
+                logger.info(`[VMUtils.deleteTemplate] Template ${pve_vmid} not found in PVE`);
                 return { success: true }; // 模板不存在視為成功刪除
             }
             
