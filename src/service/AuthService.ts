@@ -2,14 +2,11 @@ import { Service } from "../abstract/Service";
 import { resp , createResponse } from "../utils/resp";
 import { DBResp } from "../interfaces/Response/DBResp";
 import { Document } from "mongoose";
-import { generatePasswordResetToken } from "../utils/token";
 import { AuthResponse } from "../interfaces/Response/AuthResponse";
 import { logger } from "../middlewares/log";
 import { Request } from "express";
-import { UsersModel } from "../orm/schemas/UserSchemas";
-import { sendForgotPasswordEmail } from "../utils/MailSender/ForgotPasswordSender";
-import { generateHashedPassword, passwordStrengthCheck } from "../utils/password";
-import { validateTokenAndGetUser, validatePasswordResetTokenAndGetUser } from "../utils/auth";
+import { validateTokenAndGetUser } from "../utils/auth";
+import { authForgotPasswordService } from "../modules/auth/AuthForgotPasswordService";
 import { authLoginService } from "../modules/auth/AuthLoginService";
 import { authRegistrationService } from "../modules/auth/AuthRegistrationService";
 
@@ -80,64 +77,10 @@ export class AuthService extends Service {
     }
 
     public async forgotPassword(Request: Request): Promise<resp<DBResp<Document> | undefined>> {
-        if (Request.method === "POST") {
-            try {
-                const email = Request.body.email;
-                if (!email) {
-                    return createResponse(400, "missing email field");
-                }
-                
-                const user = await UsersModel.findOne({ email });
-                if (!user) {
-                    return createResponse(200, "If the email exists, a password reset email has been sent");
-                }
-                
-                if (this.canSendEmail(user.lastTimePasswordResetEmailSent, 5)) {
-                    sendForgotPasswordEmail(email, generatePasswordResetToken(email));
-                    user.lastTimePasswordResetEmailSent = new Date();
-                    await user.save();
-                    return createResponse(200, "password reset email sent");
-                } else {
-                    const minutesLeft = user.lastTimePasswordResetEmailSent
-                        ? Math.ceil((user.lastTimePasswordResetEmailSent.getTime() + 5 * 60 * 1000 - new Date().getTime()) / 60000)
-                        : 5;
-                    return createResponse(400, `please wait ${minutesLeft} minute(s) before resending the verification email`);
-                }
-            } catch (error) {
-                logger.error(error);
-                return createResponse(500, "internal server error");
-            }
-        }
-        else if (Request.method === "PUT") {
-            try {
-                const { user, error } = await validatePasswordResetTokenAndGetUser<DBResp<Document>>(Request);
-                if (error) {
-                    return error;
-                }
-
-                const newPassword = Request.body.password;
-                if (!newPassword) {
-                    return createResponse(400, "missing password field");
-                }
-                
-                const passwordStrengthCheckResult = passwordStrengthCheck(newPassword);
-                if (!passwordStrengthCheckResult.isValid) {
-                    return createResponse(400, `password does not meet the requirements: ${passwordStrengthCheckResult.missingRequirements.join(", ")}`);
-                }
-                
-                const hashedPassword = await generateHashedPassword(newPassword);
-                user.password_hash = hashedPassword;
-                await user.save();
-                logger.info(`password reset successful for ${user.email}`);
-                return createResponse(200, "password reset successful");
-            }
-            catch (error) {
-                logger.error(error);
-                return createResponse(500, "internal server error");
-            }
-        }
-        else {
-            return createResponse(400, "invalid method");
-        }
+        return authForgotPasswordService.handle({
+            method: Request.method,
+            body: Request.body,
+            authorizationHeader: Request.headers.authorization
+        });
     }
 }
