@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `9b802f8 docs update ai box build refactor progress`
+Latest remote baseline before this snapshot: `654c4e5 docs update ai chat refactor progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -35,6 +35,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - VM read/list/status/network route query adapter logic moved from `VMService` into `VMReadRequestAdapterService`.
 - AI Box Build job/run route params/body/header adapter logic moved from `AIBoxBuildService` into `AIBoxBuildRequestAdapterService`.
 - AI Chat hint/platform-guide/VM-management route body adapter logic moved from `AIChatService` into `AIChatRequestAdapterService`.
+- Guacamole connection/disconnect/list/delete route body adapter logic moved from `GuacamoleService` into `GuacamoleRequestAdapterService`.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -50,6 +51,7 @@ The latest recorded full gate is green after these slices:
 - targeted AI Box request adapter tests: `npx vitest run tests/ai-box-build-request-adapter-service.test.ts tests/ai-box-build-draft-service.test.ts tests/ai-box-build-job-management-service.test.ts tests/ai-box-build-run-launch-service.test.ts tests/ai-box-build-run-execution-service.test.ts` (`5` files, `23` tests)
 - targeted Template list tests: `npx vitest run tests/template-list-service.test.ts` (`1` file, `4` tests)
 - targeted Template request adapter tests: `npx vitest run tests/template-request-adapter-service.test.ts tests/template-list-service.test.ts tests/template-conversion-service.test.ts tests/template-submission-create-service.test.ts tests/template-audit-service.test.ts tests/template-submission-audit-policy.test.ts` (`6` files, `28` tests)
+- targeted Guacamole request adapter tests: `npx vitest run tests/guacamole-request-adapter-service.test.ts tests/guacamole-connection-establishment-service.test.ts tests/guacamole-connection-preflight-service.test.ts tests/guacamole-disconnect-service.test.ts tests/guacamole-connection-management-service.test.ts tests/guacamole-connection-request-policy.test.ts` (`6` files, `34` tests)
 - targeted data hardening tests: `npx vitest run tests/unique-constraint-duplicate-check.test.ts tests/schema-indexes.test.ts` (`2` files, `8` tests)
 - targeted VM operation/deletion + AI Chat boundary tests: `npx vitest run tests/ai-chat-platform-guide-service.test.ts tests/ai-chat-box-hint-service.test.ts tests/ai-chat-request-policy.test.ts tests/ai-chat-language-policy.test.ts tests/ai-chat-vm-management-service.test.ts tests/vm-operation-execution-service.test.ts tests/vm-deletion-access-service.test.ts` (`7` files, `35` tests)
 - targeted VM read adapter tests: `npx vitest run tests/vm-read-request-adapter-service.test.ts tests/vm-read-service.test.ts tests/vm-operation-policy.test.ts` (`3` files, `18` tests)
@@ -58,7 +60,7 @@ The latest recorded full gate is green after these slices:
 - targeted Template Manage adapter tests: `npx vitest run tests/template-manage-request-adapter-service.test.ts tests/template-config-update-service.test.ts tests/template-deletion-service.test.ts tests/template-clone-service.test.ts tests/template-list-service.test.ts tests/template-conversion-service.test.ts tests/template-audit-service.test.ts` (`7` files, `40` tests)
 - targeted CRP adapter tests: `npx vitest run tests/compute-resource-plan-request-adapter-service.test.ts tests/compute-resource-plan-management-service.test.ts tests/compute-resource-plan-policy.test.ts` (`3` files, `19` tests)
 - targeted SuperAdmin adapter tests: `npx vitest run tests/super-admin-request-adapter-service.test.ts tests/super-admin-user-management-service.test.ts tests/super-admin-user-mutation-policy.test.ts` (`3` files, `12` tests)
-- `npm test` (`180` files, `905` tests)
+- `npm test` (`181` files, `911` tests)
 - `npm run build`
 - `npm audit --audit-level=moderate` (`0` vulnerabilities)
 - merge-conflict marker scan
@@ -89,6 +91,7 @@ The latest recorded full gate is green after these slices:
 - Guacamole refactor has substantial coverage:
   - auth/user lifecycle, connection management, shared preflight, get-or-create config, SSH/RDP/VNC establishment, disconnect, delete/list DTOs, and VM lookup boundaries are extracted/tested.
   - SSH/RDP/VNC establishment and preflight now accept user/request DTO inputs instead of raw Express `Request`.
+  - Guacamole connection/disconnect/list/delete request mapping now lives behind `GuacamoleRequestAdapterService`, leaving `GuacamoleService` as a token/permission facade.
 - AI service refactor has substantial coverage:
   - AI Box Build job/draft/agent/runtime/run/workspace/provisioning/SSH execution flows are extracted/tested;
   - AI Chat request validation, language policy, hint workflow, platform-guide workflow, VM management workflow, target selection, pending-action flow, and response formatting are extracted/tested.
@@ -122,10 +125,10 @@ Current facade/service file sizes:
 
 | File | Lines | Note |
 | --- | ---: | --- |
-| `src/service/GuacamoleService.ts` | 226 | Temporary adapter for auth/permission and connection DTO calls. |
 | `src/service/VMBoxService.ts` | 190 | Thin auth/error wrapper around VM Box request adapter. |
 | `src/service/CourseService.ts` | 160 | Thin auth/error wrapper around Course request adapter. |
 | `src/service/PVEService.ts` | 157 | Thin token/role wrapper around PVE request adapter. |
+| `src/service/GuacamoleService.ts` | 134 | Thin token/permission wrapper around Guacamole request adapter. |
 | `src/service/AIChatService.ts` | 125 | Thin auth/error wrapper around AI Chat request adapter. |
 | `src/service/VMManageService.ts` | 120 | Thin token/role wrapper around VM Manage request adapter. |
 | `src/service/UserService.ts` | 118 | Thin auth/error wrapper around profile/read modules. |
@@ -173,7 +176,7 @@ No extracted module currently imports Express `Request`; remaining `Request` imp
    - Add unique constraints only after duplicate groups are cleaned and archived as empty.
 
 2. Continue facade-boundary cleanup where useful.
-   - Candidate targets: smaller wrapper cleanup in remaining facades such as `GuacamoleService`, `VMBoxService`, and similar wrappers where controller response shapes can stay unchanged.
+   - Candidate targets: smaller wrapper cleanup in remaining facades such as `VMBoxService`, `CourseService`, `PVEService`, and similar wrappers where controller response shapes can stay unchanged.
    - Keep controller response shapes unchanged.
 
 3. Keep gates mandatory for every slice.
@@ -203,6 +206,7 @@ Use small, isolated commits:
 11. `refactor vm read request adapter service`
 12. `refactor ai box build request adapter service`
 13. `refactor ai chat request adapter service`
-14. `docs update backend refactor progress`
+14. `refactor guacamole request adapter service`
+15. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.
