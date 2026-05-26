@@ -1,89 +1,53 @@
 import { Service } from "../abstract/Service";
 import { ChapterPageDTO } from "../interfaces/Chapter/ChapterPageDTO";
-import { validateTokenAndGetAdminUser, validateTokenAndGetUser } from "../utils/auth";
-import { resp, createResponse } from "../utils/resp"
-import { Request } from "express";
-import { logger } from "../middlewares/log";
+import { resp } from "../utils/resp"
 import { courseStructureRequestAdapterService } from "../modules/courses/CourseStructureRequestAdapterService";
 
+type CourseStructureServiceInput = {
+    user: any;
+    params?: Record<string, unknown>;
+    body?: unknown;
+};
+
+type CourseStructureRequestAdapterPort = {
+    getChapterById(input: CourseStructureServiceInput): Promise<resp<ChapterPageDTO | undefined>>;
+    updateChapterById(input: CourseStructureServiceInput): Promise<resp<string | undefined>>;
+    deleteChapterById(input: CourseStructureServiceInput): Promise<resp<string | undefined>>;
+    addChapterToClass(input: CourseStructureServiceInput): Promise<resp<String | { chapter_id: string } | undefined>>;
+};
+
 export class ChapterService extends Service {
+    constructor(private readonly requestAdapter: CourseStructureRequestAdapterPort = courseStructureRequestAdapterService) {
+        super();
+    }
+
     /**
-     * @param Request
+     * @param input
      * @returns resp<ChapterPageDTO | undefined>
      */
-    public async getChapterById(Request: Request): Promise<resp<ChapterPageDTO | undefined>> {
-        return this.withUser(Request, "getChapterById", (user) => courseStructureRequestAdapterService.getChapterById({
-            user,
-            params: Request.params
-        }));
+    public getChapterById(input: CourseStructureServiceInput): Promise<resp<ChapterPageDTO | undefined>> {
+        return this.requestAdapter.getChapterById(input);
     }
 
     /**
      * @description Deletes a chapter by its ID and handles all related data consistency.
-     * @param Request Express request object containing the chapterId.
+     * @param input chapter route context containing the chapterId.
      * @returns A promise resolving to a success or error response.
      */
-    public async DeleteChapterById(Request: Request): Promise<resp<string | undefined>> {
-        return this.withAdminUser(Request, "DeleteChapterById", (user) => courseStructureRequestAdapterService.deleteChapterById({
-            user,
-            params: Request.params
-        }));
+    public DeleteChapterById(input: CourseStructureServiceInput): Promise<resp<string | undefined>> {
+        return this.requestAdapter.deleteChapterById(input);
     }
 
     /**
      * @description Updates a chapter's information by its ID.
-     * @param Request Express request object containing the chapterId and update data.
+     * @param input chapter route context containing the chapterId and update data.
      * @returns A promise resolving to a success or error response.
      */
-    public async UpdateChapterById(Request: Request): Promise<resp<string | undefined>> {
-        return this.withAdminUser(Request, "UpdateChapterById", (user) => courseStructureRequestAdapterService.updateChapterById({
-            user,
-            params: Request.params,
-            body: Request.body
-        }));
+    public UpdateChapterById(input: CourseStructureServiceInput): Promise<resp<string | undefined>> {
+        return this.requestAdapter.updateChapterById(input);
     }
 
-    public async AddChapterToClass(Request: Request): Promise<resp<String | { chapter_id: string } | undefined>> {
-        return this.withAdminUser(Request, "AddChapterToClass", (user) => courseStructureRequestAdapterService.addChapterToClass({
-            user,
-            params: Request.params,
-            body: Request.body
-        }));
-    }
-
-    private async withUser<T>(
-        Request: Request,
-        actionName: string,
-        action: (user: any) => Promise<resp<T | undefined>>
-    ): Promise<resp<T | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetUser<T>(Request);
-            if (error) {
-                return error;
-            }
-
-            return action(user);
-        } catch (err) {
-            logger.error(`Error in ${actionName}:`, err);
-            return createResponse(500, "Internal Server Error");
-        }
-    }
-
-    private async withAdminUser<T>(
-        Request: Request,
-        actionName: string,
-        action: (user: any) => Promise<resp<T | undefined>>
-    ): Promise<resp<T | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetAdminUser<T>(Request);
-            if (error) {
-                return error;
-            }
-
-            return action(user);
-        } catch (err) {
-            logger.error(`Error in ${actionName}:`, err);
-            return createResponse(500, "Internal Server Error");
-        }
+    public AddChapterToClass(input: CourseStructureServiceInput): Promise<resp<String | { chapter_id: string } | undefined>> {
+        return this.requestAdapter.addChapterToClass(input);
     }
 }
