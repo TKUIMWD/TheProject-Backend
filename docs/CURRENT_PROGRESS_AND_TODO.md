@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `3beeb4a docs update super admin refactor progress`
+Latest remote baseline before this snapshot: `8dd9180 docs update auth refactor progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -30,6 +30,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - Compute Resource Plan create/update/delete/list/get-by-id route adapter logic moved from `SuperAdminCRPService` into `ComputeResourcePlanRequestAdapterService`.
 - SuperAdmin user-management route body adapter logic moved from `SuperAdminService` into `SuperAdminRequestAdapterService`.
 - Auth verify/logout session behavior moved from `AuthService` into `AuthSessionService`.
+- Course class/chapter route params/body adapter logic moved from `ClassService` and `ChapterService` into `CourseStructureRequestAdapterService`.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -37,6 +38,7 @@ The latest recorded full gate is green after these slices:
 - `npm run typecheck`
 - targeted Auth tests: `npx vitest run tests/auth-session-service.test.ts tests/auth-forgot-password-service.test.ts tests/auth-login-service.test.ts tests/auth-registration-service.test.ts tests/auth-token-policy.test.ts` (`5` files, `29` tests)
 - targeted Course tests: `npx vitest run tests/course-request-adapter-service.test.ts tests/course-read-service.test.ts tests/course-list-service.test.ts tests/course-mutation-service.test.ts tests/course-membership-service.test.ts tests/course-review-service.test.ts tests/course-lifecycle-service.test.ts` (`7` files, `30` tests)
+- targeted Course structure tests: `npx vitest run tests/course-structure-request-adapter-service.test.ts tests/class-management-service.test.ts tests/chapter-management-service.test.ts tests/class-content-policy.test.ts tests/chapter-content-policy.test.ts tests/course-request-adapter-service.test.ts` (`6` files, `31` tests)
 - targeted VM Box/Guacamole tests: `npx vitest run tests/vm-box-list-service.test.ts tests/vm-box-review-service.test.ts tests/vm-box-writeup-service.test.ts tests/vm-box-answer-service.test.ts tests/vm-box-submission-create-service.test.ts tests/vm-box-submission-audit-service.test.ts tests/guacamole-connection-establishment-service.test.ts tests/guacamole-connection-preflight-service.test.ts tests/course-request-adapter-service.test.ts` (`9` files, `33` tests)
 - targeted AI Chat VM tests: `npx vitest run tests/ai-chat-vm-management-service.test.ts tests/ai-chat-vm-intent-policy.test.ts tests/ai-chat-vm-pending-action-policy.test.ts tests/ai-chat-vm-response-policy.test.ts tests/ai-chat-request-policy.test.ts` (`5` files, `26` tests)
 - targeted AI Box provisioning tests: `npx vitest run tests/ai-box-build-provisioning-service.test.ts tests/ai-box-build-run-execution-service.test.ts tests/ai-box-build-run-launch-service.test.ts tests/vm-creation-request-service.test.ts` (`4` files, `22` tests)
@@ -48,7 +50,7 @@ The latest recorded full gate is green after these slices:
 - targeted Template Manage adapter tests: `npx vitest run tests/template-manage-request-adapter-service.test.ts tests/template-config-update-service.test.ts tests/template-deletion-service.test.ts tests/template-clone-service.test.ts tests/template-list-service.test.ts tests/template-conversion-service.test.ts tests/template-audit-service.test.ts` (`7` files, `40` tests)
 - targeted CRP adapter tests: `npx vitest run tests/compute-resource-plan-request-adapter-service.test.ts tests/compute-resource-plan-management-service.test.ts tests/compute-resource-plan-policy.test.ts` (`3` files, `19` tests)
 - targeted SuperAdmin adapter tests: `npx vitest run tests/super-admin-request-adapter-service.test.ts tests/super-admin-user-management-service.test.ts tests/super-admin-user-mutation-policy.test.ts` (`3` files, `12` tests)
-- `npm test` (`175` files, `893` tests)
+- `npm test` (`176` files, `895` tests)
 - `npm run build`
 - `npm audit --audit-level=moderate` (`0` vulnerabilities)
 - merge-conflict marker scan
@@ -97,6 +99,7 @@ The latest recorded full gate is green after these slices:
 - CRP route params/body mapping now lives in `ComputeResourcePlanRequestAdapterService`; `SuperAdminCRPService` is a token/role adapter.
 - SuperAdmin role/CRP assignment body mapping now lives in `SuperAdminRequestAdapterService`; `SuperAdminService` is a token adapter.
 - Course and VM Box route-to-workflow adapter logic now lives behind DTO-style request adapter services, leaving their facades as thin auth/error wrappers.
+- Class and Chapter route-to-workflow adapter logic now lives behind `CourseStructureRequestAdapterService`, leaving `ClassService` and `ChapterService` as token/error wrappers.
 - Safe non-unique indexes were added for common lookup/list paths.
 - Unique-constraint hardening remains deferred, but `docs/DATA_HARDENING_UNIQUE_CONSTRAINTS.md` now records staging/production duplicate checks and cleanup order for candidate unique keys.
 - `npm run data:check-unique-duplicates` now provides a read-only duplicate preflight command for staging/production runs.
@@ -116,14 +119,14 @@ Current facade/service file sizes:
 | `src/service/VMManageService.ts` | 120 | Thin token/role wrapper around VM Manage request adapter. |
 | `src/service/UserService.ts` | 118 | Thin auth/error wrapper around profile/read modules. |
 | `src/service/TemplateService.ts` | 117 | Listing/conversion/submission/audit workflows extracted. |
-| `src/service/ChapterService.ts` | 96 | Thin wrapper. |
 | `src/service/VMService.ts` | 92 | Thin read facade with shared actor-context resolver. |
+| `src/service/ChapterService.ts` | 89 | Thin token wrapper around course structure request adapter. |
 | `src/service/SuperAdminCRPService.ts` | 84 | Thin token/role wrapper around CRP request adapter. |
 | `src/service/VMOperateService.ts` | 81 | Thin request adapter delegating operation execution. |
-| `src/service/ClassService.ts` | 78 | Thin wrapper. |
 | `src/service/AuthService.ts` | 74 | Thin token wrapper around Auth workflow/session services. |
 | `src/service/TemplateManageService.ts` | 68 | Thin token/role wrapper around Template Manage request adapter. |
 | `src/service/SuperAdminService.ts` | 61 | Thin token wrapper around SuperAdmin request adapter. |
+| `src/service/ClassService.ts` | 56 | Thin token wrapper around course structure request adapter. |
 
 ## Remaining Gaps
 
@@ -158,7 +161,7 @@ No extracted module currently imports Express `Request`; remaining `Request` imp
    - Add unique constraints only after duplicate groups are cleaned and archived as empty.
 
 2. Continue facade-boundary cleanup where useful.
-   - Candidate targets: smaller wrapper cleanup in `ChapterService`, `ClassService`, and similar facades.
+   - Candidate targets: smaller wrapper cleanup in remaining facades such as `TemplateService`, `VMService`, and similar wrappers where controller response shapes can stay unchanged.
    - Keep controller response shapes unchanged.
 
 3. Keep gates mandatory for every slice.
@@ -183,6 +186,7 @@ Use small, isolated commits:
 6. `refactor crp request adapter service`
 7. `refactor super admin request adapter service`
 8. `refactor auth session service`
-9. `docs update backend refactor progress`
+9. `refactor course structure request adapter service`
+10. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.
