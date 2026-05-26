@@ -1,76 +1,68 @@
-import { Service } from "../abstract/Service";
-import { resp, createResponse } from "../utils/resp";
 import { Request } from "express";
-import { validateTokenAndGetUser, validateTokenAndGetSuperAdminUser } from "../utils/auth";
+import { Service } from "../abstract/Service";
+import { CloneTemplateResponse } from "../interfaces/Response/VMResp";
 import { User } from "../interfaces/User";
 import { logger } from "../middlewares/log";
-import { CloneTemplateResponse } from "../interfaces/Response/VMResp";
-import { templateDeletionService } from "../modules/templates/TemplateDeletionService";
-import { templateCloneService } from "../modules/templates/TemplateCloneService";
-import { templateConfigUpdateService } from "../modules/templates/TemplateConfigUpdateService";
+import { templateManageRequestAdapterService } from "../modules/templates/TemplateManageRequestAdapterService";
+import { validateTokenAndGetSuperAdminUser, validateTokenAndGetUser } from "../utils/auth";
+import { createResponse, resp } from "../utils/resp";
 
-
+type TokenValidator = (request: Request) => Promise<{ user: User; error?: resp<any> }>;
 
 export class TemplateManageService extends Service {
-    /**
-     * 更新模板配置
-     */
     public async updateTemplateConfig(Request: Request): Promise<resp<string | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetUser<User>(Request);
-            if (error) {
-                logger.warn(`Token validation failed in updateTemplateConfig: ${error.message}`);
-                return createResponse(error.code, error.message);
-            }
-
-            return templateConfigUpdateService.updateTemplateConfig({
+        return this.withValidatedUser(
+            Request,
+            "updateTemplateConfig",
+            (request) => validateTokenAndGetUser<User>(request),
+            (user) => templateManageRequestAdapterService.updateTemplateConfig({
                 user,
                 body: Request.body
-            });
-
-        } catch (error) {
-            logger.error("Error in updateTemplateConfig:", error);
-            return createResponse(500, "Internal Server Error");
-        }
+            })
+        );
     }
 
-    /**
-     * 刪除模板
-     */
     public async deleteTemplate(Request: Request): Promise<resp<string | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetUser<User>(Request);
-            if (error) {
-                logger.warn(`Token validation failed in deleteTemplate: ${error.message}`);
-                return createResponse(error.code, error.message);
-            }
-
-            const { template_id } = Request.body;
-            return templateDeletionService.deleteTemplate({ user, templateId: template_id });
-
-        } catch (error) {
-            logger.error("Error in deleteTemplate:", error);
-            return createResponse(500, "Internal Server Error");
-        }
+        return this.withValidatedUser(
+            Request,
+            "deleteTemplate",
+            (request) => validateTokenAndGetUser<User>(request),
+            (user) => templateManageRequestAdapterService.deleteTemplate({
+                user,
+                body: Request.body
+            })
+        );
     }
 
-    /**
-     * 克隆模板到新模板 (僅限 superadmin)
-     */
     public async cloneTemplate(Request: Request): Promise<resp<CloneTemplateResponse | undefined>> {
+        return this.withValidatedUser(
+            Request,
+            "cloneTemplate",
+            (request) => validateTokenAndGetSuperAdminUser<User>(request),
+            (user) => templateManageRequestAdapterService.cloneTemplate({
+                user,
+                body: Request.body
+            })
+        );
+    }
+
+    private async withValidatedUser<T>(
+        Request: Request,
+        operation: string,
+        validator: TokenValidator,
+        action: (user: User) => Promise<resp<T | undefined>>
+    ): Promise<resp<T | undefined>> {
         try {
-            const { user, error } = await validateTokenAndGetSuperAdminUser<User>(Request);
+            const { user, error } = await validator(Request);
             if (error) {
-                logger.warn(`Token validation failed in cloneTemplate: ${error.message}`);
+                logger.warn(`Token validation failed in ${operation}: ${error.message}`);
                 return createResponse(error.code, error.message);
             }
 
-            return templateCloneService.cloneTemplate({ user, body: Request.body });
-
+            return action(user);
         } catch (error) {
-            logger.error("Error in cloneTemplate:", error);
+            logger.error(`Error in ${operation}:`, error);
             return createResponse(500, "Internal Server Error");
         }
     }
-
 }
