@@ -4175,3 +4175,22 @@ Acceptance criteria:
   - `npm test` (`160` files, `824` tests)
   - `npm run build`
   - `npm audit --audit-level=moderate` (`0` vulnerabilities)
+
+### 2026-05-26 SuperAdmin User Management Service Slice
+
+- Added `src/modules/super-admin/SuperAdminUserManagementService.ts`.
+- Added `tests/super-admin-user-management-service.test.ts`.
+- Moved SuperAdmin user management orchestration out of `SuperAdminService` for:
+  - user ID and assignable-role validation before role mutation;
+  - superadmin target-role protection;
+  - CRP assignment ID validation, target-user lookup, and plan lookup;
+  - assigned-plan persistence and response DTO assembly;
+  - verified-actor checks for user/admin listing;
+  - empty-list and repository error response behavior.
+- `SuperAdminService.ts` is now about `78` lines after the extraction.
+- Verified:
+  - `npx vitest run tests/super-admin-user-management-service.test.ts tests/super-admin-user-mutation-policy.test.ts`
+  - `npm run typecheck`
+  - `npm test` (`161` files, `831` tests)
+  - `npm run build`
+  - `npm audit --audit-level=moderate` (`0` vulnerabilities)
