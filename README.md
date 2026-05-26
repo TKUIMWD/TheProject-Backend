@@ -2,6 +2,19 @@
 
 Express + TypeScript backend for a cybersecurity training platform. The API serves course, VM, VM Box, Guacamole, AI assistant, and AI Box Build workflows for the frontend under `/api/v1`.
 
+## Current Architecture
+
+The backend is organized around a thin HTTP boundary and tested domain modules:
+
+- Routes register URL paths and HTTP methods.
+- Controllers read Express `Request` data, validate auth tokens, and build DTO inputs.
+- Services are thin DTO facades. They do not accept raw Express `Request` objects and do not import token validators directly.
+- Request adapter services translate controller DTOs into workflow calls.
+- Domain modules own policies, repositories, DTO factories, workflow services, and external clients.
+- Mongoose schemas stay under `src/orm/schemas`; repository modules should own direct model access for new workflow code.
+
+This boundary matters for new work: keep request parsing and token handling in controllers, keep business rules in modules, and keep service methods request-free.
+
 ## Features
 
 - JWT-based user, admin, and superadmin API access.
@@ -75,13 +88,21 @@ npm audit --audit-level=moderate
 
 The GitHub Actions workflow in [.github/workflows/backend-ci.yml](.github/workflows/backend-ci.yml) runs install, typecheck, tests, build, and audit.
 
+Use the duplicate preflight before adding deferred unique indexes to shared data:
+
+```bash
+npm run data:check-unique-duplicates
+```
+
+Run it against staging or production data before adding unique constraints. The local command only proves the script runs against the configured database.
+
 ## Project Structure
 
 - `src/app.ts` - Express app entry and middleware setup.
 - `src/Routers.ts` - API route registration.
-- `src/controller` - HTTP controller layer.
-- `src/service` - request-level service wrappers and authentication boundaries.
-- `src/modules` - domain policies, repositories, DTO factories, workflow services, and external clients.
+- `src/controller` - HTTP request parsing, token validation, response sending, and DTO assembly.
+- `src/service` - thin request-free facades that accept DTOs or actor context.
+- `src/modules` - request adapters, domain policies, repositories, DTO factories, workflow services, and external clients.
 - `src/orm/schemas` - Mongoose schemas.
 - `src/utils` - shared utilities, mail senders, VM/PVE helpers, token helpers, and prompts.
 - `tests` - Vitest unit and workflow tests.
@@ -96,6 +117,15 @@ The GitHub Actions workflow in [.github/workflows/backend-ci.yml](.github/workfl
 - `src/modules/ai-box-build` - AI Box Build draft, run launch, execution, provisioning, workspace, validation, OpenCode, and SSH execution flows.
 - `src/modules/courses`, `src/modules/templates`, `src/modules/vm-box`, `src/modules/reviews`, `src/modules/users`, `src/modules/auth` - platform domain logic.
 
+## Development Guidelines
+
+- New service methods should accept DTOs or actor context, not Express `Request`.
+- Controllers should preserve the existing API response shape: `{ code, message, body }`.
+- Put route body/query/params mapping in a request adapter when the mapping is shared or non-trivial.
+- Put permission, validation, persistence, and external API behavior in `src/modules`.
+- Add focused Vitest coverage for changed policies, adapters, and workflow services.
+- Run `npm run typecheck`, targeted tests, `npm test`, `npm run build`, and `npm audit --audit-level=moderate` before merging large backend changes.
+
 ## Security Notes
 
 - Never commit real `.env` values, API tokens, passwords, generated credentials, or Guacamole session URLs.
@@ -106,4 +136,27 @@ The GitHub Actions workflow in [.github/workflows/backend-ci.yml](.github/workfl
 
 ## Refactor Notes
 
-The backend has been modularized around tested domain services and policies. See [docs/REFACTOR_OPTIMIZATION_PLAN.md](docs/REFACTOR_OPTIMIZATION_PLAN.md) for the executed refactor and optimization plan, verification history, and remaining audit context.
+The backend has been modularized around tested domain services and policies. The latest refactor moved the remaining service facades away from raw Express `Request` usage and into DTO-style boundaries owned by controllers.
+
+Major completed slices include:
+
+- Auth registration, login, verification, logout, and forgot-password workflows.
+- VM creation, deletion, config update, read/status/network, operation execution, task status, and resource accounting.
+- PVE client and request adapters for QEMU config, node status, task status, cleanup, and datacenter status.
+- Guacamole auth/user lifecycle, SSH/RDP/VNC establishment, preflight, connection management, disconnect, and request adapters.
+- AI Chat Box hints, platform guide, VM management workflows, request validation, language policy, and pending-action handling.
+- AI Box Build job/draft/run/workspace/provisioning/OpenCode/SSH execution workflows.
+- Course, Class, Chapter, Template, VM Box, review, writeup, answer, submission, and audit workflows.
+- SuperAdmin user management and compute resource plan request adapters.
+- Data-hardening preflight docs and a read-only duplicate-check command for deferred unique constraints.
+
+The latest recorded local gate is green:
+
+- `npm run typecheck`
+- targeted facade-boundary tests: `52` files, `261` tests
+- `npm test`: `187` files, `924` tests
+- `npm run build`
+- `npm audit --audit-level=moderate`: `0` vulnerabilities
+- scans for merge-conflict markers, backend `console.*`, reverse imports from `src/modules` to `src/service`, and service-layer Express `Request`/auth-helper imports
+
+Remaining external work: run the duplicate preflight against staging or production data before enabling unique constraints. See [docs/CURRENT_PROGRESS_AND_TODO.md](docs/CURRENT_PROGRESS_AND_TODO.md), [docs/REFACTOR_OPTIMIZATION_PLAN.md](docs/REFACTOR_OPTIMIZATION_PLAN.md), and [docs/DATA_HARDENING_UNIQUE_CONSTRAINTS.md](docs/DATA_HARDENING_UNIQUE_CONSTRAINTS.md) for details.
