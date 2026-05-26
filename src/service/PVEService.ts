@@ -8,10 +8,8 @@ import { pveRequestAdapterService } from "../modules/pve/PVERequestAdapterServic
 import { getTokenRole, validateTokenAndGetAdminUser, validateTokenAndGetSuperAdminUser, validateTokenAndGetUser } from "../utils/auth";
 import { createResponse, resp } from "../utils/resp";
 
-type TokenValidator = (request: Request) => Promise<{
-    user: User;
-    error?: resp<any>;
-}>;
+type TokenValidator = (request: Request) => Promise<{ user: User; error?: resp<any> }>;
+type PVEServiceAdapterInput = { user: User; body: any; query: Request["query"] };
 
 export class PVEService extends Service {
     public async getQemuConfig(Request: Request): Promise<resp<PVEResp | undefined>> {
@@ -29,8 +27,7 @@ export class PVEService extends Service {
 
             return await pveRequestAdapterService.getQemuConfig({
                 role: token_role,
-                user,
-                query: Request.query
+                ...this.toAdapterInput(Request, user)
             }) as resp<PVEResp | undefined>;
         } catch (error) {
             logger.error("Error in getQemuConfig:", error);
@@ -39,7 +36,7 @@ export class PVEService extends Service {
     }
 
     public async getNodes(Request: Request): Promise<resp<PVEResp | undefined>> {
-        return this.withValidatedUser(
+        return this.withValidatedInput(
             Request,
             "getNodes",
             (request) => validateTokenAndGetUser<PVEResp>(request),
@@ -47,58 +44,44 @@ export class PVEService extends Service {
         ) as Promise<resp<PVEResp | undefined>>;
     }
 
-    // 檢視多個 VM 任務狀態的自定義接口
     public async getMultipleTasksStatus(Request: Request): Promise<resp<any>> {
-        return this.withValidatedUser(
+        return this.withValidatedInput(
             Request,
             "getMultipleTasksStatus",
             (request) => validateTokenAndGetUser<User>(request),
-            (user) => pveRequestAdapterService.getMultipleTasksStatus({
-                user,
-                body: Request.body
-            })
+            (input) => pveRequestAdapterService.getMultipleTasksStatus(input)
         );
     }
 
-    // 獲取用戶最新一筆的 VM 任務狀態
     public async getUserLatestTaskStatus(Request: Request): Promise<resp<any>> {
-        return this.withValidatedUser(
+        return this.withValidatedInput(
             Request,
             "getUserLatestTaskStatus",
             (request) => validateTokenAndGetUser<User>(request),
-            (user) => pveRequestAdapterService.getUserLatestTaskStatus({ user })
+            (input) => pveRequestAdapterService.getUserLatestTaskStatus(input)
         );
     }
 
-    // 獲取用戶所有 VM 任務的狀態
     public async getUserAllTasksStatus(Request: Request): Promise<resp<any>> {
-        return this.withValidatedUser(
+        return this.withValidatedInput(
             Request,
             "getUserAllTasksStatus",
             (request) => validateTokenAndGetUser<User>(request),
-            (user) => pveRequestAdapterService.getUserAllTasksStatus({
-                user,
-                query: Request.query
-            })
+            (input) => pveRequestAdapterService.getUserAllTasksStatus(input)
         );
     }
 
-    // 即時檢查 PVE 任務狀態並更新本地記錄
     public async refreshTaskStatus(Request: Request): Promise<resp<any>> {
-        return this.withValidatedUser(
+        return this.withValidatedInput(
             Request,
             "refreshTaskStatus",
             (request) => validateTokenAndGetUser<User>(request),
-            (user) => pveRequestAdapterService.refreshTaskStatus({
-                user,
-                body: Request.body
-            })
+            (input) => pveRequestAdapterService.refreshTaskStatus(input)
         );
     }
 
-    // 定期清理任務 - 可以設置為定時任務
     public async cleanupTasks(Request: Request): Promise<resp<any>> {
-        return this.withValidatedUser(
+        return this.withValidatedInput(
             Request,
             "cleanupTasks",
             (request) => validateTokenAndGetSuperAdminUser<User>(request),
@@ -106,9 +89,8 @@ export class PVEService extends Service {
         );
     }
 
-    // 取得 PVE Datacenter 狀態
     public async getDatacenterStatus(Request: Request): Promise<resp<any>> {
-        return this.withValidatedUser(
+        return this.withValidatedInput(
             Request,
             "getDatacenterStatus",
             (request) => validateTokenAndGetSuperAdminUser<User>(request),
@@ -120,11 +102,11 @@ export class PVEService extends Service {
         return role === "user" || role === "admin" || role === "superadmin";
     }
 
-    private async withValidatedUser<T>(
+    private async withValidatedInput<T>(
         Request: Request,
         operation: string,
         validator: TokenValidator,
-        action: (user: User) => Promise<resp<T | undefined>>
+        action: (input: PVEServiceAdapterInput) => Promise<resp<T | undefined>>
     ): Promise<resp<T | undefined>> {
         try {
             const { user, error } = await validator(Request);
@@ -133,11 +115,19 @@ export class PVEService extends Service {
                 return error;
             }
 
-            return action(user);
+            return action(this.toAdapterInput(Request, user));
         } catch (error) {
             logger.error(`Error in ${operation}:`, error);
             return createResponse(500, "Internal Server Error");
         }
+    }
+
+    private toAdapterInput(Request: Request, user: User): PVEServiceAdapterInput {
+        return {
+            user,
+            body: Request.body,
+            query: Request.query
+        };
     }
 
     private async validateQemuConfigUser(
