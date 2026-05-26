@@ -8,6 +8,11 @@ import { GuacamoleConnection } from "../interfaces/Guacamole";
 import { guacamoleRequestAdapterService } from "../modules/guacamole/GuacamoleRequestAdapterService";
 
 type GuacamoleUserValidation = { user: User; isSuperAdmin: boolean } | { error: resp<undefined> };
+type GuacamoleServiceInput = {
+    user: User;
+    isSuperAdmin: boolean;
+    body: Request["body"];
+};
 
 export class GuacamoleService extends Service {
     /**
@@ -40,12 +45,8 @@ export class GuacamoleService extends Service {
      * 建立 SSH 連線
      */
     public async establishSSHConnection(req: Request): Promise<resp<GuacamoleConnection | undefined>> {
-        return this.withGuacamoleUser(req, "establishing SSH connection", (userValidation) =>
-            guacamoleRequestAdapterService.establishSSHConnection({
-                user: userValidation.user,
-                isSuperAdmin: userValidation.isSuperAdmin,
-                body: req.body
-            })
+        return this.withGuacamoleInput(req, "establishing SSH connection", (input) =>
+            guacamoleRequestAdapterService.establishSSHConnection(input)
         );
     }
 
@@ -53,12 +54,8 @@ export class GuacamoleService extends Service {
      * 建立 RDP 連線
      */
     public async establishRDPConnection(req: Request): Promise<resp<GuacamoleConnection | undefined>> {
-        return this.withGuacamoleUser(req, "establishing RDP connection", (userValidation) =>
-            guacamoleRequestAdapterService.establishRDPConnection({
-                user: userValidation.user,
-                isSuperAdmin: userValidation.isSuperAdmin,
-                body: req.body
-            })
+        return this.withGuacamoleInput(req, "establishing RDP connection", (input) =>
+            guacamoleRequestAdapterService.establishRDPConnection(input)
         );
     }
 
@@ -66,12 +63,8 @@ export class GuacamoleService extends Service {
      * 建立 VNC 連線
      */
     public async establishVNCConnection(req: Request): Promise<resp<GuacamoleConnection | undefined>> {
-        return this.withGuacamoleUser(req, "establishing VNC connection", (userValidation) =>
-            guacamoleRequestAdapterService.establishVNCConnection({
-                user: userValidation.user,
-                isSuperAdmin: userValidation.isSuperAdmin,
-                body: req.body
-            })
+        return this.withGuacamoleInput(req, "establishing VNC connection", (input) =>
+            guacamoleRequestAdapterService.establishVNCConnection(input)
         );
     }
 
@@ -79,14 +72,10 @@ export class GuacamoleService extends Service {
      * 斷開 Guacamole 連線
      */
     public async disconnectGuacamoleConnection(req: Request): Promise<resp<{ message: string } | undefined>> {
-        return this.withGuacamoleUser(
+        return this.withGuacamoleInput(
             req,
             "disconnecting Guacamole connection",
-            (userValidation) => guacamoleRequestAdapterService.disconnectGuacamoleConnection({
-                user: userValidation.user,
-                isSuperAdmin: userValidation.isSuperAdmin,
-                body: req.body
-            }),
+            (input) => guacamoleRequestAdapterService.disconnectGuacamoleConnection(input),
             (error) => `Error disconnecting connection: ${error instanceof Error ? error.message : 'Unknown error'}`
         );
     }
@@ -95,8 +84,8 @@ export class GuacamoleService extends Service {
      * 列出用戶的連接
      */
     public async listUserConnections(req: Request): Promise<resp<any[] | undefined>> {
-        return this.withGuacamoleUser(req, "listing user connections", (userValidation) =>
-            guacamoleRequestAdapterService.listUserConnections({ user: userValidation.user })
+        return this.withGuacamoleInput(req, "listing user connections", (input) =>
+            guacamoleRequestAdapterService.listUserConnections(input)
         );
     }
 
@@ -104,19 +93,15 @@ export class GuacamoleService extends Service {
      * 刪除 Guacamole 連接
      */
     public async deleteConnection(req: Request): Promise<resp<any>> {
-        return this.withGuacamoleUser(req, "deleting connection", (userValidation) =>
-            guacamoleRequestAdapterService.deleteConnection({
-                user: userValidation.user,
-                isSuperAdmin: userValidation.isSuperAdmin,
-                body: req.body
-            })
+        return this.withGuacamoleInput(req, "deleting connection", (input) =>
+            guacamoleRequestAdapterService.deleteConnection(input)
         );
     }
 
-    private async withGuacamoleUser<T>(
+    private async withGuacamoleInput<T>(
         req: Request,
         logContext: string,
-        action: (userValidation: { user: User; isSuperAdmin: boolean }) => Promise<resp<T | undefined>>,
+        action: (input: GuacamoleServiceInput) => Promise<resp<T | undefined>>,
         failureMessage: (error: unknown) => string = () => "Internal Server Error"
     ): Promise<resp<T | undefined>> {
         try {
@@ -125,10 +110,18 @@ export class GuacamoleService extends Service {
                 return userValidation.error;
             }
 
-            return action(userValidation);
+            return action(this.toServiceInput(req, userValidation));
         } catch (error) {
             logger.error(`Error ${logContext}:`, error);
             return createResponse(500, failureMessage(error));
         }
+    }
+
+    private toServiceInput(req: Request, userValidation: { user: User; isSuperAdmin: boolean }): GuacamoleServiceInput {
+        return {
+            user: userValidation.user,
+            isSuperAdmin: userValidation.isSuperAdmin,
+            body: req.body
+        };
     }
 }
