@@ -4431,3 +4431,24 @@ Acceptance criteria:
   - `npm run build`
   - `npm audit --audit-level=moderate` (`0` vulnerabilities)
   - conflict-marker scan, backend `console.*` scan, and `git diff --check`
+
+### 2026-05-26 PVE Request Adapter Service Slice
+
+- Added `src/modules/pve/PVERequestAdapterService.ts`.
+- Added `tests/pve-request-adapter-service.test.ts`.
+- Moved PVE route DTO mapping out of `PVEService` for:
+  - QEMU config query ID forwarding;
+  - PVE nodes fetch through the admin-mode PVE client;
+  - multiple-task body `task_ids` forwarding;
+  - user task pagination/status query forwarding;
+  - refresh body `task_id` forwarding;
+  - cleanup and datacenter status workflow delegation.
+- Consolidated repeated `PVEService` token-validation/error wrappers for user and superadmin-only PVE routes.
+- `PVEService.ts` is now about `157` lines and no longer imports the PVE client, task service, datacenter service, qemu config access service, or PVE API enum directly.
+- Verified:
+  - `npx vitest run tests/pve-request-adapter-service.test.ts tests/pve-task-service.test.ts tests/pve-qemu-config-access-service.test.ts tests/pve-datacenter-status-service.test.ts tests/pve-qemu-config-dto-factory.test.ts tests/pve-datacenter-status-policy.test.ts tests/pve-client.test.ts` (`7` files, `28` tests)
+  - `npm run typecheck`
+  - `npm test` (`170` files, `874` tests)
+  - `npm run build`
+  - `npm audit --audit-level=moderate` (`0` vulnerabilities)
+  - conflict-marker scan, backend `console.*` scan, and `git diff --check`

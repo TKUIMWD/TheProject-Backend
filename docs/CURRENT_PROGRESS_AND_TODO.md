@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `7666189 docs refresh backend refactor progress`
+Latest remote baseline before this snapshot: `896538b docs update backend refactor progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -24,6 +24,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - VM deletion access/ownership checks moved from `VMManageService` into `VMDeletionAccessService`.
 - AI Chat VM management now depends on VM module ports instead of service facades.
 - AI Chat platform-guide workflow moved from `AIChatService` into `AIChatPlatformGuideService`.
+- PVE route body/query adapter logic moved from `PVEService` into `PVERequestAdapterService`.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -37,7 +38,8 @@ The latest recorded full gate is green after these slices:
 - targeted Template list tests: `npx vitest run tests/template-list-service.test.ts` (`1` file, `4` tests)
 - targeted data hardening tests: `npx vitest run tests/unique-constraint-duplicate-check.test.ts tests/schema-indexes.test.ts` (`2` files, `8` tests)
 - targeted VM operation/deletion + AI Chat boundary tests: `npx vitest run tests/ai-chat-platform-guide-service.test.ts tests/ai-chat-box-hint-service.test.ts tests/ai-chat-request-policy.test.ts tests/ai-chat-language-policy.test.ts tests/ai-chat-vm-management-service.test.ts tests/vm-operation-execution-service.test.ts tests/vm-deletion-access-service.test.ts` (`7` files, `35` tests)
-- `npm test` (`169` files, `868` tests)
+- targeted PVE adapter tests: `npx vitest run tests/pve-request-adapter-service.test.ts tests/pve-task-service.test.ts tests/pve-qemu-config-access-service.test.ts tests/pve-datacenter-status-service.test.ts tests/pve-qemu-config-dto-factory.test.ts tests/pve-datacenter-status-policy.test.ts tests/pve-client.test.ts` (`7` files, `28` tests)
+- `npm test` (`170` files, `874` tests)
 - `npm run build`
 - `npm audit --audit-level=moderate` (`0` vulnerabilities)
 - merge-conflict marker scan
@@ -79,6 +81,7 @@ The latest recorded full gate is green after these slices:
 - VM status/network reads now share one service-level actor-context resolver.
 - VM operation execution now lives in `VMOperationExecutionService`; `VMOperateService` is a route/auth adapter.
 - VM deletion ownership and workflow dispatch now lives in `VMDeletionAccessService`; `VMManageService` delegates delete DTOs.
+- PVE request query/body mapping now lives in `PVERequestAdapterService`; `PVEService` is a token/role adapter for PVE workflows.
 - Course and VM Box route-to-workflow adapter logic now lives behind DTO-style request adapter services, leaving their facades as thin auth/error wrappers.
 - Safe non-unique indexes were added for common lookup/list paths.
 - Unique-constraint hardening remains deferred, but `docs/DATA_HARDENING_UNIQUE_CONSTRAINTS.md` now records staging/production duplicate checks and cleanup order for candidate unique keys.
@@ -92,8 +95,8 @@ Current facade/service file sizes:
 | --- | ---: | --- |
 | `src/service/GuacamoleService.ts` | 226 | Temporary adapter for auth/permission and connection DTO calls. |
 | `src/service/VMBoxService.ts` | 190 | Thin auth/error wrapper around VM Box request adapter. |
-| `src/service/PVEService.ts` | 177 | Much smaller after QEMU/datacenter extraction. |
 | `src/service/CourseService.ts` | 160 | Thin auth/error wrapper around Course request adapter. |
+| `src/service/PVEService.ts` | 157 | Thin token/role wrapper around PVE request adapter. |
 | `src/service/AIChatService.ts` | 141 | Thin auth/error wrapper around hint, platform-guide, and VM-management modules. |
 | `src/service/AIBoxBuildService.ts` | 126 | Thin pass-through wrapper. |
 | `src/service/VMManageService.ts` | 124 | Creation/update/delete DTO adapter with deletion access extracted. |
@@ -141,7 +144,7 @@ No extracted module currently imports Express `Request`; remaining `Request` imp
    - Add unique constraints only after duplicate groups are cleaned and archived as empty.
 
 2. Continue facade-boundary cleanup where useful.
-   - Candidate targets: `PVEService`, `VMManageService` creation/update helpers, and smaller wrapper cleanup in `AuthService`/`TemplateManageService`.
+   - Candidate targets: `VMManageService` creation/update helpers and smaller wrapper cleanup in `AuthService`/`TemplateManageService`.
    - Keep controller response shapes unchanged.
 
 3. Keep gates mandatory for every slice.
@@ -160,6 +163,7 @@ Use small, isolated commits:
 
 1. `refactor vm operation deletion module boundaries`
 2. `refactor ai chat platform guide service`
-3. `docs update backend refactor progress`
+3. `refactor pve request adapter service`
+4. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.
