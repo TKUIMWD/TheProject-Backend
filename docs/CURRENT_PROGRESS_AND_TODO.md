@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `818842e docs update crp service refactor progress`
+Latest remote baseline before this snapshot: `33d6b5d docs update template manage service refactor progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -46,6 +46,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - `AIChatService` now shares one request-context helper for user/body/role forwarding into `AIChatRequestAdapterService`.
 - `SuperAdminCRPService` now shares one request-context helper for user/body/params forwarding into `ComputeResourcePlanRequestAdapterService`.
 - `TemplateManageService` now shares one request-context helper for user/body forwarding into `TemplateManageRequestAdapterService`.
+- `SuperAdminService` now shares one request-context helper for actor/body forwarding into `SuperAdminRequestAdapterService`.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -135,6 +136,7 @@ The latest recorded full gate is green after these slices:
 - CRP route params/body mapping now lives in `ComputeResourcePlanRequestAdapterService`; `SuperAdminCRPService` is a token/role adapter.
   - `SuperAdminCRPService` now shares one request-context forwarding helper for user/body/params adapter calls.
 - SuperAdmin role/CRP assignment body mapping now lives in `SuperAdminRequestAdapterService`; `SuperAdminService` is a token adapter.
+  - `SuperAdminService` now shares one request-context forwarding helper for actor/body adapter calls.
 - Course and VM Box route-to-workflow adapter logic now lives behind DTO-style request adapter services, leaving their facades as thin auth/error wrappers.
 - Class and Chapter route-to-workflow adapter logic now lives behind `CourseStructureRequestAdapterService`, leaving `ClassService` and `ChapterService` as token/error wrappers.
 - Safe non-unique indexes were added for common lookup/list paths.
@@ -162,7 +164,7 @@ Current facade/service file sizes:
 | `src/service/VMOperateService.ts` | 81 | Thin request adapter delegating operation execution. |
 | `src/service/AuthService.ts` | 74 | Thin token wrapper around Auth workflow/session services. |
 | `src/service/TemplateManageService.ts` | 70 | Thin token/role wrapper around Template Manage request adapter with shared request-context forwarding. |
-| `src/service/SuperAdminService.ts` | 61 | Thin token wrapper around SuperAdmin request adapter. |
+| `src/service/SuperAdminService.ts` | 67 | Thin token wrapper around SuperAdmin request adapter with shared request-context forwarding. |
 | `src/service/ClassService.ts` | 56 | Thin token wrapper around course structure request adapter. |
 
 ## Remaining Gaps
@@ -239,6 +241,7 @@ Use small, isolated commits:
 22. `refactor ai chat service request context forwarding`
 23. `refactor crp service request context forwarding`
 24. `refactor template manage service request context forwarding`
-25. `docs update backend refactor progress`
+25. `refactor super admin service request context forwarding`
+26. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.
