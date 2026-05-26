@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `e5e58e2 docs update guacamole refactor progress`
+Latest remote baseline before this snapshot: `7e76bd2 docs fix vm box service size ordering`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -37,6 +37,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - AI Chat hint/platform-guide/VM-management route body adapter logic moved from `AIChatService` into `AIChatRequestAdapterService`.
 - Guacamole connection/disconnect/list/delete route body adapter logic moved from `GuacamoleService` into `GuacamoleRequestAdapterService`.
 - VM Box route-to-workflow request adapter now has injectable dependencies and direct mapping coverage; `VMBoxService` shares one request-context helper for body/query/params forwarding.
+- Course route-to-workflow request adapter now has injectable dependencies and direct mapping coverage; `CourseService` shares one request-context helper for body/query/params forwarding.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -44,6 +45,7 @@ The latest recorded full gate is green after these slices:
 - `npm run typecheck`
 - targeted Auth tests: `npx vitest run tests/auth-session-service.test.ts tests/auth-forgot-password-service.test.ts tests/auth-login-service.test.ts tests/auth-registration-service.test.ts tests/auth-token-policy.test.ts` (`5` files, `29` tests)
 - targeted Course tests: `npx vitest run tests/course-request-adapter-service.test.ts tests/course-read-service.test.ts tests/course-list-service.test.ts tests/course-mutation-service.test.ts tests/course-membership-service.test.ts tests/course-review-service.test.ts tests/course-lifecycle-service.test.ts` (`7` files, `30` tests)
+- targeted Course request adapter tests: `npx vitest run tests/course-request-adapter-service.test.ts tests/course-read-service.test.ts tests/course-list-service.test.ts tests/course-mutation-service.test.ts tests/course-membership-service.test.ts tests/course-review-service.test.ts tests/course-lifecycle-service.test.ts tests/course-structure-request-adapter-service.test.ts` (`8` files, `36` tests)
 - targeted Course structure tests: `npx vitest run tests/course-structure-request-adapter-service.test.ts tests/class-management-service.test.ts tests/chapter-management-service.test.ts tests/class-content-policy.test.ts tests/chapter-content-policy.test.ts tests/course-request-adapter-service.test.ts` (`6` files, `31` tests)
 - targeted VM Box/Guacamole tests: `npx vitest run tests/vm-box-list-service.test.ts tests/vm-box-review-service.test.ts tests/vm-box-writeup-service.test.ts tests/vm-box-answer-service.test.ts tests/vm-box-submission-create-service.test.ts tests/vm-box-submission-audit-service.test.ts tests/guacamole-connection-establishment-service.test.ts tests/guacamole-connection-preflight-service.test.ts tests/course-request-adapter-service.test.ts` (`9` files, `33` tests)
 - targeted VM Box request adapter tests: `npx vitest run tests/vm-box-request-adapter-service.test.ts tests/vm-box-list-service.test.ts tests/vm-box-review-service.test.ts tests/vm-box-writeup-service.test.ts tests/vm-box-answer-service.test.ts tests/vm-box-submission-create-service.test.ts tests/vm-box-submission-audit-service.test.ts tests/vm-box-ai-assistant-service.test.ts` (`8` files, `32` tests)
@@ -62,7 +64,7 @@ The latest recorded full gate is green after these slices:
 - targeted Template Manage adapter tests: `npx vitest run tests/template-manage-request-adapter-service.test.ts tests/template-config-update-service.test.ts tests/template-deletion-service.test.ts tests/template-clone-service.test.ts tests/template-list-service.test.ts tests/template-conversion-service.test.ts tests/template-audit-service.test.ts` (`7` files, `40` tests)
 - targeted CRP adapter tests: `npx vitest run tests/compute-resource-plan-request-adapter-service.test.ts tests/compute-resource-plan-management-service.test.ts tests/compute-resource-plan-policy.test.ts` (`3` files, `19` tests)
 - targeted SuperAdmin adapter tests: `npx vitest run tests/super-admin-request-adapter-service.test.ts tests/super-admin-user-management-service.test.ts tests/super-admin-user-mutation-policy.test.ts` (`3` files, `12` tests)
-- `npm test` (`182` files, `915` tests)
+- `npm test` (`182` files, `919` tests)
 - `npm run build`
 - `npm audit --audit-level=moderate` (`0` vulnerabilities)
 - merge-conflict marker scan
@@ -102,6 +104,7 @@ The latest recorded full gate is green after these slices:
   - AI Box Build job/run route-to-workflow adapter logic now lives in `AIBoxBuildRequestAdapterService`.
   - AI Chat hint/platform-guide/VM-management route-to-workflow adapter logic now lives in `AIChatRequestAdapterService`.
 - Course, Template, VM Box, and Review domains have many extracted/tested service and policy slices, including create/update/list/review/membership/submission/audit/writeup/answer flows.
+- Course request adapter mapping is now directly tested with injected workflow ports, and `CourseService` now uses one shared request-context helper for forwarding actor/body/query/params into the adapter.
 - VM Box request adapter mapping is now directly tested with injected workflow ports, and `VMBoxService` now uses one shared request-context helper for forwarding actor/body/query/params into the adapter.
 - Template list, accessible-template list, and submitted-template detail assembly now live in `TemplateListService`.
 - Template list/convert/submit/audit route-to-workflow adapter logic now lives in `TemplateRequestAdapterService`.
@@ -129,7 +132,7 @@ Current facade/service file sizes:
 | File | Lines | Note |
 | --- | ---: | --- |
 | `src/service/VMBoxService.ts` | 169 | Thin auth/error wrapper around VM Box request adapter with shared request-context forwarding. |
-| `src/service/CourseService.ts` | 160 | Thin auth/error wrapper around Course request adapter. |
+| `src/service/CourseService.ts` | 157 | Thin auth/error wrapper around Course request adapter with shared request-context forwarding. |
 | `src/service/PVEService.ts` | 157 | Thin token/role wrapper around PVE request adapter. |
 | `src/service/GuacamoleService.ts` | 134 | Thin token/permission wrapper around Guacamole request adapter. |
 | `src/service/AIChatService.ts` | 125 | Thin auth/error wrapper around AI Chat request adapter. |
@@ -179,7 +182,7 @@ No extracted module currently imports Express `Request`; remaining `Request` imp
    - Add unique constraints only after duplicate groups are cleaned and archived as empty.
 
 2. Continue facade-boundary cleanup where useful.
-   - Candidate targets: smaller wrapper cleanup in remaining facades such as `CourseService`, `PVEService`, and similar wrappers where controller response shapes can stay unchanged.
+   - Candidate targets: smaller wrapper cleanup in remaining facades such as `PVEService` and similar wrappers where controller response shapes can stay unchanged.
    - Keep controller response shapes unchanged.
 
 3. Keep gates mandatory for every slice.
@@ -211,6 +214,7 @@ Use small, isolated commits:
 13. `refactor ai chat request adapter service`
 14. `refactor guacamole request adapter service`
 15. `refactor vm box request adapter coverage`
-16. `docs update backend refactor progress`
+16. `refactor course request adapter coverage`
+17. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.
