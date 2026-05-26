@@ -67,8 +67,8 @@ function makeService(options: {
             ? { connected: false, message: "closed" }
             : { connected: true };
     };
-    const getAuthToken = async () => {
-        calls.push({ target: "auth", method: "getToken", args: [] });
+    const getAuthToken = async (authUser: any) => {
+        calls.push({ target: "auth", method: "getToken", args: [authUser.email] });
         return options.authCode && options.authCode !== 200
             ? createResponse(options.authCode, "no auth")
             : createResponse(200, "ok", { token: "token-1", dataSource: "postgresql" } as any);
@@ -90,7 +90,6 @@ describe("GuacamoleConnectionPreflightService", () => {
         const { service, calls } = makeService();
 
         const result = await service.prepare({
-            req: {} as any,
             protocol: "ssh",
             user: makeUser(),
             isSuperAdmin: false,
@@ -123,7 +122,6 @@ describe("GuacamoleConnectionPreflightService", () => {
         });
 
         await expect(service.prepare({
-            req: {} as any,
             protocol: "rdp",
             user: makeUser(),
             isSuperAdmin: false,
@@ -140,7 +138,6 @@ describe("GuacamoleConnectionPreflightService", () => {
         const { service } = makeService({ connected: false });
 
         await expect(service.prepare({
-            req: {} as any,
             protocol: "vnc",
             user: makeUser(),
             isSuperAdmin: true,

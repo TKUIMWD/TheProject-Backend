@@ -32,8 +32,7 @@ export class GuacamoleService extends Service {
         this.connectionEstablishmentService = new GuacamoleConnectionEstablishmentService({
             guacamoleBaseUrl: GUACAMOLE_URL,
             isConfigured: () => this._checkGuacamoleConfiguration(),
-            validateUserPermissions: (req) => this._validateUserPermissions(req),
-            getAuthToken: (req) => this._getGuacamoleAuthToken(req)
+            getAuthToken: (user) => this._getGuacamoleAuthTokenForUser(user)
         });
     }
 
@@ -92,15 +91,7 @@ export class GuacamoleService extends Service {
                 return userValidation.error;
             }
 
-            const userEmail = userValidation.user.email;
-            if (!userEmail) {
-                return createResponse(400, "User email is required for Guacamole authentication");
-            }
-
-            logger.info(`Requesting Guacamole auth token for user: ${userEmail}`);
-
-            // 確保用戶存在並獲取認證令牌
-            return await guacamoleAuthService.ensureUserAndGetToken(userEmail);
+            return this._getGuacamoleAuthTokenForUser(userValidation.user);
 
         } catch (error) {
             logger.error("Error in _getGuacamoleAuthToken:", {
@@ -111,12 +102,30 @@ export class GuacamoleService extends Service {
         }
     }
 
+    private async _getGuacamoleAuthTokenForUser(user: User): Promise<resp<GuacamoleAuthToken | undefined>> {
+        if (!user.email) {
+            return createResponse(400, "User email is required for Guacamole authentication");
+        }
+
+        logger.info(`Requesting Guacamole auth token for user: ${user.email}`);
+        return guacamoleAuthService.ensureUserAndGetToken(user.email);
+    }
+
     /**
      * 建立 SSH 連線
      */
     public async establishSSHConnection(req: Request): Promise<resp<GuacamoleConnection | undefined>> {
         try {
-            return this.connectionEstablishmentService.establishSSHConnection(req);
+            const userValidation = await this._validateUserPermissions(req);
+            if ('error' in userValidation) {
+                return userValidation.error;
+            }
+
+            return this.connectionEstablishmentService.establishSSHConnection({
+                request: req.body,
+                user: userValidation.user,
+                isSuperAdmin: userValidation.isSuperAdmin
+            });
         } catch (error) {
             logger.error("Error establishing SSH connection:", error);
             return createResponse(500, "Internal Server Error");
@@ -128,7 +137,16 @@ export class GuacamoleService extends Service {
      */
     public async establishRDPConnection(req: Request): Promise<resp<GuacamoleConnection | undefined>> {
         try {
-            return this.connectionEstablishmentService.establishRDPConnection(req);
+            const userValidation = await this._validateUserPermissions(req);
+            if ('error' in userValidation) {
+                return userValidation.error;
+            }
+
+            return this.connectionEstablishmentService.establishRDPConnection({
+                request: req.body,
+                user: userValidation.user,
+                isSuperAdmin: userValidation.isSuperAdmin
+            });
         } catch (error) {
             return createResponse(500, "Internal Server Error");
         }
@@ -139,7 +157,16 @@ export class GuacamoleService extends Service {
      */
     public async establishVNCConnection(req: Request): Promise<resp<GuacamoleConnection | undefined>> {
         try {
-            return this.connectionEstablishmentService.establishVNCConnection(req);
+            const userValidation = await this._validateUserPermissions(req);
+            if ('error' in userValidation) {
+                return userValidation.error;
+            }
+
+            return this.connectionEstablishmentService.establishVNCConnection({
+                request: req.body,
+                user: userValidation.user,
+                isSuperAdmin: userValidation.isSuperAdmin
+            });
         } catch (error) {
             logger.error("Error establishing VNC connection:", error);
             return createResponse(500, "Internal Server Error");
@@ -188,7 +215,7 @@ export class GuacamoleService extends Service {
             const { user } = userValidation;
 
             // 獲取 Guacamole 認證令牌
-            const authTokenResult = await this._getGuacamoleAuthToken(req);
+            const authTokenResult = await this._getGuacamoleAuthTokenForUser(user);
             if (authTokenResult.code !== 200 || !authTokenResult.body) {
                 return createResponse(500, "Failed to authenticate with Guacamole service");
             }

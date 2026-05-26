@@ -8,27 +8,22 @@ const user = {
     email: "student@example.com"
 } as any;
 
-function makeRequest(body: Record<string, unknown>) {
+function makeInput(body: Record<string, unknown>) {
     return {
-        body,
-        headers: { authorization: "Bearer token" }
+        request: body,
+        user,
+        isSuperAdmin: false
     } as any;
 }
 
 function makeService(options: {
     configured?: boolean;
-    authError?: boolean;
     preflightError?: any;
 } = {}) {
     const calls: Array<{ method: string; args: unknown[] }> = [];
     const service = new GuacamoleConnectionEstablishmentService({
         guacamoleBaseUrl: "https://guac.example.test",
         isConfigured: () => options.configured ?? true,
-        validateUserPermissions: async (req) => {
-            calls.push({ method: "validateUserPermissions", args: [req.body] });
-            if (options.authError) return { error: { code: 401, message: "Authentication failed" } as any };
-            return { user, isSuperAdmin: false };
-        },
         getAuthToken: async () => ({ code: 200, message: "ok", body: { token: "token-1", dataSource: "postgresql" } } as any),
         nowMs: () => 1_779_724_800_000,
         directUrlBuilder: (baseUrl, configId, dataSource, token) => {
@@ -64,7 +59,7 @@ describe("GuacamoleConnectionEstablishmentService", () => {
     it("establishes SSH connections through preflight and config lifecycle", async () => {
         const { service, calls } = makeService();
 
-        await expect(service.establishSSHConnection(makeRequest({
+        await expect(service.establishSSHConnection(makeInput({
             vm_id: vmId,
             username: "root",
             password: "secret",
@@ -82,12 +77,11 @@ describe("GuacamoleConnectionEstablishmentService", () => {
         });
 
         expect(calls.map((call) => call.method)).toEqual([
-            "validateUserPermissions",
             "preparePreflight",
             "getOrCreateConnectionConfig",
             "directUrlBuilder"
         ]);
-        expect((calls[2].args[0] as any)).toMatchObject({
+        expect((calls[1].args[0] as any)).toMatchObject({
             protocol: "ssh",
             hostname: "10.0.0.5",
             port: 22
@@ -97,7 +91,7 @@ describe("GuacamoleConnectionEstablishmentService", () => {
     it("rejects RDP requests without credentials before preflight", async () => {
         const { service, calls } = makeService();
 
-        await expect(service.establishRDPConnection(makeRequest({
+        await expect(service.establishRDPConnection(makeInput({
             vm_id: vmId,
             port: 3389
         }))).resolves.toMatchObject({
@@ -110,7 +104,7 @@ describe("GuacamoleConnectionEstablishmentService", () => {
     it("returns configuration errors before authentication", async () => {
         const { service, calls } = makeService({ configured: false });
 
-        await expect(service.establishVNCConnection(makeRequest({
+        await expect(service.establishVNCConnection(makeInput({
             vm_id: vmId,
             password: "secret"
         }))).resolves.toMatchObject({
@@ -125,7 +119,7 @@ describe("GuacamoleConnectionEstablishmentService", () => {
             preflightError: { code: 400, message: "VM is not running" }
         });
 
-        await expect(service.establishVNCConnection(makeRequest({
+        await expect(service.establishVNCConnection(makeInput({
             vm_id: vmId,
             password: "secret"
         }))).resolves.toMatchObject({

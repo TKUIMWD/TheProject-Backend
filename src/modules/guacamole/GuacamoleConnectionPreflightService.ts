@@ -1,5 +1,4 @@
 import * as net from "net";
-import { Request } from "express";
 import { logger } from "../../middlewares/log";
 import { GuacamoleAuthToken, GuacamoleConnection } from "../../interfaces/Guacamole";
 import { User } from "../../interfaces/User";
@@ -42,14 +41,14 @@ type VMUtilsPort = {
 export type GuacamoleConnectionPreflightServiceDeps = {
     vmRepository?: VMRepositoryPort;
     vmUtils?: VMUtilsPort;
-    getAuthToken?: (req: Request) => Promise<resp<GuacamoleAuthToken | undefined>>;
+    getAuthToken?: (user: User) => Promise<resp<GuacamoleAuthToken | undefined>>;
     checkConnectivity?: (hostname: string, port: number, serviceName: string) => Promise<{ connected: boolean; message?: string }>;
 };
 
 export class GuacamoleConnectionPreflightService {
     private readonly vmRepository: VMRepositoryPort;
     private readonly vmUtils: VMUtilsPort;
-    private readonly getAuthToken?: (req: Request) => Promise<resp<GuacamoleAuthToken | undefined>>;
+    private readonly getAuthToken?: (user: User) => Promise<resp<GuacamoleAuthToken | undefined>>;
     private readonly checkConnectivity: (hostname: string, port: number, serviceName: string) => Promise<{ connected: boolean; message?: string }>;
 
     constructor(deps: GuacamoleConnectionPreflightServiceDeps = {}) {
@@ -60,7 +59,6 @@ export class GuacamoleConnectionPreflightService {
     }
 
     public async prepare(input: {
-        req: Request;
         protocol: GuacamoleConnectionProtocol;
         user: User;
         isSuperAdmin: boolean;
@@ -104,7 +102,7 @@ export class GuacamoleConnectionPreflightService {
 
         const vmConfig = await this.vmUtils.getVMConfig(vm.pve_node, vm.pve_vmid);
         const vmName = buildGuacamoleVMDisplayName(vmConfig, vm.pve_vmid);
-        const authTokenResult = await this.requireAuthToken(input.req);
+        const authTokenResult = await this.requireAuthToken(input.user);
         if (authTokenResult.code !== 200 || !authTokenResult.body) {
             if (input.protocol === "vnc") {
                 logger.error("Failed to get Guacamole auth token for VNC connection");
@@ -188,12 +186,12 @@ export class GuacamoleConnectionPreflightService {
         }
     }
 
-    private async requireAuthToken(req: Request): Promise<resp<GuacamoleAuthToken | undefined>> {
+    private async requireAuthToken(user: User): Promise<resp<GuacamoleAuthToken | undefined>> {
         if (!this.getAuthToken) {
             return createResponse(500, GUACAMOLE_AUTHENTICATION_FAILURE_MESSAGE);
         }
 
-        return this.getAuthToken(req);
+        return this.getAuthToken(user);
     }
 }
 

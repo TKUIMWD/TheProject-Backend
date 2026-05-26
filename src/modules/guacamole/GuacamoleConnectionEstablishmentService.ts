@@ -1,4 +1,3 @@
-import { Request } from "express";
 import { GuacamoleAuthToken, GuacamoleConnection, GuacamoleConnectionRequest } from "../../interfaces/Guacamole";
 import { User } from "../../interfaces/User";
 import { logger } from "../../middlewares/log";
@@ -34,16 +33,18 @@ import {
 
 type GuacamoleConnectionProfile = { name: string; config: Record<string, unknown> };
 
-type UserPermissionResult = { user: User; isSuperAdmin: boolean } | { error: resp<undefined> };
+type GuacamoleConnectionEstablishmentInput = {
+    request: GuacamoleConnectionRequest;
+    user: User;
+    isSuperAdmin: boolean;
+};
 
 type GuacamoleConnectionEstablishmentServiceDeps = {
     guacamoleBaseUrl: string;
     isConfigured: () => boolean;
-    validateUserPermissions: (req: Request) => Promise<UserPermissionResult>;
-    getAuthToken: (req: Request) => Promise<resp<GuacamoleAuthToken | undefined>>;
+    getAuthToken: (user: User) => Promise<resp<GuacamoleAuthToken | undefined>>;
     configService?: Pick<GuacamoleConnectionConfigService, "getOrCreateConnectionConfig">;
     preparePreflight?: (input: {
-        req: Request;
         protocol: GuacamoleConnectionProtocol;
         user: User;
         isSuperAdmin: boolean;
@@ -57,8 +58,7 @@ type GuacamoleConnectionEstablishmentServiceDeps = {
 export class GuacamoleConnectionEstablishmentService {
     private readonly guacamoleBaseUrl: string;
     private readonly isConfigured: () => boolean;
-    private readonly validateUserPermissions: (req: Request) => Promise<UserPermissionResult>;
-    private readonly getAuthToken: (req: Request) => Promise<resp<GuacamoleAuthToken | undefined>>;
+    private readonly getAuthToken: (user: User) => Promise<resp<GuacamoleAuthToken | undefined>>;
     private readonly configService: Pick<GuacamoleConnectionConfigService, "getOrCreateConnectionConfig">;
     private readonly preparePreflightOverride?: GuacamoleConnectionEstablishmentServiceDeps["preparePreflight"];
     private readonly directUrlBuilder: (baseUrl: string, configId: string, dataSource: string, token: string) => string;
@@ -67,7 +67,6 @@ export class GuacamoleConnectionEstablishmentService {
     constructor(deps: GuacamoleConnectionEstablishmentServiceDeps) {
         this.guacamoleBaseUrl = deps.guacamoleBaseUrl;
         this.isConfigured = deps.isConfigured;
-        this.validateUserPermissions = deps.validateUserPermissions;
         this.getAuthToken = deps.getAuthToken;
         this.configService = deps.configService ?? guacamoleConnectionConfigService;
         this.preparePreflightOverride = deps.preparePreflight;
@@ -75,13 +74,14 @@ export class GuacamoleConnectionEstablishmentService {
         this.nowMs = deps.nowMs ?? Date.now;
     }
 
-    public async establishSSHConnection(req: Request): Promise<resp<GuacamoleConnection | undefined>> {
-        const request = req.body as GuacamoleConnectionRequest;
+    public async establishSSHConnection(input: GuacamoleConnectionEstablishmentInput): Promise<resp<GuacamoleConnection | undefined>> {
+        const request = input.request;
         const sshFontSize = normalizeTerminalFontSize(request.font_size);
         return this.establishConnection({
-            req,
             protocol: "ssh",
             request,
+            user: input.user,
+            isSuperAdmin: input.isSuperAdmin,
             buildProfile: ({ user, preflight, connectionTarget }) => buildSSHConnectionProfile({
                 vmName: preflight.vmName,
                 email: user.email,
@@ -95,8 +95,8 @@ export class GuacamoleConnectionEstablishmentService {
         });
     }
 
-    public async establishRDPConnection(req: Request): Promise<resp<GuacamoleConnection | undefined>> {
-        const request = req.body as GuacamoleConnectionRequest;
+    public async establishRDPConnection(input: GuacamoleConnectionEstablishmentInput): Promise<resp<GuacamoleConnection | undefined>> {
+        const request = input.request;
         const username = request.username;
         const password = request.password;
         if (!username || !password) {
@@ -104,9 +104,10 @@ export class GuacamoleConnectionEstablishmentService {
         }
 
         return this.establishConnection({
-            req,
             protocol: "rdp",
             request,
+            user: input.user,
+            isSuperAdmin: input.isSuperAdmin,
             buildProfile: ({ user, preflight, connectionTarget }) => buildRDPConnectionProfile({
                 vmName: preflight.vmName,
                 email: user.email,
@@ -118,12 +119,13 @@ export class GuacamoleConnectionEstablishmentService {
         });
     }
 
-    public async establishVNCConnection(req: Request): Promise<resp<GuacamoleConnection | undefined>> {
-        const request = req.body as GuacamoleConnectionRequest;
+    public async establishVNCConnection(input: GuacamoleConnectionEstablishmentInput): Promise<resp<GuacamoleConnection | undefined>> {
+        const request = input.request;
         return this.establishConnection({
-            req,
             protocol: "vnc",
             request,
+            user: input.user,
+            isSuperAdmin: input.isSuperAdmin,
             buildProfile: ({ user, preflight, connectionTarget }) => buildVNCConnectionProfile({
                 vmName: preflight.vmName,
                 email: user.email,
@@ -135,9 +137,10 @@ export class GuacamoleConnectionEstablishmentService {
     }
 
     private async establishConnection(input: {
-        req: Request;
         protocol: GuacamoleConnectionProtocol;
         request: GuacamoleConnectionRequest;
+        user: User;
+        isSuperAdmin: boolean;
         buildProfile: (input: {
             user: User;
             preflight: Exclude<GuacamoleConnectionPreflightContext, { error: resp<GuacamoleConnection | undefined> }>;
@@ -149,12 +152,7 @@ export class GuacamoleConnectionEstablishmentService {
             return createResponse(503, GUACAMOLE_SERVICE_NOT_CONFIGURED_MESSAGE);
         }
 
-        const userValidation = await this.validateUserPermissions(input.req);
-        if ('error' in userValidation) {
-            return userValidation.error;
-        }
-
-        const { user, isSuperAdmin } = userValidation;
+        const { user, isSuperAdmin } = input;
         const connectionTarget = validateGuacamoleConnectionTarget({
             vm_id: input.request.vm_id,
             port: input.request.port
@@ -164,7 +162,6 @@ export class GuacamoleConnectionEstablishmentService {
         }
 
         const preflight = await this.prepareConnectionPreflight({
-            req: input.req,
             protocol: input.protocol,
             user,
             isSuperAdmin,
@@ -192,7 +189,6 @@ export class GuacamoleConnectionEstablishmentService {
     }
 
     private async prepareConnectionPreflight(input: {
-        req: Request;
         protocol: GuacamoleConnectionProtocol;
         user: User;
         isSuperAdmin: boolean;
