@@ -128,9 +128,9 @@ Current facade/service file sizes:
 
 | File | Lines | Note |
 | --- | ---: | --- |
+| `src/service/VMBoxService.ts` | 169 | Thin auth/error wrapper around VM Box request adapter with shared request-context forwarding. |
 | `src/service/CourseService.ts` | 160 | Thin auth/error wrapper around Course request adapter. |
 | `src/service/PVEService.ts` | 157 | Thin token/role wrapper around PVE request adapter. |
-| `src/service/VMBoxService.ts` | 169 | Thin auth/error wrapper around VM Box request adapter with shared request-context forwarding. |
 | `src/service/GuacamoleService.ts` | 134 | Thin token/permission wrapper around Guacamole request adapter. |
 | `src/service/AIChatService.ts` | 125 | Thin auth/error wrapper around AI Chat request adapter. |
 | `src/service/VMManageService.ts` | 120 | Thin token/role wrapper around VM Manage request adapter. |
