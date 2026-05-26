@@ -6,10 +6,7 @@ import { User } from "../interfaces/User";
 import { logger } from "../middlewares/log";
 import { validateTokenAndGetUser, getTokenRole, validateTokenAndGetSuperAdminUser } from "../utils/auth";
 import { resp, createResponse } from "../utils/resp";
-import { validateObjectIdInput } from "../modules/common/ObjectIdPolicy";
-import { canDeleteVMByOwnership } from "../modules/vm/VMDeletionPolicy";
-import { vmRepository } from "../modules/vm/VMRepository";
-import { vmDeletionWorkflowService } from "../modules/vm/VMDeletionWorkflowService";
+import { vmDeletionAccessService } from "../modules/vm/VMDeletionAccessService";
 import { vmConfigUpdateWorkflowService } from "../modules/vm/VMConfigUpdateWorkflowService";
 import { vmCreationRequestService } from "../modules/vm/VMCreationRequestService";
 
@@ -71,30 +68,7 @@ export class VMManageService extends Service {
         tokenRole: string;
         vmId: unknown;
     }): Promise<resp<VMDeletionResponse | undefined>> {
-        const vmIdResult = validateObjectIdInput(input.vmId, "vm_id");
-        if (!vmIdResult.valid) {
-            return createResponse(400, vmIdResult.message);
-        }
-        const normalizedVmId = vmIdResult.value;
-
-        const ownershipDecision = canDeleteVMByOwnership({
-            tokenRole: input.tokenRole,
-            ownedVmIds: input.user.owned_vms,
-            vmId: normalizedVmId
-        });
-        if (!ownershipDecision.allowed) {
-            return createResponse(403, ownershipDecision.message);
-        }
-
-        const vm = await vmRepository.findById(normalizedVmId);
-        if (!vm) {
-            return createResponse(404, "VM not found");
-        }
-
-        return vmDeletionWorkflowService.deleteUserVM({
-            vmId: normalizedVmId,
-            vm
-        });
+        return vmDeletionAccessService.deleteUserVM(input);
     }
 
     // 驗證用戶是否有權限刪除 VM

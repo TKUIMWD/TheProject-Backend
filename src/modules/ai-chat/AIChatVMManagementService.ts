@@ -8,9 +8,9 @@ import { AIVMManagementPrompts } from "../../utils/AI_Prompts/AIVMManagementProm
 import { VMUtils } from "../../utils/VMUtils";
 import { createResponse, resp } from "../../utils/resp";
 import { openAIClientFactory } from "../openai/OpenAIClientFactory";
-import { VMManageService } from "../../service/VMManageService";
-import { VMOperateService } from "../../service/VMOperateService";
 import { vmReadService } from "../vm/VMReadService";
+import { vmDeletionAccessService } from "../vm/VMDeletionAccessService";
+import { vmOperationExecutionService } from "../vm/VMOperationExecutionService";
 import {
     sanitizeAIChatUserInput,
     validateAIChatUserInput,
@@ -44,6 +44,21 @@ import {
 
 type AIVMInventoryItem = AIChatVMInventoryItem;
 type AIVMAction = AIVMManagementAction;
+type VMOperationExecutorPort = {
+    execute(input: {
+        user: User;
+        isSuperAdmin: boolean;
+        vmId: unknown;
+        operation: Extract<AIVMManagementIntent, "boot" | "shutdown" | "poweroff" | "reboot" | "reset">;
+    }): Promise<resp<unknown>>;
+};
+type VMDeletionAccessPort = {
+    deleteUserVM(input: {
+        user: User;
+        tokenRole: string;
+        vmId: unknown;
+    }): Promise<resp<unknown>>;
+};
 
 interface PendingAIVMAction {
     userId: string;
@@ -74,8 +89,8 @@ type AIChatVMManagementServiceDeps = {
     idFactory?: () => string;
     now?: () => number;
     pendingActions?: Map<string, PendingAIVMAction>;
-    vmOperateService?: VMOperateService;
-    vmManageService?: VMManageService;
+    operationExecutor?: VMOperationExecutorPort;
+    deletionAccess?: VMDeletionAccessPort;
 };
 
 const MUTATING_VM_INTENTS = new Set<AIVMManagementIntent>(['boot', 'shutdown', 'poweroff', 'reboot', 'reset', 'delete']);
@@ -87,8 +102,8 @@ export class AIChatVMManagementService {
     private readonly idFactory: () => string;
     private readonly now: () => number;
     private readonly pendingActions: Map<string, PendingAIVMAction>;
-    private readonly vmOperateService: VMOperateService;
-    private readonly vmManageService: VMManageService;
+    private readonly operationExecutor: VMOperationExecutorPort;
+    private readonly deletionAccess: VMDeletionAccessPort;
 
     constructor(deps: AIChatVMManagementServiceDeps = {}) {
         this.inventoryLoader = deps.inventoryLoader;
@@ -97,8 +112,8 @@ export class AIChatVMManagementService {
         this.idFactory = deps.idFactory ?? randomUUID;
         this.now = deps.now ?? Date.now;
         this.pendingActions = deps.pendingActions ?? new Map<string, PendingAIVMAction>();
-        this.vmOperateService = deps.vmOperateService ?? new VMOperateService();
-        this.vmManageService = deps.vmManageService ?? new VMManageService();
+        this.operationExecutor = deps.operationExecutor ?? vmOperationExecutionService;
+        this.deletionAccess = deps.deletionAccess ?? vmDeletionAccessService;
     }
 
     public async manage(input: {
@@ -326,13 +341,13 @@ export class AIChatVMManagementService {
             case 'poweroff':
             case 'reboot':
             case 'reset':
-                return await this.vmOperateService.executeVMOperation({
+                return await this.operationExecutor.execute({
                     ...context,
                     vmId: vm.vm_id,
                     operation: action.intent
                 }) as resp<unknown>;
             case 'delete':
-                return await this.vmManageService.deleteUserVMForUser({
+                return await this.deletionAccess.deleteUserVM({
                     user: context.user,
                     tokenRole: context.user.role,
                     vmId: vm.vm_id

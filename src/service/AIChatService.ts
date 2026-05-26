@@ -1,46 +1,18 @@
 import { Service } from "../abstract/Service";
 import { Request } from "express";
 import { resp, createResponse } from "../utils/resp";
-import { validateTokenAndGetUser, getTokenRole, validateTokenAndGetAdminUser, validateTokenAndGetSuperAdminUser } from "../utils/auth";
+import { validateTokenAndGetUser, getTokenRole, validateTokenAndGetAdminUser } from "../utils/auth";
 import { User } from "../interfaces/User";
 import { logger } from "../middlewares/log";
-import { PlatformGuidePrompts } from "../utils/AI_Prompts/PlatformGuidePrompts";
-import { openAIClientFactory } from "../modules/openai/OpenAIClientFactory";
-import * as fs from 'fs';
-import * as path from 'path';
-import {
-    sanitizeAIChatUserInput,
-    validateAIChatUserInput,
-} from "../modules/ai-chat/AIChatRequestPolicy";
-import {
-    buildLanguageInstruction,
-} from "../modules/ai-chat/AIChatLanguagePolicy";
 import {
     aiChatVMManagementService,
     AIVMManagementResponse
 } from "../modules/ai-chat/AIChatVMManagementService";
 import { aiChatBoxHintService } from "../modules/ai-chat/AIChatBoxHintService";
+import { aiChatPlatformGuideService } from "../modules/ai-chat/AIChatPlatformGuideService";
 
 
 export class AIChatService extends Service {
-
-    private _platformGuideContent: string | null = null;
-
-    private async _loadPlatformGuide(): Promise<string> {
-        if (this._platformGuideContent) {
-            return this._platformGuideContent;
-        }
-
-        try {
-            const guidePath = path.join(__dirname, '../../docs/PLATFORM_GUIDE.md');
-            this._platformGuideContent = fs.readFileSync(guidePath, 'utf-8');
-            return this._platformGuideContent;
-        } catch (error) {
-            logger.error('Error loading platform guide:', error);
-            return 'Platform guide not available. Please contact support.';
-        }
-    }
-
     public async *getBoxHintStream(Request: Request): AsyncGenerator<string, void, unknown> {
         try {
             const { user, error } = await validateTokenAndGetUser<User>(Request);
@@ -92,21 +64,6 @@ export class AIChatService extends Service {
                 return;
             }
 
-            const { user_input } = Request.body;
-            const inputResult = validateAIChatUserInput(user_input);
-            if (!inputResult.valid) {
-                yield JSON.stringify({ 
-                    error: inputResult.message === "user_input must be a non-empty string"
-                        ? "Missing required field: user_input is required"
-                        : inputResult.message,
-                    code: 400 
-                });
-                return;
-            }
-
-            logger.info(`User ${user.username} (${user._id}) requesting platform guidance (stream)`);
-
-            const platformGuideContent = await this._loadPlatformGuide();
             const { role: userRole, error: roleError } = await getTokenRole(Request);
             
             if (roleError || !userRole) {
@@ -117,37 +74,13 @@ export class AIChatService extends Service {
                 return;
             }
 
-            const sanitizedInput = sanitizeAIChatUserInput(inputResult.input);
-            
-            const systemPrompt = `${PlatformGuidePrompts.SYSTEM_INIT}\n\n${buildLanguageInstruction(sanitizedInput)}`;
-            const userPrompt = PlatformGuidePrompts.buildPlatformGuidePrompt(
-                platformGuideContent,
+            for await (const chunk of aiChatPlatformGuideService.streamGuide({
+                user,
                 userRole,
-                sanitizedInput
-            );
-
-            const openai = openAIClientFactory.createChatClient();
-            const model = openAIClientFactory.chatModel();
-
-            const stream = await openai.chat.completions.create({
-                model: model,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userPrompt }
-                ],
-                stream: true,
-                max_completion_tokens: 1500,
-            });
-
-            for await (const chunk of stream) {
-                const content = chunk.choices[0]?.delta?.content;
-                if (content) {
-                    yield content;
-                }
+                body: Request.body
+            })) {
+                yield chunk;
             }
-
-            logger.info(`Platform guidance generated successfully (stream) for User ${user.username}`);
-
         } catch (error) {
             logger.error('Error in getPlatformGuideStream:', error);
             yield JSON.stringify({ 
@@ -165,17 +98,6 @@ export class AIChatService extends Service {
                 return createResponse(error.code, error.message);
             }
 
-            const { user_input } = Request.body;
-            const inputResult = validateAIChatUserInput(user_input);
-            if (!inputResult.valid) {
-                return createResponse(400, inputResult.message === "user_input must be a non-empty string"
-                    ? "Missing required field: user_input is required"
-                    : inputResult.message);
-            }
-
-            logger.info(`User ${user.username} (${user._id}) requesting platform guidance (non-stream)`);
-
-            const platformGuideContent = await this._loadPlatformGuide();
             const { role: userRole, error: roleError } = await getTokenRole(Request);
             
             if (roleError || !userRole) {
@@ -185,32 +107,11 @@ export class AIChatService extends Service {
                 );
             }
 
-            const sanitizedInput = sanitizeAIChatUserInput(inputResult.input);
-            
-            const systemPrompt = `${PlatformGuidePrompts.SYSTEM_INIT}\n\n${buildLanguageInstruction(sanitizedInput)}`;
-            const userPrompt = PlatformGuidePrompts.buildPlatformGuidePrompt(
-                platformGuideContent,
+            return aiChatPlatformGuideService.getGuide({
+                user,
                 userRole,
-                sanitizedInput
-            );
-
-            const openai = openAIClientFactory.createChatClient();
-            const model = openAIClientFactory.chatModel();
-
-            const completion = await openai.chat.completions.create({
-                model: model,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userPrompt }
-                ],
-                max_completion_tokens: 1500,
+                body: Request.body
             });
-
-            const response = completion.choices[0]?.message?.content || 'Unable to generate guidance at this time.';
-
-            logger.info(`Platform guidance generated successfully (non-stream) for User ${user.username}`);
-
-            return createResponse(200, 'Guidance generated successfully', { response });
 
         } catch (error) {
             logger.error('Error in getPlatformGuide:', error);

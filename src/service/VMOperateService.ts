@@ -2,24 +2,10 @@ import { Service } from "../abstract/Service";
 import { resp, createResponse } from "../utils/resp";
 import { Request } from "express";
 import { validateTokenAndGetSuperAdminUser, validateTokenAndGetUser } from "../utils/auth";
-import { VMModel } from "../orm/schemas/VM/VMSchemas";
 import { User } from "../interfaces/User";
-import { VMUtils } from "../utils/VMUtils";
 import { logger } from "../middlewares/log";
-import { env } from "../config/env";
-import {
-    canOperateVM,
-    getVMOperationMessages,
-    validateVMOperationState,
-    validateVMOperationTargetId,
-    VMOperation
-} from "../modules/vm/VMOperationPolicy";
-
-type VMOperationResult = {
-    success: boolean;
-    upid?: string;
-    errorMessage?: string;
-};
+import { VMOperation } from "../modules/vm/VMOperationPolicy";
+import { vmOperationExecutionService } from "../modules/vm/VMOperationExecutionService";
 
 export class VMOperateService extends Service {
     public async _isSuperAdmin(Request: Request): Promise<boolean> {
@@ -55,93 +41,7 @@ export class VMOperateService extends Service {
         vmId: unknown;
         operation: VMOperation;
     }): Promise<resp<any>> {
-        try {
-            const vmIdDecision = validateVMOperationTargetId(input.vmId);
-            if (!vmIdDecision.valid) {
-                return createResponse(400, vmIdDecision.message);
-            }
-            const vm_id = vmIdDecision.vmId;
-            const messages = getVMOperationMessages(input.operation);
-
-            const vm = await VMModel.findOne({ _id: vm_id });
-            if (!vm) {
-                return createResponse(404, "VM not found");
-            }
-
-            if (!canOperateVM(vm.owner, input.user._id!.toString(), input.isSuperAdmin)) {
-                return createResponse(403, "You don't have permission to operate this VM");
-            }
-
-            const statusResult = await VMUtils.getVMStatus(vm.pve_node, vm.pve_vmid);
-            if (!statusResult) {
-                return createResponse(500, "Failed to get VM status");
-            }
-
-            const stateDecision = validateVMOperationState(input.operation, statusResult.status);
-            if (!stateDecision.allowed) {
-                return createResponse(400, stateDecision.message);
-            }
-
-            const result = await this._invokeVMOperation(input.operation, vm.pve_node, vm.pve_vmid);
-            if (!result.success) {
-                logger.error(`${messages.failureMessage} ${vm_id}:`, result.errorMessage);
-                return createResponse(500, result.errorMessage || messages.failureMessage);
-            }
-
-            if (messages.waitTaskLabel && result.upid) {
-                const waitResult = await VMUtils.waitForTaskCompletion(vm.pve_node, result.upid, messages.waitTaskLabel);
-                if (!waitResult.success) {
-                    logger.error(`VM ${vm_id} ${messages.actionLabel} task failed:`, waitResult.errorMessage);
-                    return createResponse(500, waitResult.errorMessage || messages.waitFailureMessage || `${messages.actionLabel} task failed`);
-                }
-            }
-
-            let networkIdentityWarning: string | undefined;
-            if (input.operation === "boot" && env.pve.bootNormalizeGuestNetwork) {
-                networkIdentityWarning = await this._normalizeGuestNetworkIdentity(vm_id, vm.pve_node, vm.pve_vmid);
-            }
-
-            logger.info(`VM ${vm_id} ${messages.successLogLabel} successfully by user ${input.user.username}, UPID: ${result.upid}`);
-            return createResponse(200, messages.successMessage, {
-                upid: result.upid,
-                ...(input.operation === "boot" ? { network_identity_warning: networkIdentityWarning } : {})
-            });
-
-        } catch (error) {
-            logger.error(`Error in ${input.operation}VM:`, error);
-            return createResponse(500, "Internal server error");
-        }
-    }
-
-    private async _invokeVMOperation(operation: VMOperation, node: string, vmid: string): Promise<VMOperationResult> {
-        switch (operation) {
-            case "boot":
-                return VMUtils.startVM(node, vmid);
-            case "shutdown":
-                return VMUtils.shutdownVM(node, vmid);
-            case "poweroff":
-                return VMUtils.stopVM(node, vmid);
-            case "reboot":
-                return VMUtils.rebootVM(node, vmid);
-            case "reset":
-                return VMUtils.resetVM(node, vmid);
-        }
-    }
-
-    private async _normalizeGuestNetworkIdentity(vmId: string, node: string, vmid: string): Promise<string | undefined> {
-        const identityResult = await VMUtils.ensureUniqueGuestNetworkIdentity(
-            node,
-            vmid,
-            env.pve.bootGuestIdentityTimeoutMs
-        );
-        if (!identityResult.success) {
-            const warning = identityResult.errorMessage || "Guest network identity normalization failed";
-            logger.warn(`VM ${vmId} guest network identity normalization failed: ${warning}`);
-            return warning;
-        }
-
-        logger.info(`VM ${vmId} guest network identity normalized: ${(identityResult.stdout || "").split(/\r?\n/).slice(-5).join(" | ")}`);
-        return undefined;
+        return vmOperationExecutionService.execute(input);
     }
 
     /**
