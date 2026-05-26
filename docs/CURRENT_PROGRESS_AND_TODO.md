@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `5e91400 docs update user service refactor progress`
+Latest remote baseline before this snapshot: `be273b6 docs update guacamole service refactor progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -43,6 +43,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - `AIBoxBuildService` now shares one request-context helper for params/body/authorization forwarding into `AIBoxBuildRequestAdapterService`.
 - `UserService` now shares one request-context helper for user/body/params/avatar-file forwarding into user profile/read modules.
 - `GuacamoleService` now shares one request-context helper for user/body/permission forwarding into `GuacamoleRequestAdapterService`.
+- `AIChatService` now shares one request-context helper for user/body/role forwarding into `AIChatRequestAdapterService`.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -111,6 +112,7 @@ The latest recorded full gate is green after these slices:
   - AI Box Build job/run route-to-workflow adapter logic now lives in `AIBoxBuildRequestAdapterService`.
   - `AIBoxBuildService` now shares one request-context helper for params/body/authorization forwarding into the request adapter.
   - AI Chat hint/platform-guide/VM-management route-to-workflow adapter logic now lives in `AIChatRequestAdapterService`.
+  - `AIChatService` now shares one request-context helper for user/body/role forwarding into the request adapter.
 - Course, Template, VM Box, and Review domains have many extracted/tested service and policy slices, including create/update/list/review/membership/submission/audit/writeup/answer flows.
 - Course request adapter mapping is now directly tested with injected workflow ports, and `CourseService` now uses one shared request-context helper for forwarding actor/body/query/params into the adapter.
 - VM Box request adapter mapping is now directly tested with injected workflow ports, and `VMBoxService` now uses one shared request-context helper for forwarding actor/body/query/params into the adapter.
@@ -144,9 +146,9 @@ Current facade/service file sizes:
 | `src/service/VMBoxService.ts` | 169 | Thin auth/error wrapper around VM Box request adapter with shared request-context forwarding. |
 | `src/service/CourseService.ts` | 157 | Thin auth/error wrapper around Course request adapter with shared request-context forwarding. |
 | `src/service/PVEService.ts` | 147 | Thin token/role wrapper around PVE request adapter with shared request-context forwarding. |
+| `src/service/AIChatService.ts` | 138 | Thin auth/error wrapper around AI Chat request adapter with shared request-context forwarding. |
 | `src/service/GuacamoleService.ts` | 127 | Thin token/permission wrapper around Guacamole request adapter with shared request-context forwarding. |
 | `src/service/UserService.ts` | 127 | Thin auth/error wrapper around profile/read modules with shared request-context forwarding. |
-| `src/service/AIChatService.ts` | 125 | Thin auth/error wrapper around AI Chat request adapter. |
 | `src/service/VMManageService.ts` | 120 | Thin token/role wrapper around VM Manage request adapter. |
 | `src/service/AIBoxBuildService.ts` | 100 | Thin token wrapper around AI Box Build request adapter with shared request-context forwarding. |
 | `src/service/TemplateService.ts` | 93 | Thin token wrapper around Template request adapter with shared request-context forwarding. |
@@ -230,6 +232,7 @@ Use small, isolated commits:
 19. `refactor ai box build service request context forwarding`
 20. `refactor user service request context forwarding`
 21. `refactor guacamole service request context forwarding`
-22. `docs update backend refactor progress`
+22. `refactor ai chat service request context forwarding`
+23. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.
