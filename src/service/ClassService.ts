@@ -3,75 +3,53 @@ import { Service } from "../abstract/Service";
 import { logger } from "../middlewares/log";
 import { validateTokenAndGetAdminUser } from "../utils/auth";
 import { createResponse, resp } from "../utils/resp";
-import { classManagementService } from "../modules/courses/ClassManagementService";
+import { courseStructureRequestAdapterService } from "../modules/courses/CourseStructureRequestAdapterService";
 
 export class ClassService extends Service {
     public async getClassById(Request: Request): Promise<resp<any>> {
-        try {
-            const { user, error } = await validateTokenAndGetAdminUser<string>(Request);
-            if (error) {
-                return error;
-            }
-
-            return classManagementService.getClassById({
-                user,
-                classId: Request.params.classId
-            });
-        } catch (err) {
-            logger.error("Error in getClassById:", err);
-            return createResponse(500, "Internal Server Error");
-        }
+        return this.withAdminUser(Request, "getClassById", (user) => courseStructureRequestAdapterService.getClassById({
+            user,
+            params: Request.params
+        }));
     }
 
     public async UpdateClassById(Request: Request): Promise<resp<string | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetAdminUser<string>(Request);
-            if (error) {
-                return error;
-            }
-
-            return classManagementService.updateClassById({
-                user,
-                classId: Request.params.classId,
-                body: Request.body
-            });
-        } catch (err) {
-            logger.error("Error in UpdateClassById:", err);
-            return createResponse(500, "Internal Server Error");
-        }
+        return this.withAdminUser(Request, "UpdateClassById", (user) => courseStructureRequestAdapterService.updateClassById({
+            user,
+            params: Request.params,
+            body: Request.body
+        }));
     }
 
     public async DeleteClassById(Request: Request): Promise<resp<string | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetAdminUser<string>(Request);
-            if (error) {
-                return error;
-            }
-
-            return classManagementService.deleteClassById({
-                user,
-                classId: Request.params.classId
-            });
-        } catch (err) {
-            logger.error("Error in DeleteClassById:", err);
-            return createResponse(500, "Internal Server Error");
-        }
+        return this.withAdminUser(Request, "DeleteClassById", (user) => courseStructureRequestAdapterService.deleteClassById({
+            user,
+            params: Request.params
+        }));
     }
 
     public async AddClassToCourse(Request: Request): Promise<resp<String | { class_id: string } | undefined>> {
+        return this.withAdminUser(Request, "AddClassToCourse", (user) => courseStructureRequestAdapterService.addClassToCourse({
+            user,
+            params: Request.params,
+            body: Request.body
+        }));
+    }
+
+    private async withAdminUser<T>(
+        Request: Request,
+        actionName: string,
+        action: (user: any) => Promise<resp<T | undefined>>
+    ): Promise<resp<T | undefined>> {
         try {
-            const { user, error } = await validateTokenAndGetAdminUser<String>(Request);
+            const { user, error } = await validateTokenAndGetAdminUser<T>(Request);
             if (error) {
                 return error;
             }
 
-            return classManagementService.addClassToCourse({
-                user,
-                courseId: Request.params.courseId,
-                body: Request.body
-            });
+            return action(user);
         } catch (err) {
-            logger.error("Error in AddClassToCourse:", err);
+            logger.error(`Error in ${actionName}:`, err);
             return createResponse(500, "Internal Server Error");
         }
     }

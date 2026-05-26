@@ -4,7 +4,7 @@ import { validateTokenAndGetAdminUser, validateTokenAndGetUser } from "../utils/
 import { resp, createResponse } from "../utils/resp"
 import { Request } from "express";
 import { logger } from "../middlewares/log";
-import { chapterManagementService } from "../modules/courses/ChapterManagementService";
+import { courseStructureRequestAdapterService } from "../modules/courses/CourseStructureRequestAdapterService";
 
 export class ChapterService extends Service {
     /**
@@ -12,21 +12,10 @@ export class ChapterService extends Service {
      * @returns resp<ChapterPageDTO | undefined>
      */
     public async getChapterById(Request: Request): Promise<resp<ChapterPageDTO | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetUser<ChapterPageDTO>(Request);
-            if (error) {
-                return error;
-            }
-
-            return chapterManagementService.getChapterById({
-                user,
-                chapterId: Request.params.chapterId
-            });
-
-        } catch (err) {
-            logger.error("Error in getChapterById:", err);
-            return createResponse(500, "Internal Server Error");
-        }
+        return this.withUser(Request, "getChapterById", (user) => courseStructureRequestAdapterService.getChapterById({
+            user,
+            params: Request.params
+        }));
     }
 
     /**
@@ -35,21 +24,10 @@ export class ChapterService extends Service {
      * @returns A promise resolving to a success or error response.
      */
     public async DeleteChapterById(Request: Request): Promise<resp<string | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetAdminUser<string>(Request);
-            if (error) {
-                return error;
-            }
-
-            return chapterManagementService.deleteChapterById({
-                user,
-                chapterId: Request.params.chapterId
-            });
-
-        } catch (err) {
-            logger.error("Error in DeleteChapterById:", err);
-            return createResponse(500, "Internal Server Error");
-        }
+        return this.withAdminUser(Request, "DeleteChapterById", (user) => courseStructureRequestAdapterService.deleteChapterById({
+            user,
+            params: Request.params
+        }));
     }
 
     /**
@@ -58,38 +36,53 @@ export class ChapterService extends Service {
      * @returns A promise resolving to a success or error response.
      */
     public async UpdateChapterById(Request: Request): Promise<resp<string | undefined>> {
+        return this.withAdminUser(Request, "UpdateChapterById", (user) => courseStructureRequestAdapterService.updateChapterById({
+            user,
+            params: Request.params,
+            body: Request.body
+        }));
+    }
+
+    public async AddChapterToClass(Request: Request): Promise<resp<String | { chapter_id: string } | undefined>> {
+        return this.withAdminUser(Request, "AddChapterToClass", (user) => courseStructureRequestAdapterService.addChapterToClass({
+            user,
+            params: Request.params,
+            body: Request.body
+        }));
+    }
+
+    private async withUser<T>(
+        Request: Request,
+        actionName: string,
+        action: (user: any) => Promise<resp<T | undefined>>
+    ): Promise<resp<T | undefined>> {
         try {
-            const { user, error } = await validateTokenAndGetAdminUser<string>(Request);
+            const { user, error } = await validateTokenAndGetUser<T>(Request);
             if (error) {
                 return error;
             }
 
-            return chapterManagementService.updateChapterById({
-                user,
-                chapterId: Request.params.chapterId,
-                body: Request.body
-            });
-
+            return action(user);
         } catch (err) {
-            logger.error("Error in UpdateChapterById:", err);
+            logger.error(`Error in ${actionName}:`, err);
             return createResponse(500, "Internal Server Error");
         }
     }
 
-    public async AddChapterToClass(Request: Request): Promise<resp<String | { chapter_id: string } | undefined>> {
+    private async withAdminUser<T>(
+        Request: Request,
+        actionName: string,
+        action: (user: any) => Promise<resp<T | undefined>>
+    ): Promise<resp<T | undefined>> {
         try {
-            const { user, error } = await validateTokenAndGetAdminUser<String>(Request);
+            const { user, error } = await validateTokenAndGetAdminUser<T>(Request);
             if (error) {
                 return error;
             }
 
-            return chapterManagementService.addChapterToClass({
-                user,
-                classId: Request.params.classId,
-                body: Request.body
-            });
-        } catch (error) {
-            logger.error("Error in AddChapterToClass:", error);
+            return action(user);
+        } catch (err) {
+            logger.error(`Error in ${actionName}:`, err);
             return createResponse(500, "Internal Server Error");
         }
     }
