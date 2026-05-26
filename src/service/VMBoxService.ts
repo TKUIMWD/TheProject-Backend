@@ -3,155 +3,96 @@ import { SubmittedBoxStatus } from "../interfaces/SubmittedBox";
 import { VM_Box_Info } from "../interfaces/VM/VM_Box";
 import { logger } from "../middlewares/log";
 import { vmBoxRequestAdapterService } from "../modules/vm-box/VMBoxRequestAdapterService";
-import { validateTokenAndGetAdminUser, validateTokenAndGetSuperAdminUser, validateTokenAndGetUser } from "../utils/auth";
 import { createResponse, resp } from "../utils/resp";
-import { Request } from "express";
 
-type TokenValidator = <T>(request: Request) => Promise<{ user: any; error?: resp<T | undefined> }>;
-type VMBoxServiceAdapterInput = {
+export type VMBoxServiceAdapterInput = {
     user: any;
-    params: Request["params"];
-    body: any;
-    query: Request["query"];
+    params?: Record<string, any>;
+    body?: any;
+    query?: Record<string, any>;
 };
 
 export class VMBoxService extends Service {
-    public submitBox(Request: Request): Promise<resp<any>> {
-        return this.withAdminInput(Request, "submitBox", "admin", (input) => vmBoxRequestAdapterService.submitBox(input));
+    public submitBox(input: VMBoxServiceAdapterInput): Promise<resp<any>> {
+        return vmBoxRequestAdapterService.submitBox(this.normalizeInput(input));
     }
 
-    public getSubmittedBoxes(Request: Request): Promise<resp<(VM_Box_Info & { status: SubmittedBoxStatus })[] | undefined>> {
-        return this.withSuperAdminInput(Request, "getSubmittedBoxes", "super admin", () => {
-            return vmBoxRequestAdapterService.listSubmittedBoxes();
-        });
+    public getSubmittedBoxes(): Promise<resp<(VM_Box_Info & { status: SubmittedBoxStatus })[] | undefined>> {
+        return vmBoxRequestAdapterService.listSubmittedBoxes();
     }
 
-    public auditBoxSubmission(Request: Request): Promise<resp<string | undefined>> {
-        return this.withSuperAdminInput(Request, "auditBoxSubmission", "super admin", (input) =>
-            vmBoxRequestAdapterService.auditBoxSubmission(input)
-        );
+    public auditBoxSubmission(input: VMBoxServiceAdapterInput): Promise<resp<string | undefined>> {
+        return vmBoxRequestAdapterService.auditBoxSubmission(this.normalizeInput(input));
     }
 
-    public rateBox(Request: Request): Promise<resp<any>> {
-        return this.withUserInput(Request, "rateBox", "token", (input) => vmBoxRequestAdapterService.rateBox(input));
+    public rateBox(input: VMBoxServiceAdapterInput): Promise<resp<any>> {
+        return vmBoxRequestAdapterService.rateBox(this.normalizeInput(input));
     }
 
-    public getPublicBoxes(_Request: Request): Promise<resp<VM_Box_Info[] | undefined>> {
+    public getPublicBoxes(): Promise<resp<VM_Box_Info[] | undefined>> {
         return this.run("getPublicBoxes", () => vmBoxRequestAdapterService.listPublicBoxes());
     }
 
-    public getPendingBoxes(Request: Request): Promise<resp<VM_Box_Info[] | undefined>> {
-        return this.withSuperAdminInput(Request, "getPendingBoxes", "super admin", () => {
-            return vmBoxRequestAdapterService.listPendingBoxes();
-        });
+    public getPendingBoxes(): Promise<resp<VM_Box_Info[] | undefined>> {
+        return vmBoxRequestAdapterService.listPendingBoxes();
     }
 
-    public updateBoxAiAssistantSetting(Request: Request): Promise<resp<any>> {
-        return this.withAdminInput(Request, "updateBoxAiAssistantSetting", "admin", (input) =>
-            vmBoxRequestAdapterService.updateBoxAiAssistantSetting(input)
-        );
+    public updateBoxAiAssistantSetting(input: VMBoxServiceAdapterInput): Promise<resp<any>> {
+        return vmBoxRequestAdapterService.updateBoxAiAssistantSetting(this.normalizeInput(input));
     }
 
-    public getBoxReviews(Request: Request): Promise<resp<any>> {
-        return this.withUserInput(Request, "getBoxReviews", "token", (input) => vmBoxRequestAdapterService.getBoxReviews(input));
+    public getBoxReviews(input: VMBoxServiceAdapterInput): Promise<resp<any>> {
+        return vmBoxRequestAdapterService.getBoxReviews(this.normalizeInput(input));
     }
 
-    public updateBoxReview(Request: Request): Promise<resp<any>> {
-        return this.withUserInput(Request, "updateBoxReview", "token", (input) => vmBoxRequestAdapterService.updateBoxReview(input));
+    public updateBoxReview(input: VMBoxServiceAdapterInput): Promise<resp<any>> {
+        return vmBoxRequestAdapterService.updateBoxReview(this.normalizeInput(input));
     }
 
-    public deleteBoxReview(Request: Request): Promise<resp<any>> {
-        return this.withUserInput(Request, "deleteBoxReview", "token", (input) => vmBoxRequestAdapterService.deleteBoxReview(input));
+    public deleteBoxReview(input: VMBoxServiceAdapterInput): Promise<resp<any>> {
+        return vmBoxRequestAdapterService.deleteBoxReview(this.normalizeInput(input));
     }
 
-    public submitBoxWriteup(Request: Request): Promise<resp<any>> {
-        return this.withUserInput(Request, "submitBoxWriteup", "token", (input) => vmBoxRequestAdapterService.submitBoxWriteup(input));
+    public submitBoxWriteup(input: VMBoxServiceAdapterInput): Promise<resp<any>> {
+        return vmBoxRequestAdapterService.submitBoxWriteup(this.normalizeInput(input));
     }
 
-    public getPublicBoxWriteups(Request: Request): Promise<resp<any>> {
+    public getPublicBoxWriteups(input: VMBoxServiceAdapterInput): Promise<resp<any>> {
         return this.run("getPublicBoxWriteups", () => {
-            return vmBoxRequestAdapterService.getPublicBoxWriteups(this.toAdapterInput(Request, undefined));
+            return vmBoxRequestAdapterService.getPublicBoxWriteups(this.normalizeInput(input));
         });
     }
 
-    public getMyBoxWriteups(Request: Request): Promise<resp<any>> {
-        return this.withUserInput(Request, "getMyBoxWriteups", "token", (input) => vmBoxRequestAdapterService.getMyBoxWriteups(input));
+    public getMyBoxWriteups(input: VMBoxServiceAdapterInput): Promise<resp<any>> {
+        return vmBoxRequestAdapterService.getMyBoxWriteups(this.normalizeInput(input));
     }
 
-    public getBoxWriteupSubmissions(Request: Request): Promise<resp<any>> {
-        return this.withAdminInput(Request, "getBoxWriteupSubmissions", "admin", (input) =>
-            vmBoxRequestAdapterService.getBoxWriteupSubmissions(input)
-        );
+    public getBoxWriteupSubmissions(input: VMBoxServiceAdapterInput): Promise<resp<any>> {
+        return vmBoxRequestAdapterService.getBoxWriteupSubmissions(this.normalizeInput(input));
     }
 
-    public reviewBoxWriteup(Request: Request): Promise<resp<any>> {
-        return this.withAdminInput(Request, "reviewBoxWriteup", "admin", (input) => vmBoxRequestAdapterService.reviewBoxWriteup(input));
+    public reviewBoxWriteup(input: VMBoxServiceAdapterInput): Promise<resp<any>> {
+        return vmBoxRequestAdapterService.reviewBoxWriteup(this.normalizeInput(input));
     }
 
-    public updateBoxWriteupVisibility(Request: Request): Promise<resp<any>> {
-        return this.withAdminInput(Request, "updateBoxWriteupVisibility", "admin", (input) =>
-            vmBoxRequestAdapterService.updateBoxWriteupVisibility(input)
-        );
+    public updateBoxWriteupVisibility(input: VMBoxServiceAdapterInput): Promise<resp<any>> {
+        return vmBoxRequestAdapterService.updateBoxWriteupVisibility(this.normalizeInput(input));
     }
 
-    public getMyAnswerRecord(Request: Request): Promise<resp<any>> {
-        return this.withUserInput(Request, "getMyAnswerRecord", "token", (input) => vmBoxRequestAdapterService.getMyAnswerRecord(input));
+    public getMyAnswerRecord(input: VMBoxServiceAdapterInput): Promise<resp<any>> {
+        return vmBoxRequestAdapterService.getMyAnswerRecord(this.normalizeInput(input));
     }
 
-    public submitBoxAnswer(Request: Request): Promise<resp<any>> {
-        return this.withUserInput(Request, "submitBoxAnswer", "token", (input) => vmBoxRequestAdapterService.submitBoxAnswer(input));
+    public submitBoxAnswer(input: VMBoxServiceAdapterInput): Promise<resp<any>> {
+        return vmBoxRequestAdapterService.submitBoxAnswer(this.normalizeInput(input));
     }
 
-    private withUserInput<T>(
-        Request: Request,
-        operationName: string,
-        validationLabel: string,
-        action: (input: VMBoxServiceAdapterInput) => Promise<resp<T | undefined>>
-    ): Promise<resp<T | undefined>> {
-        return this.withAuthenticatedInput(Request, validateTokenAndGetUser, operationName, validationLabel, action);
-    }
-
-    private withAdminInput<T>(
-        Request: Request,
-        operationName: string,
-        validationLabel: string,
-        action: (input: VMBoxServiceAdapterInput) => Promise<resp<T | undefined>>
-    ): Promise<resp<T | undefined>> {
-        return this.withAuthenticatedInput(Request, validateTokenAndGetAdminUser, operationName, validationLabel, action);
-    }
-
-    private withSuperAdminInput<T>(
-        Request: Request,
-        operationName: string,
-        validationLabel: string,
-        action: (input: VMBoxServiceAdapterInput) => Promise<resp<T | undefined>>
-    ): Promise<resp<T | undefined>> {
-        return this.withAuthenticatedInput(Request, validateTokenAndGetSuperAdminUser, operationName, validationLabel, action);
-    }
-
-    private async withAuthenticatedInput<T>(
-        Request: Request,
-        validator: TokenValidator,
-        operationName: string,
-        validationLabel: string,
-        action: (input: VMBoxServiceAdapterInput) => Promise<resp<T | undefined>>
-    ): Promise<resp<T | undefined>> {
-        return this.run(operationName, async () => {
-            const { user, error } = await validator<T>(Request);
-            if (error) {
-                logger.error(`Error validating ${validationLabel} token:`, error);
-                return error;
-            }
-            return action(this.toAdapterInput(Request, user));
-        });
-    }
-
-    private toAdapterInput(Request: Request, user: any): VMBoxServiceAdapterInput {
+    private normalizeInput(input: VMBoxServiceAdapterInput): Required<VMBoxServiceAdapterInput> {
         return {
-            user,
-            params: Request.params,
-            body: Request.body,
-            query: Request.query
+            user: input.user,
+            params: input.params ?? {},
+            body: input.body ?? {},
+            query: input.query ?? {}
         };
     }
 

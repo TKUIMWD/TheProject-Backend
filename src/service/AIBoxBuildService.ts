@@ -1,11 +1,8 @@
-import { Request } from "express";
 import { Service } from "../abstract/Service";
 import {
     AIBoxBuildJobDTO,
 } from "../interfaces/AIBoxBuildJob";
-import { logger } from "../middlewares/log";
-import { validateTokenAndGetAdminUser } from "../utils/auth";
-import { resp, createResponse } from "../utils/resp";
+import { resp } from "../utils/resp";
 import { AIBoxBuildJobManagementService } from "../modules/ai-box-build/AIBoxBuildJobManagementService";
 import { aiBoxBuildDraftService } from "../modules/ai-box-build/AIBoxBuildDraftService";
 import { AIBoxBuildRunExecutionService } from "../modules/ai-box-build/AIBoxBuildRunExecutionService";
@@ -16,11 +13,11 @@ import {
 } from "../modules/ai-box-build/AIBoxBuildRequestAdapterService";
 import { User } from "../interfaces/User";
 
-type AIBoxBuildServiceAdapterInput = {
+export type AIBoxBuildServiceAdapterInput = {
     user: User;
-    params: Request["params"];
-    body: any;
-    authorizationHeader: string;
+    params?: Record<string, unknown>;
+    body?: any;
+    authorizationHeader?: string;
 };
 
 export class AIBoxBuildService extends Service {
@@ -39,62 +36,40 @@ export class AIBoxBuildService extends Service {
         runLaunch: this.runLaunchService
     });
 
-    public async createJob(Request: Request): Promise<resp<AIBoxBuildJobDTO | undefined>> {
-        return this.withAdminInput(Request, "creating AI box build job", (input) => this.requestAdapter.createJob(input));
+    public createJob(input: AIBoxBuildServiceAdapterInput): Promise<resp<AIBoxBuildJobDTO | undefined>> {
+        return this.requestAdapter.createJob(this.normalizeInput(input));
     }
 
-    public async listJobs(Request: Request): Promise<resp<AIBoxBuildJobDTO[] | undefined>> {
-        return this.withAdminInput(Request, "listing AI box build jobs", (input) => this.requestAdapter.listJobs(input));
+    public listJobs(input: AIBoxBuildServiceAdapterInput): Promise<resp<AIBoxBuildJobDTO[] | undefined>> {
+        return this.requestAdapter.listJobs(this.normalizeInput(input));
     }
 
-    public async getJob(Request: Request): Promise<resp<AIBoxBuildJobDTO | undefined>> {
-        return this.withAdminInput(Request, "fetching AI box build job", (input) => this.requestAdapter.getJob(input));
+    public getJob(input: AIBoxBuildServiceAdapterInput): Promise<resp<AIBoxBuildJobDTO | undefined>> {
+        return this.requestAdapter.getJob(this.normalizeInput(input));
     }
 
-    public async deleteJob(Request: Request): Promise<resp<AIBoxBuildDeleteJobResponse | undefined>> {
-        return this.withAdminInput(
-            Request,
-            "deleting AI box build job",
-            (input) => this.requestAdapter.deleteJob(input),
-            (error) => error instanceof Error ? error.message : "Internal Server Error"
-        );
+    public deleteJob(input: AIBoxBuildServiceAdapterInput): Promise<resp<AIBoxBuildDeleteJobResponse | undefined>> {
+        return this.requestAdapter.deleteJob(this.normalizeInput(input));
     }
 
-    public async addMessage(Request: Request): Promise<resp<AIBoxBuildJobDTO | undefined>> {
-        return this.withAdminInput(Request, "updating AI box build job", (input) => this.requestAdapter.addMessage(input));
+    public addMessage(input: AIBoxBuildServiceAdapterInput): Promise<resp<AIBoxBuildJobDTO | undefined>> {
+        return this.requestAdapter.addMessage(this.normalizeInput(input));
     }
 
-    public async updateStatus(Request: Request): Promise<resp<AIBoxBuildJobDTO | undefined>> {
-        return this.withAdminInput(Request, "updating AI box build job status", (input) => this.requestAdapter.updateStatus(input));
+    public updateStatus(input: AIBoxBuildServiceAdapterInput): Promise<resp<AIBoxBuildJobDTO | undefined>> {
+        return this.requestAdapter.updateStatus(this.normalizeInput(input));
     }
 
-    public async launchBuildRun(Request: Request): Promise<resp<AIBoxBuildJobDTO | undefined>> {
-        return this.withAdminInput(Request, "launching AI box build run", (input) => this.requestAdapter.launchBuildRun(input));
+    public launchBuildRun(input: AIBoxBuildServiceAdapterInput): Promise<resp<AIBoxBuildJobDTO | undefined>> {
+        return this.requestAdapter.launchBuildRun(this.normalizeInput(input));
     }
 
-    private async withAdminInput<T>(
-        Request: Request,
-        actionName: string,
-        action: (input: AIBoxBuildServiceAdapterInput) => Promise<resp<T | undefined>>,
-        errorMessage: (error: unknown) => string = () => "Internal Server Error"
-    ): Promise<resp<T | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetAdminUser<T>(Request);
-            if (error) return error;
-
-            return action(this.toAdapterInput(Request, user));
-        } catch (error) {
-            logger.error(`Error ${actionName}:`, error);
-            return createResponse(500, errorMessage(error));
-        }
-    }
-
-    private toAdapterInput(Request: Request, user: User): AIBoxBuildServiceAdapterInput {
+    private normalizeInput(input: AIBoxBuildServiceAdapterInput): Required<AIBoxBuildServiceAdapterInput> {
         return {
-            user,
-            params: Request.params,
-            body: Request.body,
-            authorizationHeader: Request.headers.authorization || ""
+            user: input.user,
+            params: input.params ?? {},
+            body: input.body ?? {},
+            authorizationHeader: input.authorizationHeader ?? ""
         };
     }
 }

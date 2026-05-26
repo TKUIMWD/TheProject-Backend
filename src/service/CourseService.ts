@@ -1,98 +1,93 @@
 import { Service } from "../abstract/Service";
 import { CoursePageDTO } from "../interfaces/Course/CoursePageDTO";
-import { validateTokenAndGetAdminUser, validateTokenAndGetSuperAdminUser, validateTokenAndGetUser } from "../utils/auth";
 import { resp, createResponse } from "../utils/resp";
-import { Request } from "express";
 import { logger } from "../middlewares/log";
 import { CourseMenu } from "../interfaces/Course/CourseMenu";
 import { CourseInfo } from "../interfaces/Course/Course";
 import { courseRequestAdapterService } from "../modules/courses/CourseRequestAdapterService";
 
-type TokenValidator = <T>(request: Request) => Promise<{ user: any; error?: resp<T | undefined> }>;
-type CourseServiceAdapterInput = {
+export type CourseServiceAdapterInput = {
     user: any;
-    params: Request["params"];
-    body: any;
-    query: Request["query"];
+    params?: Record<string, any>;
+    body?: any;
+    query?: Record<string, any>;
 };
 
 export class CourseService extends Service {
-    public async getCourseById(Request: Request): Promise<resp<CoursePageDTO | undefined>> {
-        return this.withUserInput(Request, "getCourseById", (input) => courseRequestAdapterService.getCourseById(input));
+    public getCourseById(input: CourseServiceAdapterInput): Promise<resp<CoursePageDTO | undefined>> {
+        return courseRequestAdapterService.getCourseById(this.normalizeInput(input));
     }
 
-    public async getCourseMenu(Request: Request): Promise<resp<CourseMenu | undefined>> {
-        return this.withUserInput(Request, "getCourseMenu", (input) => courseRequestAdapterService.getCourseMenu(input));
+    public getCourseMenu(input: CourseServiceAdapterInput): Promise<resp<CourseMenu | undefined>> {
+        return courseRequestAdapterService.getCourseMenu(this.normalizeInput(input));
     }
 
-    public async AddCourse(Request: Request): Promise<resp<String | { course_id: String } | undefined>> {
-        return this.withAdminInput(Request, "AddCourse", (input) => courseRequestAdapterService.addCourse(input));
+    public AddCourse(input: CourseServiceAdapterInput): Promise<resp<String | { course_id: String } | undefined>> {
+        return courseRequestAdapterService.addCourse(this.normalizeInput(input));
     }
 
-    public async UpdateCourseById(Request: Request): Promise<resp<String | { course_id: string } | undefined>> {
-        return this.withAdminInput(Request, "UpdateCourseById", (input) => courseRequestAdapterService.updateCourseById(input));
+    public UpdateCourseById(input: CourseServiceAdapterInput): Promise<resp<String | { course_id: string } | undefined>> {
+        return courseRequestAdapterService.updateCourseById(this.normalizeInput(input));
     }
 
-    public async DeleteCourseById(Request: Request): Promise<resp<String | undefined>> {
-        return this.withAdminInput(Request, "DeleteCourseById", (input) => courseRequestAdapterService.deleteCourseById(input));
+    public DeleteCourseById(input: CourseServiceAdapterInput): Promise<resp<String | undefined>> {
+        return courseRequestAdapterService.deleteCourseById(this.normalizeInput(input));
     }
 
-    public async GetAllPublicCourses(_Request: Request): Promise<resp<String | CourseInfo[] | undefined>> {
+    public async GetAllPublicCourses(): Promise<resp<String | CourseInfo[] | undefined>> {
         return this.withoutAuth("GetAllPublicCourse", () => courseRequestAdapterService.listPublicCourses());
     }
 
-    public async JoinCourseById(Request: Request): Promise<resp<String | undefined>> {
-        return this.withUserInput(Request, "JoinCourseById", (input) => courseRequestAdapterService.joinCourseById(input));
+    public JoinCourseById(input: CourseServiceAdapterInput): Promise<resp<String | undefined>> {
+        return courseRequestAdapterService.joinCourseById(this.normalizeInput(input));
     }
 
-    public async rateCourse(Request: Request): Promise<resp<any>> {
-        return this.withUserInput(Request, "rateCourse", (input) => courseRequestAdapterService.rateCourse(input));
+    public rateCourse(input: CourseServiceAdapterInput): Promise<resp<any>> {
+        return courseRequestAdapterService.rateCourse(this.normalizeInput(input));
     }
 
-    public async getCourseReviews(Request: Request): Promise<resp<any>> {
-        return this.withUserInput(Request, "getCourseReviews", (input) => courseRequestAdapterService.getCourseReviews(input));
+    public getCourseReviews(input: CourseServiceAdapterInput): Promise<resp<any>> {
+        return courseRequestAdapterService.getCourseReviews(this.normalizeInput(input));
     }
 
-    public async updateCourseReview(Request: Request): Promise<resp<any>> {
-        return this.withUserInput(Request, "updateCourseReview", (input) => courseRequestAdapterService.updateCourseReview(input));
+    public updateCourseReview(input: CourseServiceAdapterInput): Promise<resp<any>> {
+        return courseRequestAdapterService.updateCourseReview(this.normalizeInput(input));
     }
 
-    public async deleteCourseReview(Request: Request): Promise<resp<any>> {
-        return this.withUserInput(Request, "deleteCourseReview", (input) => courseRequestAdapterService.deleteCourseReview(input));
+    public deleteCourseReview(input: CourseServiceAdapterInput): Promise<resp<any>> {
+        return courseRequestAdapterService.deleteCourseReview(this.normalizeInput(input));
     }
 
-    public async ApprovedCourseById(Request: Request): Promise<resp<String | undefined>> {
-        return this.withSuperAdminInput(Request, "ApprovedCourseById", (input) => courseRequestAdapterService.approveCourseById(input));
+    public ApprovedCourseById(input: CourseServiceAdapterInput): Promise<resp<String | undefined>> {
+        return courseRequestAdapterService.approveCourseById(this.normalizeInput(input));
     }
 
-    public async UnApprovedCourseById(Request: Request): Promise<resp<String | undefined>> {
-        return this.withSuperAdminInput(Request, "UnApprovedCourseById", (input) => courseRequestAdapterService.unapproveCourseById(input));
+    public UnApprovedCourseById(input: CourseServiceAdapterInput): Promise<resp<String | undefined>> {
+        return courseRequestAdapterService.unapproveCourseById(this.normalizeInput(input));
     }
 
-    public async InviteToJoinCourse(Request: Request): Promise<resp<String | undefined>> {
-        return this.withAdminInput(Request, "InviteToJoinCourse", (input) => courseRequestAdapterService.inviteToJoinCourse(input));
+    public InviteToJoinCourse(input: CourseServiceAdapterInput): Promise<resp<String | undefined>> {
+        return courseRequestAdapterService.inviteToJoinCourse(this.normalizeInput(input));
     }
 
-    public async getFirstTemplateByCourseID(Request: Request): Promise<resp<String | { template_id: string } | undefined>> {
-        return this.withUserInput(Request, "getFirstTemplateByCourseID", (input) =>
-            courseRequestAdapterService.getFirstTemplateByCourseID(input)
-        );
+    public getFirstTemplateByCourseID(input: CourseServiceAdapterInput): Promise<resp<String | { template_id: string } | undefined>> {
+        return courseRequestAdapterService.getFirstTemplateByCourseID(this.normalizeInput(input));
     }
 
-    public async getAllCourses(Request: Request): Promise<resp<String | CourseInfo[] | undefined>> {
-        return this.withSuperAdminInput(Request, "GetAllCourses", () => courseRequestAdapterService.listAllCourses());
+    public getAllCourses(): Promise<resp<String | CourseInfo[] | undefined>> {
+        return courseRequestAdapterService.listAllCourses();
     }
 
-    public async getAllSubmittedCourses(Request: Request): Promise<resp<String | CourseInfo[] | undefined>> {
-        return this.withSuperAdminInput(Request, "GetAllPendingCourses", () => courseRequestAdapterService.listSubmittedCourses());
+    public getAllSubmittedCourses(): Promise<resp<String | CourseInfo[] | undefined>> {
+        return courseRequestAdapterService.listSubmittedCourses();
     }
 
-    public async submitCourse(Request: Request): Promise<resp<String | undefined>> {
-        return this.withAdminInput(Request, "submitCourse", (input) => courseRequestAdapterService.submitCourse(input));
+    public submitCourse(input: CourseServiceAdapterInput): Promise<resp<String | undefined>> {
+        return courseRequestAdapterService.submitCourse(this.normalizeInput(input));
     }
 
-    public async setCourseStatus(Request: Request): Promise<resp<String | undefined>> {
-        return this.withAdminInput(Request, "setCourseStatus", (input) => courseRequestAdapterService.setCourseStatus(input));
+    public setCourseStatus(input: CourseServiceAdapterInput): Promise<resp<String | undefined>> {
+        return courseRequestAdapterService.setCourseStatus(this.normalizeInput(input));
     }
 
     private async withoutAuth<T>(logContext: string, handler: () => Promise<resp<T | undefined>>): Promise<resp<T | undefined>> {
@@ -104,54 +99,12 @@ export class CourseService extends Service {
         }
     }
 
-    private async withUserInput<T>(
-        Request: Request,
-        logContext: string,
-        handler: (input: CourseServiceAdapterInput) => Promise<resp<T | undefined>>
-    ): Promise<resp<T | undefined>> {
-        return this.withAuthenticatedInput(Request, logContext, validateTokenAndGetUser, handler);
-    }
-
-    private async withAdminInput<T>(
-        Request: Request,
-        logContext: string,
-        handler: (input: CourseServiceAdapterInput) => Promise<resp<T | undefined>>
-    ): Promise<resp<T | undefined>> {
-        return this.withAuthenticatedInput(Request, logContext, validateTokenAndGetAdminUser, handler);
-    }
-
-    private async withSuperAdminInput<T>(
-        Request: Request,
-        logContext: string,
-        handler: (input: CourseServiceAdapterInput) => Promise<resp<T | undefined>>
-    ): Promise<resp<T | undefined>> {
-        return this.withAuthenticatedInput(Request, logContext, validateTokenAndGetSuperAdminUser, handler);
-    }
-
-    private async withAuthenticatedInput<T>(
-        Request: Request,
-        logContext: string,
-        validator: TokenValidator,
-        handler: (input: CourseServiceAdapterInput) => Promise<resp<T | undefined>>
-    ): Promise<resp<T | undefined>> {
-        try {
-            const { user, error } = await validator<T>(Request);
-            if (error) {
-                return error;
-            }
-            return handler(this.toAdapterInput(Request, user));
-        } catch (err) {
-            logger.error(`Error in ${logContext}:`, err);
-            return createResponse(500, "Internal Server Error");
-        }
-    }
-
-    private toAdapterInput(Request: Request, user: any): CourseServiceAdapterInput {
+    private normalizeInput(input: CourseServiceAdapterInput): Required<CourseServiceAdapterInput> {
         return {
-            user,
-            params: Request.params,
-            body: Request.body,
-            query: Request.query
+            user: input.user,
+            params: input.params ?? {},
+            body: input.body ?? {},
+            query: input.query ?? {}
         };
     }
 }
