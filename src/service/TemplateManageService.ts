@@ -8,6 +8,10 @@ import { validateTokenAndGetSuperAdminUser, validateTokenAndGetUser } from "../u
 import { createResponse, resp } from "../utils/resp";
 
 type TokenValidator = (request: Request) => Promise<{ user: User; error?: resp<any> }>;
+type TemplateManageServiceInput = {
+    user: User;
+    body: Request["body"];
+};
 
 export class TemplateManageService extends Service {
     public async updateTemplateConfig(Request: Request): Promise<resp<string | undefined>> {
@@ -15,10 +19,7 @@ export class TemplateManageService extends Service {
             Request,
             "updateTemplateConfig",
             (request) => validateTokenAndGetUser<User>(request),
-            (user) => templateManageRequestAdapterService.updateTemplateConfig({
-                user,
-                body: Request.body
-            })
+            (input) => templateManageRequestAdapterService.updateTemplateConfig(input)
         );
     }
 
@@ -27,10 +28,7 @@ export class TemplateManageService extends Service {
             Request,
             "deleteTemplate",
             (request) => validateTokenAndGetUser<User>(request),
-            (user) => templateManageRequestAdapterService.deleteTemplate({
-                user,
-                body: Request.body
-            })
+            (input) => templateManageRequestAdapterService.deleteTemplate(input)
         );
     }
 
@@ -39,10 +37,7 @@ export class TemplateManageService extends Service {
             Request,
             "cloneTemplate",
             (request) => validateTokenAndGetSuperAdminUser<User>(request),
-            (user) => templateManageRequestAdapterService.cloneTemplate({
-                user,
-                body: Request.body
-            })
+            (input) => templateManageRequestAdapterService.cloneTemplate(input)
         );
     }
 
@@ -50,7 +45,7 @@ export class TemplateManageService extends Service {
         Request: Request,
         operation: string,
         validator: TokenValidator,
-        action: (user: User) => Promise<resp<T | undefined>>
+        action: (input: TemplateManageServiceInput) => Promise<resp<T | undefined>>
     ): Promise<resp<T | undefined>> {
         try {
             const { user, error } = await validator(Request);
@@ -59,10 +54,17 @@ export class TemplateManageService extends Service {
                 return createResponse(error.code, error.message);
             }
 
-            return action(user);
+            return action(this.toServiceInput(Request, user));
         } catch (error) {
             logger.error(`Error in ${operation}:`, error);
             return createResponse(500, "Internal Server Error");
         }
+    }
+
+    private toServiceInput(Request: Request, user: User): TemplateManageServiceInput {
+        return {
+            user,
+            body: Request.body
+        };
     }
 }
