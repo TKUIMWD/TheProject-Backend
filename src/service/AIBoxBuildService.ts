@@ -16,6 +16,13 @@ import {
 } from "../modules/ai-box-build/AIBoxBuildRequestAdapterService";
 import { User } from "../interfaces/User";
 
+type AIBoxBuildServiceAdapterInput = {
+    user: User;
+    params: Request["params"];
+    body: any;
+    authorizationHeader: string;
+};
+
 export class AIBoxBuildService extends Service {
     private static runningJobs = new Set<string>();
     private readonly jobManagementService = new AIBoxBuildJobManagementService({
@@ -33,69 +40,61 @@ export class AIBoxBuildService extends Service {
     });
 
     public async createJob(Request: Request): Promise<resp<AIBoxBuildJobDTO | undefined>> {
-        return this.withAdminUser(Request, "creating AI box build job", (user) => this.requestAdapter.createJob({
-            user,
-            body: Request.body
-        }));
+        return this.withAdminInput(Request, "creating AI box build job", (input) => this.requestAdapter.createJob(input));
     }
 
     public async listJobs(Request: Request): Promise<resp<AIBoxBuildJobDTO[] | undefined>> {
-        return this.withAdminUser(Request, "listing AI box build jobs", (user) => this.requestAdapter.listJobs({ user }));
+        return this.withAdminInput(Request, "listing AI box build jobs", (input) => this.requestAdapter.listJobs(input));
     }
 
     public async getJob(Request: Request): Promise<resp<AIBoxBuildJobDTO | undefined>> {
-        return this.withAdminUser(Request, "fetching AI box build job", (user) => this.requestAdapter.getJob({
-            user,
-            params: Request.params
-        }));
+        return this.withAdminInput(Request, "fetching AI box build job", (input) => this.requestAdapter.getJob(input));
     }
 
     public async deleteJob(Request: Request): Promise<resp<AIBoxBuildDeleteJobResponse | undefined>> {
-        return this.withAdminUser(Request, "deleting AI box build job", (user) => this.requestAdapter.deleteJob({
-            user,
-            params: Request.params
-        }), (error) => error instanceof Error ? error.message : "Internal Server Error");
+        return this.withAdminInput(
+            Request,
+            "deleting AI box build job",
+            (input) => this.requestAdapter.deleteJob(input),
+            (error) => error instanceof Error ? error.message : "Internal Server Error"
+        );
     }
 
     public async addMessage(Request: Request): Promise<resp<AIBoxBuildJobDTO | undefined>> {
-        return this.withAdminUser(Request, "updating AI box build job", (user) => this.requestAdapter.addMessage({
-            user,
-            params: Request.params,
-            body: Request.body
-        }));
+        return this.withAdminInput(Request, "updating AI box build job", (input) => this.requestAdapter.addMessage(input));
     }
 
     public async updateStatus(Request: Request): Promise<resp<AIBoxBuildJobDTO | undefined>> {
-        return this.withAdminUser(Request, "updating AI box build job status", (user) => this.requestAdapter.updateStatus({
-            user,
-            params: Request.params,
-            body: Request.body
-        }));
+        return this.withAdminInput(Request, "updating AI box build job status", (input) => this.requestAdapter.updateStatus(input));
     }
 
     public async launchBuildRun(Request: Request): Promise<resp<AIBoxBuildJobDTO | undefined>> {
-        return this.withAdminUser(Request, "launching AI box build run", (user) => this.requestAdapter.launchBuildRun({
-            user,
-            params: Request.params,
-            body: Request.body,
-            authorizationHeader: Request.headers.authorization || ""
-        }));
+        return this.withAdminInput(Request, "launching AI box build run", (input) => this.requestAdapter.launchBuildRun(input));
     }
 
-    private async withAdminUser<T>(
+    private async withAdminInput<T>(
         Request: Request,
         actionName: string,
-        action: (user: User) => Promise<resp<T | undefined>>,
+        action: (input: AIBoxBuildServiceAdapterInput) => Promise<resp<T | undefined>>,
         errorMessage: (error: unknown) => string = () => "Internal Server Error"
     ): Promise<resp<T | undefined>> {
         try {
             const { user, error } = await validateTokenAndGetAdminUser<T>(Request);
             if (error) return error;
 
-            return action(user);
+            return action(this.toAdapterInput(Request, user));
         } catch (error) {
             logger.error(`Error ${actionName}:`, error);
             return createResponse(500, errorMessage(error));
         }
+    }
+
+    private toAdapterInput(Request: Request, user: User): AIBoxBuildServiceAdapterInput {
+        return {
+            user,
+            params: Request.params,
+            body: Request.body,
+            authorizationHeader: Request.headers.authorization || ""
+        };
     }
 }
