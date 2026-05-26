@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `13b40ad docs update crp refactor progress`
+Latest remote baseline before this snapshot: `3beeb4a docs update super admin refactor progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -29,12 +29,13 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - Template Manage update/delete/clone route body adapter logic moved from `TemplateManageService` into `TemplateManageRequestAdapterService`.
 - Compute Resource Plan create/update/delete/list/get-by-id route adapter logic moved from `SuperAdminCRPService` into `ComputeResourcePlanRequestAdapterService`.
 - SuperAdmin user-management route body adapter logic moved from `SuperAdminService` into `SuperAdminRequestAdapterService`.
+- Auth verify/logout session behavior moved from `AuthService` into `AuthSessionService`.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
 
 - `npm run typecheck`
-- targeted Auth tests: `npx vitest run tests/auth-forgot-password-service.test.ts tests/auth-login-service.test.ts tests/auth-registration-service.test.ts tests/auth-token-policy.test.ts` (`4` files, `25` tests)
+- targeted Auth tests: `npx vitest run tests/auth-session-service.test.ts tests/auth-forgot-password-service.test.ts tests/auth-login-service.test.ts tests/auth-registration-service.test.ts tests/auth-token-policy.test.ts` (`5` files, `29` tests)
 - targeted Course tests: `npx vitest run tests/course-request-adapter-service.test.ts tests/course-read-service.test.ts tests/course-list-service.test.ts tests/course-mutation-service.test.ts tests/course-membership-service.test.ts tests/course-review-service.test.ts tests/course-lifecycle-service.test.ts` (`7` files, `30` tests)
 - targeted VM Box/Guacamole tests: `npx vitest run tests/vm-box-list-service.test.ts tests/vm-box-review-service.test.ts tests/vm-box-writeup-service.test.ts tests/vm-box-answer-service.test.ts tests/vm-box-submission-create-service.test.ts tests/vm-box-submission-audit-service.test.ts tests/guacamole-connection-establishment-service.test.ts tests/guacamole-connection-preflight-service.test.ts tests/course-request-adapter-service.test.ts` (`9` files, `33` tests)
 - targeted AI Chat VM tests: `npx vitest run tests/ai-chat-vm-management-service.test.ts tests/ai-chat-vm-intent-policy.test.ts tests/ai-chat-vm-pending-action-policy.test.ts tests/ai-chat-vm-response-policy.test.ts tests/ai-chat-request-policy.test.ts` (`5` files, `26` tests)
@@ -47,7 +48,7 @@ The latest recorded full gate is green after these slices:
 - targeted Template Manage adapter tests: `npx vitest run tests/template-manage-request-adapter-service.test.ts tests/template-config-update-service.test.ts tests/template-deletion-service.test.ts tests/template-clone-service.test.ts tests/template-list-service.test.ts tests/template-conversion-service.test.ts tests/template-audit-service.test.ts` (`7` files, `40` tests)
 - targeted CRP adapter tests: `npx vitest run tests/compute-resource-plan-request-adapter-service.test.ts tests/compute-resource-plan-management-service.test.ts tests/compute-resource-plan-policy.test.ts` (`3` files, `19` tests)
 - targeted SuperAdmin adapter tests: `npx vitest run tests/super-admin-request-adapter-service.test.ts tests/super-admin-user-management-service.test.ts tests/super-admin-user-mutation-policy.test.ts` (`3` files, `12` tests)
-- `npm test` (`174` files, `889` tests)
+- `npm test` (`175` files, `893` tests)
 - `npm run build`
 - `npm audit --audit-level=moderate` (`0` vulnerabilities)
 - merge-conflict marker scan
@@ -72,6 +73,7 @@ The latest recorded full gate is green after these slices:
   - registration policy and registration workflow service;
   - login workflow, wrong-attempt lockout, unverified-email resend, and token response behavior.
   - forgot-password workflow service covering reset email, throttle, token validation, password policy, hashing, persistence, and invalid methods.
+  - verify/logout session behavior service covering verification persistence and logout response behavior.
 - VM/PVE refactor has substantial coverage:
   - VM creation, deletion, config update, read/status/network, operation policy, task persistence, resource accounting, PVE task status, PVE QEMU config access, and PVE datacenter status slices are extracted/tested.
 - Guacamole refactor has substantial coverage:
@@ -116,10 +118,10 @@ Current facade/service file sizes:
 | `src/service/TemplateService.ts` | 117 | Listing/conversion/submission/audit workflows extracted. |
 | `src/service/ChapterService.ts` | 96 | Thin wrapper. |
 | `src/service/VMService.ts` | 92 | Thin read facade with shared actor-context resolver. |
-| `src/service/AuthService.ts` | 86 | Register/login/forgot-password extracted; verify/logout still in facade. |
 | `src/service/SuperAdminCRPService.ts` | 84 | Thin token/role wrapper around CRP request adapter. |
 | `src/service/VMOperateService.ts` | 81 | Thin request adapter delegating operation execution. |
 | `src/service/ClassService.ts` | 78 | Thin wrapper. |
+| `src/service/AuthService.ts` | 74 | Thin token wrapper around Auth workflow/session services. |
 | `src/service/TemplateManageService.ts` | 68 | Thin token/role wrapper around Template Manage request adapter. |
 | `src/service/SuperAdminService.ts` | 61 | Thin token wrapper around SuperAdmin request adapter. |
 
@@ -156,7 +158,7 @@ No extracted module currently imports Express `Request`; remaining `Request` imp
    - Add unique constraints only after duplicate groups are cleaned and archived as empty.
 
 2. Continue facade-boundary cleanup where useful.
-   - Candidate targets: smaller wrapper cleanup in `AuthService`, `ChapterService`, `ClassService`, and similar facades.
+   - Candidate targets: smaller wrapper cleanup in `ChapterService`, `ClassService`, and similar facades.
    - Keep controller response shapes unchanged.
 
 3. Keep gates mandatory for every slice.
@@ -180,6 +182,7 @@ Use small, isolated commits:
 5. `refactor template manage request adapter service`
 6. `refactor crp request adapter service`
 7. `refactor super admin request adapter service`
-8. `docs update backend refactor progress`
+8. `refactor auth session service`
+9. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.
