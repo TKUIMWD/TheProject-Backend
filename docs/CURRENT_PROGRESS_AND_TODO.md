@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `0101a3e docs update ai chat service refactor progress`
+Latest remote baseline before this snapshot: `818842e docs update crp service refactor progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -45,6 +45,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - `GuacamoleService` now shares one request-context helper for user/body/permission forwarding into `GuacamoleRequestAdapterService`.
 - `AIChatService` now shares one request-context helper for user/body/role forwarding into `AIChatRequestAdapterService`.
 - `SuperAdminCRPService` now shares one request-context helper for user/body/params forwarding into `ComputeResourcePlanRequestAdapterService`.
+- `TemplateManageService` now shares one request-context helper for user/body forwarding into `TemplateManageRequestAdapterService`.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -130,6 +131,7 @@ The latest recorded full gate is green after these slices:
   - `PVEService` now uses shared request-context forwarding for body/query adapter calls.
 - VM Manage create/update/delete body mapping now lives in `VMManageRequestAdapterService`; `VMManageService` is a token/role adapter.
 - Template Manage update/delete/clone body mapping now lives in `TemplateManageRequestAdapterService`; `TemplateManageService` is a token/role adapter.
+  - `TemplateManageService` now shares one request-context forwarding helper for user/body adapter calls.
 - CRP route params/body mapping now lives in `ComputeResourcePlanRequestAdapterService`; `SuperAdminCRPService` is a token/role adapter.
   - `SuperAdminCRPService` now shares one request-context forwarding helper for user/body/params adapter calls.
 - SuperAdmin role/CRP assignment body mapping now lives in `SuperAdminRequestAdapterService`; `SuperAdminService` is a token adapter.
@@ -159,7 +161,7 @@ Current facade/service file sizes:
 | `src/service/SuperAdminCRPService.ts` | 87 | Thin token/role wrapper around CRP request adapter with shared request-context forwarding. |
 | `src/service/VMOperateService.ts` | 81 | Thin request adapter delegating operation execution. |
 | `src/service/AuthService.ts` | 74 | Thin token wrapper around Auth workflow/session services. |
-| `src/service/TemplateManageService.ts` | 68 | Thin token/role wrapper around Template Manage request adapter. |
+| `src/service/TemplateManageService.ts` | 70 | Thin token/role wrapper around Template Manage request adapter with shared request-context forwarding. |
 | `src/service/SuperAdminService.ts` | 61 | Thin token wrapper around SuperAdmin request adapter. |
 | `src/service/ClassService.ts` | 56 | Thin token wrapper around course structure request adapter. |
 
@@ -236,6 +238,7 @@ Use small, isolated commits:
 21. `refactor guacamole service request context forwarding`
 22. `refactor ai chat service request context forwarding`
 23. `refactor crp service request context forwarding`
-24. `docs update backend refactor progress`
+24. `refactor template manage service request context forwarding`
+25. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.
