@@ -4157,3 +4157,21 @@ Acceptance criteria:
   - `npm test` (`159` files, `816` tests)
   - `npm run build`
   - `npm audit --audit-level=moderate` (`0` vulnerabilities)
+
+### 2026-05-26 Compute Resource Plan Management Service Slice
+
+- Added `src/modules/crp/ComputeResourcePlanManagementService.ts`.
+- Added `tests/compute-resource-plan-management-service.test.ts`.
+- Moved Compute Resource Plan management orchestration out of `SuperAdminCRPService` for:
+  - create payload validation and duplicate-name checks;
+  - update ID validation and partial payload validation;
+  - delete ID validation and not-found handling;
+  - list-all and get-by-ID repository access;
+  - stable create/update/delete/list/get response messages and error behavior.
+- `SuperAdminCRPService.ts` is now about `98` lines after the extraction.
+- Verified:
+  - `npx vitest run tests/compute-resource-plan-management-service.test.ts tests/compute-resource-plan-policy.test.ts`
+  - `npm run typecheck`
+  - `npm test` (`160` files, `824` tests)
+  - `npm run build`
+  - `npm audit --audit-level=moderate` (`0` vulnerabilities)
