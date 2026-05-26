@@ -4138,3 +4138,22 @@ Acceptance criteria:
   - `npm test` (`158` files, `812` tests)
   - `npm run build`
   - `npm audit --audit-level=moderate` (`0` vulnerabilities)
+
+### 2026-05-26 PVE Datacenter Status Service Slice
+
+- Added `src/modules/pve/PVEDatacenterStatusService.ts`.
+- Added `tests/pve-datacenter-status-service.test.ts`.
+- Moved PVE datacenter status aggregation out of `PVEService` for:
+  - node list loading and missing-node response behavior;
+  - online/offline node counting and node DTO projection;
+  - datacenter CPU, memory, and base disk aggregation;
+  - shared storage de-duplication by storage ID using max observed capacity/usage;
+  - extra local `zfspool`/`lvmthin` storage aggregation without double-counting `local`;
+  - per-node storage API failure tolerance while preserving node overview responses.
+- `PVEService.ts` is now about `177` lines after the extraction.
+- Verified:
+  - `npx vitest run tests/pve-datacenter-status-service.test.ts tests/pve-datacenter-status-policy.test.ts`
+  - `npm run typecheck`
+  - `npm test` (`159` files, `816` tests)
+  - `npm run build`
+  - `npm audit --audit-level=moderate` (`0` vulnerabilities)
