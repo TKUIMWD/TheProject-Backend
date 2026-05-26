@@ -26,14 +26,6 @@ function makeUser(id = userId) {
     } as any;
 }
 
-function makeRequest(body: Record<string, unknown>) {
-    return {
-        headers: { authorization: "Bearer token" },
-        body,
-        query: {}
-    } as any;
-}
-
 function makeService(options: {
     action?: any;
     executorResult?: ReturnType<typeof createResponse>;
@@ -50,8 +42,8 @@ function makeService(options: {
             calls.push({ method: "actionInterpreter", args: [userInput, vmInventory, currentVmId] });
             return options.action ?? { intent: "list_vms" };
         },
-        actionExecutor: async (req, action, vm) => {
-            calls.push({ method: "actionExecutor", args: [req.body, action, vm] });
+        actionExecutor: async (context, action, vm) => {
+            calls.push({ method: "actionExecutor", args: [context.user._id.toString(), context.isSuperAdmin, action, vm] });
             return options.executorResult ?? createResponse(200, "OK", { status: "running" });
         },
         idFactory: () => "pending-1",
@@ -67,7 +59,7 @@ describe("AIChatVMManagementService", () => {
         const { service } = makeService({ action: { intent: "list_vms" } });
 
         await expect(service.manage({
-            req: makeRequest({ user_input: "list VMs" }),
+            body: { user_input: "list VMs" },
             user: makeUser()
         })).resolves.toMatchObject({
             code: 200,
@@ -87,7 +79,7 @@ describe("AIChatVMManagementService", () => {
         });
 
         await expect(service.manage({
-            req: makeRequest({ user_input: "reboot pve101" }),
+            body: { user_input: "reboot pve101" },
             user: makeUser()
         })).resolves.toMatchObject({
             code: 200,
@@ -123,7 +115,7 @@ describe("AIChatVMManagementService", () => {
         const { service, calls } = makeService({ pendingActions });
 
         await expect(service.manage({
-            req: makeRequest({ confirm_action_id: "pending-1" }),
+            body: { confirm_action_id: "pending-1" },
             user: makeUser()
         })).resolves.toMatchObject({
             code: 200,
@@ -153,7 +145,7 @@ describe("AIChatVMManagementService", () => {
         const { service } = makeService({ pendingActions });
 
         await expect(service.manage({
-            req: makeRequest({ confirm_action_id: "pending-1" }),
+            body: { confirm_action_id: "pending-1" },
             user: makeUser(otherUserId)
         })).resolves.toMatchObject({
             code: 403,

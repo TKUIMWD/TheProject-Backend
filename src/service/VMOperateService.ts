@@ -35,20 +35,40 @@ export class VMOperateService extends Service {
                 return createResponse(error.code, error.message);
             }
 
-            const vmIdDecision = validateVMOperationTargetId(Request.body.vm_id);
+            const isSuperAdmin = await this._isSuperAdmin(Request);
+            return this.executeVMOperation({
+                user,
+                isSuperAdmin,
+                vmId: Request.body.vm_id,
+                operation
+            });
+
+        } catch (error) {
+            logger.error(`Error in ${operation}VM:`, error);
+            return createResponse(500, "Internal server error");
+        }
+    }
+
+    public async executeVMOperation(input: {
+        user: User;
+        isSuperAdmin: boolean;
+        vmId: unknown;
+        operation: VMOperation;
+    }): Promise<resp<any>> {
+        try {
+            const vmIdDecision = validateVMOperationTargetId(input.vmId);
             if (!vmIdDecision.valid) {
                 return createResponse(400, vmIdDecision.message);
             }
             const vm_id = vmIdDecision.vmId;
-            const messages = getVMOperationMessages(operation);
+            const messages = getVMOperationMessages(input.operation);
 
             const vm = await VMModel.findOne({ _id: vm_id });
             if (!vm) {
                 return createResponse(404, "VM not found");
             }
 
-            const isSuperAdmin = await this._isSuperAdmin(Request);
-            if (!canOperateVM(vm.owner, user._id.toString(), isSuperAdmin)) {
+            if (!canOperateVM(vm.owner, input.user._id!.toString(), input.isSuperAdmin)) {
                 return createResponse(403, "You don't have permission to operate this VM");
             }
 
@@ -57,12 +77,12 @@ export class VMOperateService extends Service {
                 return createResponse(500, "Failed to get VM status");
             }
 
-            const stateDecision = validateVMOperationState(operation, statusResult.status);
+            const stateDecision = validateVMOperationState(input.operation, statusResult.status);
             if (!stateDecision.allowed) {
                 return createResponse(400, stateDecision.message);
             }
 
-            const result = await this._invokeVMOperation(operation, vm.pve_node, vm.pve_vmid);
+            const result = await this._invokeVMOperation(input.operation, vm.pve_node, vm.pve_vmid);
             if (!result.success) {
                 logger.error(`${messages.failureMessage} ${vm_id}:`, result.errorMessage);
                 return createResponse(500, result.errorMessage || messages.failureMessage);
@@ -77,18 +97,18 @@ export class VMOperateService extends Service {
             }
 
             let networkIdentityWarning: string | undefined;
-            if (operation === "boot" && env.pve.bootNormalizeGuestNetwork) {
+            if (input.operation === "boot" && env.pve.bootNormalizeGuestNetwork) {
                 networkIdentityWarning = await this._normalizeGuestNetworkIdentity(vm_id, vm.pve_node, vm.pve_vmid);
             }
 
-            logger.info(`VM ${vm_id} ${messages.successLogLabel} successfully by user ${user.username}, UPID: ${result.upid}`);
+            logger.info(`VM ${vm_id} ${messages.successLogLabel} successfully by user ${input.user.username}, UPID: ${result.upid}`);
             return createResponse(200, messages.successMessage, {
                 upid: result.upid,
-                ...(operation === "boot" ? { network_identity_warning: networkIdentityWarning } : {})
+                ...(input.operation === "boot" ? { network_identity_warning: networkIdentityWarning } : {})
             });
 
         } catch (error) {
-            logger.error(`Error in ${operation}VM:`, error);
+            logger.error(`Error in ${input.operation}VM:`, error);
             return createResponse(500, "Internal server error");
         }
     }

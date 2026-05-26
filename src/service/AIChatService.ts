@@ -227,8 +227,9 @@ export class AIChatService extends Service {
             }
 
             return aiChatVMManagementService.manage({
-                req: Request,
-                user
+                body: Request.body,
+                user,
+                isSuperAdmin: user.role === "superadmin"
             });
         } catch (error) {
             logger.error("Error in manageVM:", error);

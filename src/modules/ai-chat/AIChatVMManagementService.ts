@@ -1,4 +1,3 @@
-import { Request } from "express";
 import { randomUUID } from "crypto";
 import Roles from "../../enum/role";
 import { User } from "../../interfaces/User";
@@ -11,7 +10,7 @@ import { createResponse, resp } from "../../utils/resp";
 import { openAIClientFactory } from "../openai/OpenAIClientFactory";
 import { VMManageService } from "../../service/VMManageService";
 import { VMOperateService } from "../../service/VMOperateService";
-import { VMService } from "../../service/VMService";
+import { vmReadService } from "../vm/VMReadService";
 import {
     sanitizeAIChatUserInput,
     validateAIChatUserInput,
@@ -71,13 +70,12 @@ export interface AIVMManagementResponse {
 type AIChatVMManagementServiceDeps = {
     inventoryLoader?: (user: User) => Promise<AIVMInventoryItem[]>;
     actionInterpreter?: (userInput: string, inventory: AIVMInventoryItem[], currentVmId?: string) => Promise<AIVMAction>;
-    actionExecutor?: (req: Request, action: AIVMAction, vm: AIVMInventoryItem) => Promise<resp<unknown>>;
+    actionExecutor?: (context: { user: User; isSuperAdmin: boolean }, action: AIVMAction, vm: AIVMInventoryItem) => Promise<resp<unknown>>;
     idFactory?: () => string;
     now?: () => number;
     pendingActions?: Map<string, PendingAIVMAction>;
     vmOperateService?: VMOperateService;
     vmManageService?: VMManageService;
-    vmService?: VMService;
 };
 
 const MUTATING_VM_INTENTS = new Set<AIVMManagementIntent>(['boot', 'shutdown', 'poweroff', 'reboot', 'reset', 'delete']);
@@ -85,13 +83,12 @@ const MUTATING_VM_INTENTS = new Set<AIVMManagementIntent>(['boot', 'shutdown', '
 export class AIChatVMManagementService {
     private readonly inventoryLoader?: (user: User) => Promise<AIVMInventoryItem[]>;
     private readonly actionInterpreter?: (userInput: string, inventory: AIVMInventoryItem[], currentVmId?: string) => Promise<AIVMAction>;
-    private readonly actionExecutor?: (req: Request, action: AIVMAction, vm: AIVMInventoryItem) => Promise<resp<unknown>>;
+    private readonly actionExecutor?: (context: { user: User; isSuperAdmin: boolean }, action: AIVMAction, vm: AIVMInventoryItem) => Promise<resp<unknown>>;
     private readonly idFactory: () => string;
     private readonly now: () => number;
     private readonly pendingActions: Map<string, PendingAIVMAction>;
     private readonly vmOperateService: VMOperateService;
     private readonly vmManageService: VMManageService;
-    private readonly vmService: VMService;
 
     constructor(deps: AIChatVMManagementServiceDeps = {}) {
         this.inventoryLoader = deps.inventoryLoader;
@@ -102,21 +99,27 @@ export class AIChatVMManagementService {
         this.pendingActions = deps.pendingActions ?? new Map<string, PendingAIVMAction>();
         this.vmOperateService = deps.vmOperateService ?? new VMOperateService();
         this.vmManageService = deps.vmManageService ?? new VMManageService();
-        this.vmService = deps.vmService ?? new VMService();
     }
 
     public async manage(input: {
-        req: Request;
+        body: any;
         user: User;
+        isSuperAdmin?: boolean;
     }): Promise<resp<AIVMManagementResponse | undefined>> {
         const actingUserId = input.user._id?.toString();
         if (!actingUserId) {
             return createResponse(401, "Invalid admin user");
         }
 
-        const { user_input, current_vm_id, confirm_action_id } = input.req.body;
+        const isSuperAdmin = input.isSuperAdmin ?? input.user.role === Roles.SuperAdmin;
+        const { user_input, current_vm_id, confirm_action_id } = input.body;
         if (confirm_action_id) {
-            return this.confirmPendingVMAction(input.req, actingUserId, String(confirm_action_id));
+            return this.confirmPendingVMAction({
+                user: input.user,
+                isSuperAdmin,
+                actingUserId,
+                pendingActionId: String(confirm_action_id)
+            });
         }
 
         const inputResult = validateAIChatUserInput(user_input);
@@ -169,7 +172,7 @@ export class AIChatVMManagementService {
             });
         }
 
-        const result = await this.executeVMAction(input.req, action, targetResult.vm);
+        const result = await this.executeVMAction({ user: input.user, isSuperAdmin }, action, targetResult.vm);
         return createResponse(200, "VM action completed", {
             response: formatAIChatVMActionResult(action, targetResult.vm, result, responseLanguage),
             result: {
@@ -180,20 +183,28 @@ export class AIChatVMManagementService {
         });
     }
 
-    private async confirmPendingVMAction(req: Request, actingUserId: string, pendingActionId: string): Promise<resp<AIVMManagementResponse | undefined>> {
+    private async confirmPendingVMAction(input: {
+        user: User;
+        isSuperAdmin: boolean;
+        actingUserId: string;
+        pendingActionId: string;
+    }): Promise<resp<AIVMManagementResponse | undefined>> {
         this.prunePendingVMActions();
 
-        const pending = this.pendingActions.get(pendingActionId);
+        const pending = this.pendingActions.get(input.pendingActionId);
         if (!pending) {
             return createResponse(404, "Pending VM action not found or expired");
         }
 
-        if (pending.userId !== actingUserId) {
+        if (pending.userId !== input.actingUserId) {
             return createResponse(403, "Pending VM action belongs to another user");
         }
 
-        this.pendingActions.delete(pendingActionId);
-        const result = await this.executeVMAction(req, pending.action, pending.vm);
+        this.pendingActions.delete(input.pendingActionId);
+        const result = await this.executeVMAction({
+            user: input.user,
+            isSuperAdmin: input.isSuperAdmin
+        }, pending.action, pending.vm);
 
         return createResponse(200, "VM action executed", {
             response: formatAIChatVMActionResult(pending.action, pending.vm, result, pending.language),
@@ -296,40 +307,39 @@ export class AIChatVMManagementService {
         return interpretVMManagementFallback(userInput, currentVmId);
     }
 
-    private async executeVMAction(req: Request, action: AIVMAction, vm: AIVMInventoryItem): Promise<resp<unknown>> {
+    private async executeVMAction(
+        context: { user: User; isSuperAdmin: boolean },
+        action: AIVMAction,
+        vm: AIVMInventoryItem
+    ): Promise<resp<unknown>> {
         if (this.actionExecutor) {
-            return this.actionExecutor(req, action, vm);
+            return this.actionExecutor(context, action, vm);
         }
 
         switch (action.intent) {
             case 'status':
-                return await this.vmService.getVMStatus(this.cloneRequest(req, {}, { vm_id: vm.vm_id })) as resp<unknown>;
+                return await vmReadService.getVMStatus({ ...context, vmId: vm.vm_id }) as resp<unknown>;
             case 'network':
-                return await this.vmService.getVMNetworkInfo(this.cloneRequest(req, {}, { vm_id: vm.vm_id })) as resp<unknown>;
+                return await vmReadService.getVMNetworkInfo({ ...context, vmId: vm.vm_id }) as resp<unknown>;
             case 'boot':
-                return await this.vmOperateService.bootVM(this.cloneRequest(req, { vm_id: vm.vm_id })) as resp<unknown>;
             case 'shutdown':
-                return await this.vmOperateService.shutdownVM(this.cloneRequest(req, { vm_id: vm.vm_id })) as resp<unknown>;
             case 'poweroff':
-                return await this.vmOperateService.poweroffVM(this.cloneRequest(req, { vm_id: vm.vm_id })) as resp<unknown>;
             case 'reboot':
-                return await this.vmOperateService.rebootVM(this.cloneRequest(req, { vm_id: vm.vm_id })) as resp<unknown>;
             case 'reset':
-                return await this.vmOperateService.resetVM(this.cloneRequest(req, { vm_id: vm.vm_id })) as resp<unknown>;
+                return await this.vmOperateService.executeVMOperation({
+                    ...context,
+                    vmId: vm.vm_id,
+                    operation: action.intent
+                }) as resp<unknown>;
             case 'delete':
-                return await this.vmManageService.deleteUserVM(this.cloneRequest(req, { vm_id: vm.vm_id })) as resp<unknown>;
+                return await this.vmManageService.deleteUserVMForUser({
+                    user: context.user,
+                    tokenRole: context.user.role,
+                    vmId: vm.vm_id
+                }) as resp<unknown>;
             default:
                 return createResponse(400, "Unsupported VM action");
         }
-    }
-
-    private cloneRequest(req: Request, body: Record<string, unknown>, query: Record<string, unknown> = {}): Request {
-        return {
-            ...req,
-            headers: req.headers,
-            body,
-            query
-        } as Request;
     }
 
     private createPendingVMAction(userId: string, action: AIVMAction, vm: AIVMInventoryItem, language: AIResponseLanguage): string {

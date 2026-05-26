@@ -56,35 +56,45 @@ export class VMManageService extends Service {
                 return createResponse(401, "User not found or invalid");
             }
 
-            const { vm_id } = Request.body;
-            const vmIdResult = validateObjectIdInput(vm_id, "vm_id");
-            if (!vmIdResult.valid) {
-                return createResponse(400, vmIdResult.message);
-            }
-            const normalizedVmId = vmIdResult.value;
-
-            const ownershipDecision = canDeleteVMByOwnership({
+            return this.deleteUserVMForUser({
+                user,
                 tokenRole: token_role,
-                ownedVmIds: user.owned_vms,
-                vmId: normalizedVmId
-            });
-            if (!ownershipDecision.allowed) {
-                return createResponse(403, ownershipDecision.message);
-            }
-
-            // 獲取 VM 資訊
-            const vm = await vmRepository.findById(normalizedVmId);
-            if (!vm) {
-                return createResponse(404, "VM not found");
-            }
-
-            return vmDeletionWorkflowService.deleteUserVM({
-                vmId: normalizedVmId,
-                vm
+                vmId: Request.body.vm_id
             });
         } catch (error) {
             return createResponse(500, "Internal Server Error");
         }
+    }
+
+    public async deleteUserVMForUser(input: {
+        user: User;
+        tokenRole: string;
+        vmId: unknown;
+    }): Promise<resp<VMDeletionResponse | undefined>> {
+        const vmIdResult = validateObjectIdInput(input.vmId, "vm_id");
+        if (!vmIdResult.valid) {
+            return createResponse(400, vmIdResult.message);
+        }
+        const normalizedVmId = vmIdResult.value;
+
+        const ownershipDecision = canDeleteVMByOwnership({
+            tokenRole: input.tokenRole,
+            ownedVmIds: input.user.owned_vms,
+            vmId: normalizedVmId
+        });
+        if (!ownershipDecision.allowed) {
+            return createResponse(403, ownershipDecision.message);
+        }
+
+        const vm = await vmRepository.findById(normalizedVmId);
+        if (!vm) {
+            return createResponse(404, "VM not found");
+        }
+
+        return vmDeletionWorkflowService.deleteUserVM({
+            vmId: normalizedVmId,
+            vm
+        });
     }
 
     // 驗證用戶是否有權限刪除 VM
