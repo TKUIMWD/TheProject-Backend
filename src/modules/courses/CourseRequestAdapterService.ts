@@ -17,22 +17,47 @@ type CourseAdapterInput = {
     query?: any;
 };
 
+type CourseRequestAdapterServiceDeps = {
+    read?: typeof courseReadService;
+    mutation?: typeof courseMutationService;
+    list?: typeof courseListService;
+    membership?: typeof courseMembershipService;
+    review?: typeof courseReviewService;
+    lifecycle?: typeof courseLifecycleService;
+};
+
 function validateCourseIdFormat(value: unknown): { valid: true; value: string } | { valid: false; message: string } {
     const result = validateObjectIdInput(value, "course_id");
     return result.valid ? result : { valid: false, message: "Invalid course_id format" };
 }
 
 export class CourseRequestAdapterService {
+    private readonly read: NonNullable<CourseRequestAdapterServiceDeps["read"]>;
+    private readonly mutation: NonNullable<CourseRequestAdapterServiceDeps["mutation"]>;
+    private readonly list: NonNullable<CourseRequestAdapterServiceDeps["list"]>;
+    private readonly membership: NonNullable<CourseRequestAdapterServiceDeps["membership"]>;
+    private readonly review: NonNullable<CourseRequestAdapterServiceDeps["review"]>;
+    private readonly lifecycle: NonNullable<CourseRequestAdapterServiceDeps["lifecycle"]>;
+
+    constructor(deps: CourseRequestAdapterServiceDeps = {}) {
+        this.read = deps.read ?? courseReadService;
+        this.mutation = deps.mutation ?? courseMutationService;
+        this.list = deps.list ?? courseListService;
+        this.membership = deps.membership ?? courseMembershipService;
+        this.review = deps.review ?? courseReviewService;
+        this.lifecycle = deps.lifecycle ?? courseLifecycleService;
+    }
+
     public getCourseById(input: CourseAdapterInput): Promise<resp<CoursePageDTO | undefined>> {
-        return courseReadService.getCoursePage({ user: input.user, courseId: input.params?.courseId });
+        return this.read.getCoursePage({ user: input.user, courseId: input.params?.courseId });
     }
 
     public getCourseMenu(input: CourseAdapterInput): Promise<resp<CourseMenu | undefined>> {
-        return courseReadService.getCourseMenu({ user: input.user, courseId: input.params?.courseId });
+        return this.read.getCourseMenu({ user: input.user, courseId: input.params?.courseId });
     }
 
     public addCourse(input: CourseAdapterInput): Promise<resp<String | { course_id: String } | undefined>> {
-        return courseMutationService.createCourse({ user: input.user, request: input.body });
+        return this.mutation.createCourse({ user: input.user, request: input.body });
     }
 
     public updateCourseById(input: CourseAdapterInput): Promise<resp<String | { course_id: string } | undefined>> {
@@ -41,7 +66,7 @@ export class CourseRequestAdapterService {
             return Promise.resolve(createResponse(400, courseIdResult.message));
         }
 
-        return courseMutationService.updateCourse({
+        return this.mutation.updateCourse({
             user: input.user,
             courseId: courseIdResult.value,
             request: input.body
@@ -54,11 +79,11 @@ export class CourseRequestAdapterService {
             return Promise.resolve(createResponse(400, courseIdResult.message));
         }
 
-        return courseMutationService.deleteCourse(courseIdResult.value);
+        return this.mutation.deleteCourse(courseIdResult.value);
     }
 
     public listPublicCourses(): Promise<resp<String | CourseInfo[] | undefined>> {
-        return courseListService.listPublicCourses();
+        return this.list.listPublicCourses();
     }
 
     public joinCourseById(input: CourseAdapterInput): Promise<resp<String | undefined>> {
@@ -67,19 +92,19 @@ export class CourseRequestAdapterService {
             return Promise.resolve(createResponse(400, courseIdResult.message));
         }
 
-        return courseMembershipService.joinCourse({ user: input.user, courseId: courseIdResult.value });
+        return this.membership.joinCourse({ user: input.user, courseId: courseIdResult.value });
     }
 
     public rateCourse(input: CourseAdapterInput): Promise<resp<any>> {
-        return courseReviewService.createReview({ user: input.user, request: input.body });
+        return this.review.createReview({ user: input.user, request: input.body });
     }
 
     public getCourseReviews(input: CourseAdapterInput): Promise<resp<any>> {
-        return courseReviewService.listReviews({ user: input.user, request: input.query });
+        return this.review.listReviews({ user: input.user, request: input.query });
     }
 
     public updateCourseReview(input: CourseAdapterInput): Promise<resp<any>> {
-        return courseReviewService.updateReview({
+        return this.review.updateReview({
             user: input.user,
             request: {
                 ...input.body,
@@ -89,7 +114,7 @@ export class CourseRequestAdapterService {
     }
 
     public deleteCourseReview(input: CourseAdapterInput): Promise<resp<any>> {
-        return courseReviewService.deleteReview({
+        return this.review.deleteReview({
             user: input.user,
             request: {
                 ...input.query,
@@ -104,7 +129,7 @@ export class CourseRequestAdapterService {
             return Promise.resolve(createResponse(400, courseIdResult.message));
         }
 
-        return courseLifecycleService.approveCourse({
+        return this.lifecycle.approveCourse({
             courseId: courseIdResult.value,
             actorUserId: input.user._id.toString()
         });
@@ -116,26 +141,26 @@ export class CourseRequestAdapterService {
             return Promise.resolve(createResponse(400, courseIdResult.message));
         }
 
-        return courseLifecycleService.unapproveCourse({
+        return this.lifecycle.unapproveCourse({
             courseId: courseIdResult.value,
             actorUserId: input.user._id.toString()
         });
     }
 
     public inviteToJoinCourse(input: CourseAdapterInput): Promise<resp<String | undefined>> {
-        return courseMembershipService.inviteUsers({ actor: input.user, request: input.body });
+        return this.membership.inviteUsers({ actor: input.user, request: input.body });
     }
 
     public getFirstTemplateByCourseID(input: CourseAdapterInput): Promise<resp<String | { template_id: string } | undefined>> {
-        return courseReadService.getFirstTemplate({ user: input.user, courseId: input.params?.courseId });
+        return this.read.getFirstTemplate({ user: input.user, courseId: input.params?.courseId });
     }
 
     public listAllCourses(): Promise<resp<String | CourseInfo[] | undefined>> {
-        return courseListService.listAllCourses();
+        return this.list.listAllCourses();
     }
 
     public listSubmittedCourses(): Promise<resp<String | CourseInfo[] | undefined>> {
-        return courseListService.listSubmittedCourses();
+        return this.list.listSubmittedCourses();
     }
 
     public submitCourse(input: CourseAdapterInput): Promise<resp<String | undefined>> {
@@ -144,7 +169,7 @@ export class CourseRequestAdapterService {
             return Promise.resolve(createResponse(400, courseIdResult.message));
         }
 
-        return courseLifecycleService.submitCourse({
+        return this.lifecycle.submitCourse({
             courseId: courseIdResult.value,
             actorUserId: input.user._id.toString()
         });
@@ -156,7 +181,7 @@ export class CourseRequestAdapterService {
             return Promise.resolve(createResponse(400, courseIdResult.message));
         }
 
-        return courseLifecycleService.setVisibility({
+        return this.lifecycle.setVisibility({
             courseId: courseIdResult.value,
             status: input.body?.status,
             actorUserId: input.user._id.toString()
