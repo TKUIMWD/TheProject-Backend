@@ -4,30 +4,71 @@ import { DBResp } from "../interfaces/Response/DBResp";
 import { Document } from "mongoose";
 import { AuthResponse } from "../interfaces/Response/AuthResponse";
 import { logger } from "../middlewares/log";
-import { Request } from "express";
-import { validateTokenAndGetUser } from "../utils/auth";
 import { authForgotPasswordService } from "../modules/auth/AuthForgotPasswordService";
 import { authLoginService } from "../modules/auth/AuthLoginService";
 import { authRegistrationService } from "../modules/auth/AuthRegistrationService";
 import { authSessionService } from "../modules/auth/AuthSessionService";
 
+export type ForgotPasswordServiceInput = {
+    method: string;
+    body?: {
+        email?: string;
+        password?: string;
+    };
+    authorizationHeader?: string;
+};
+
+type AuthServiceDeps = {
+    registration?: {
+        canSendEmail(lastTimeSent: Date | null | undefined, intervalMinutes: number): boolean;
+        register(data: { username: string, email: string, password: string }): Promise<resp<DBResp<Document> | undefined>>;
+    };
+    login?: {
+        login(data: { email: string, password: string }): Promise<resp<AuthResponse | undefined>>;
+    };
+    forgotPassword?: {
+        handle(input: ForgotPasswordServiceInput): Promise<resp<DBResp<Document> | undefined>>;
+    };
+    session?: {
+        verifyEmail(user: any): Promise<resp<AuthResponse | undefined>>;
+        logout(user: any): Promise<resp<DBResp<Document> | undefined>>;
+    };
+};
 
 export class AuthService extends Service {
+    private readonly registration: NonNullable<AuthServiceDeps["registration"]>;
+    private readonly loginService: NonNullable<AuthServiceDeps["login"]>;
+    private readonly forgotPasswordService: NonNullable<AuthServiceDeps["forgotPassword"]>;
+    private readonly sessionService: NonNullable<AuthServiceDeps["session"]>;
+
+    constructor(deps: AuthServiceDeps = {}) {
+        super();
+        this.registration = deps.registration ?? authRegistrationService;
+        this.loginService = deps.login ?? authLoginService;
+        this.forgotPasswordService = deps.forgotPassword ?? authForgotPasswordService;
+        this.sessionService = deps.session ?? authSessionService;
+    }
+
     public canSendEmail(lastTimeSent: Date | null | undefined, intervalMinutes: number): boolean {
-        return authRegistrationService.canSendEmail(lastTimeSent, intervalMinutes);
+        return this.registration.canSendEmail(lastTimeSent, intervalMinutes);
     }
 
     public async register(data: { username: string, email: string, password: string }): Promise<resp<DBResp<Document> | undefined>> {
         try {
-            return authRegistrationService.register(data);
+            return this.registration.register(data);
         } catch (error) {
             logger.error(error);
             return createResponse(500, "internal server error");
         }
     }
 
-    public async verify(Request: Request): Promise<resp<AuthResponse | undefined>> {
-        return this.withAuthenticatedUser<AuthResponse>(Request, (user) => authSessionService.verifyEmail(user));
+    public async verify(user: any): Promise<resp<AuthResponse | undefined>> {
+        try {
+            return this.sessionService.verifyEmail(user);
+        } catch (error) {
+            logger.error(error);
+            return createResponse(500, "internal server error");
+        }
     }
 
     /*
@@ -36,39 +77,23 @@ export class AuthService extends Service {
     */
     public async login(data: { email: string, password: string }): Promise<resp<AuthResponse | undefined>> {
         try {
-            return authLoginService.login(data);
+            return this.loginService.login(data);
         } catch (error) {
             logger.error(error);
             return createResponse(500, "internal server error");
         }
     }
 
-    public async logout(Request: Request): Promise<resp<DBResp<Document> | undefined>> {
-        return this.withAuthenticatedUser<DBResp<Document>>(Request, (user) => authSessionService.logout(user));
-    }
-
-    public async forgotPassword(Request: Request): Promise<resp<DBResp<Document> | undefined>> {
-        return authForgotPasswordService.handle({
-            method: Request.method,
-            body: Request.body,
-            authorizationHeader: Request.headers.authorization
-        });
-    }
-
-    private async withAuthenticatedUser<T>(
-        Request: Request,
-        action: (user: any) => Promise<resp<T | undefined>>
-    ): Promise<resp<T | undefined>> {
+    public async logout(user: any): Promise<resp<DBResp<Document> | undefined>> {
         try {
-            const { user, error } = await validateTokenAndGetUser<T>(Request);
-            if (error) {
-                return error;
-            }
-
-            return action(user);
+            return this.sessionService.logout(user);
         } catch (error) {
             logger.error(error);
             return createResponse(500, "internal server error");
         }
+    }
+
+    public async forgotPassword(input: ForgotPasswordServiceInput): Promise<resp<DBResp<Document> | undefined>> {
+        return this.forgotPasswordService.handle(input);
     }
 }
