@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `af89fd4 docs update vm operate facade progress`
+Latest remote baseline before this snapshot: `6b4e2c8 docs update super admin facade progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -49,6 +49,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - `SuperAdminService` now shares one request-context helper for actor/body forwarding into `SuperAdminRequestAdapterService`.
 - `VMOperateService` no longer accepts raw Express `Request`; `VMOperateController` owns request token/body extraction and forwards DTO inputs.
 - `SuperAdminService` no longer accepts raw Express `Request`; `SuperAdminController` owns SuperAdmin token/body extraction and forwards DTO inputs.
+- `ClassService` and `ChapterService` no longer accept raw Express `Request`; their controllers own token/body/params extraction and forward DTO inputs.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -78,7 +79,8 @@ The latest recorded full gate is green after these slices:
 - targeted User tests: `npx vitest run tests/user-profile-service.test.ts tests/user-read-service.test.ts` (`2` files, `19` tests)
 - targeted VM operation facade tests: `npx vitest run tests/vm-operate-service.test.ts tests/vm-operation-execution-service.test.ts tests/vm-operation-policy.test.ts` (`3` files, `13` tests)
 - targeted SuperAdmin facade tests: `npx vitest run tests/super-admin-service.test.ts tests/super-admin-request-adapter-service.test.ts tests/super-admin-user-management-service.test.ts tests/super-admin-user-mutation-policy.test.ts` (`4` files, `13` tests)
-- `npm test` (`184` files, `921` tests)
+- targeted Course structure facade tests: `npx vitest run tests/class-service.test.ts tests/chapter-service.test.ts tests/course-structure-request-adapter-service.test.ts tests/class-management-service.test.ts tests/chapter-management-service.test.ts tests/class-content-policy.test.ts tests/chapter-content-policy.test.ts` (`7` files, `31` tests)
+- `npm test` (`186` files, `923` tests)
 - `npm run build`
 - `npm audit --audit-level=moderate` (`0` vulnerabilities)
 - merge-conflict marker scan
@@ -145,7 +147,8 @@ The latest recorded full gate is green after these slices:
   - `SuperAdminService` now shares one request-context forwarding helper for actor/body adapter calls.
 - `SuperAdminService` now exposes DTO-style SuperAdmin methods; Express `Request` handling remains in `SuperAdminController`.
 - Course and VM Box route-to-workflow adapter logic now lives behind DTO-style request adapter services, leaving their facades as thin auth/error wrappers.
-- Class and Chapter route-to-workflow adapter logic now lives behind `CourseStructureRequestAdapterService`, leaving `ClassService` and `ChapterService` as token/error wrappers.
+- Class and Chapter route-to-workflow adapter logic now lives behind `CourseStructureRequestAdapterService`.
+- `ClassService` and `ChapterService` now expose DTO-style course-structure methods; Express `Request` handling remains in their controllers.
 - Safe non-unique indexes were added for common lookup/list paths.
 - Unique-constraint hardening remains deferred, but `docs/DATA_HARDENING_UNIQUE_CONSTRAINTS.md` now records staging/production duplicate checks and cleanup order for candidate unique keys.
 - `npm run data:check-unique-duplicates` now provides a read-only duplicate preflight command for staging/production runs.
@@ -166,13 +169,13 @@ Current facade/service file sizes:
 | `src/service/AIBoxBuildService.ts` | 100 | Thin token wrapper around AI Box Build request adapter with shared request-context forwarding. |
 | `src/service/TemplateService.ts` | 93 | Thin token wrapper around Template request adapter with shared request-context forwarding. |
 | `src/service/VMService.ts` | 90 | Thin read facade around VM read request adapter. |
-| `src/service/ChapterService.ts` | 89 | Thin token wrapper around course structure request adapter. |
 | `src/service/SuperAdminCRPService.ts` | 87 | Thin token/role wrapper around CRP request adapter with shared request-context forwarding. |
 | `src/service/VMOperateService.ts` | 65 | Thin DTO facade delegating operation execution; no Express `Request` import. |
 | `src/service/AuthService.ts` | 74 | Thin token wrapper around Auth workflow/session services. |
 | `src/service/TemplateManageService.ts` | 70 | Thin token/role wrapper around Template Manage request adapter with shared request-context forwarding. |
 | `src/service/SuperAdminService.ts` | 62 | Thin DTO facade around SuperAdmin request adapter; no Express `Request` import. |
-| `src/service/ClassService.ts` | 56 | Thin token wrapper around course structure request adapter. |
+| `src/service/ChapterService.ts` | 48 | Thin DTO facade around course structure request adapter; no Express `Request` import. |
+| `src/service/ClassService.ts` | 38 | Thin DTO facade around course structure request adapter; no Express `Request` import. |
 
 ## Remaining Gaps
 
@@ -190,8 +193,6 @@ Current services still importing `Request` from Express include:
 - `VMService`
 - `TemplateService`
 - `AIChatService`
-- `ChapterService`
-- `ClassService`
 - `PVEService`
 - `VMBoxService`
 - `AIBoxBuildService`
