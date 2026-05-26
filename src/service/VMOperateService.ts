@@ -1,38 +1,22 @@
 import { Service } from "../abstract/Service";
-import { resp, createResponse } from "../utils/resp";
-import { Request } from "express";
-import { validateTokenAndGetSuperAdminUser, validateTokenAndGetUser } from "../utils/auth";
+import { resp } from "../utils/resp";
 import { User } from "../interfaces/User";
-import { logger } from "../middlewares/log";
 import { VMOperation } from "../modules/vm/VMOperationPolicy";
 import { vmOperationExecutionService } from "../modules/vm/VMOperationExecutionService";
 
+export type VMOperationServiceInput = {
+    user: User;
+    isSuperAdmin: boolean;
+    vmId: unknown;
+};
+
+type VMOperationExecutionPort = {
+    execute(input: VMOperationServiceInput & { operation: VMOperation }): Promise<resp<any>>;
+};
+
 export class VMOperateService extends Service {
-    public async _isSuperAdmin(Request: Request): Promise<boolean> {
-        const { user, error } = await validateTokenAndGetSuperAdminUser<User>(Request);
-        return !error && user ? true : false;
-    }
-
-    private async _executeVMOperation(Request: Request, operation: VMOperation): Promise<resp<any>> {
-        try {
-            const { user, error } = await validateTokenAndGetUser<User>(Request);
-            if (error) {
-                logger.warn(`Token validation failed in ${operation}VM: ${error.message}`);
-                return createResponse(error.code, error.message);
-            }
-
-            const isSuperAdmin = await this._isSuperAdmin(Request);
-            return this.executeVMOperation({
-                user,
-                isSuperAdmin,
-                vmId: Request.body.vm_id,
-                operation
-            });
-
-        } catch (error) {
-            logger.error(`Error in ${operation}VM:`, error);
-            return createResponse(500, "Internal server error");
-        }
+    constructor(private readonly operationExecutionService: VMOperationExecutionPort = vmOperationExecutionService) {
+        super();
     }
 
     public async executeVMOperation(input: {
@@ -41,41 +25,41 @@ export class VMOperateService extends Service {
         vmId: unknown;
         operation: VMOperation;
     }): Promise<resp<any>> {
-        return vmOperationExecutionService.execute(input);
+        return this.operationExecutionService.execute(input);
     }
 
     /**
      * 啟動 VM (boot)
      */
-    public async bootVM(Request: Request): Promise<resp<{ upid?: string; network_identity_warning?: string } | undefined>> {
-        return this._executeVMOperation(Request, "boot");
+    public async bootVM(input: VMOperationServiceInput): Promise<resp<{ upid?: string; network_identity_warning?: string } | undefined>> {
+        return this.executeVMOperation({ ...input, operation: "boot" });
     }
 
     /**
      * 正常關機 VM (shutdown)
      */
-    public async shutdownVM(Request: Request): Promise<resp<{ upid?: string } | undefined>> {
-        return this._executeVMOperation(Request, "shutdown");
+    public async shutdownVM(input: VMOperationServiceInput): Promise<resp<{ upid?: string } | undefined>> {
+        return this.executeVMOperation({ ...input, operation: "shutdown" });
     }
 
     /**
      * 強制停止 VM (poweroff)
      */
-    public async poweroffVM(Request: Request): Promise<resp<{ upid?: string } | undefined>> {
-        return this._executeVMOperation(Request, "poweroff");
+    public async poweroffVM(input: VMOperationServiceInput): Promise<resp<{ upid?: string } | undefined>> {
+        return this.executeVMOperation({ ...input, operation: "poweroff" });
     }
 
     /**
      * 重啟 VM (reboot)
      */
-    public async rebootVM(Request: Request): Promise<resp<{ upid?: string } | undefined>> {
-        return this._executeVMOperation(Request, "reboot");
+    public async rebootVM(input: VMOperationServiceInput): Promise<resp<{ upid?: string } | undefined>> {
+        return this.executeVMOperation({ ...input, operation: "reboot" });
     }
 
     /**
      * 重置 VM (reset) - 硬重置，類似按下電源按鈕
      */
-    public async resetVM(Request: Request): Promise<resp<{ upid?: string } | undefined>> {
-        return this._executeVMOperation(Request, "reset");
+    public async resetVM(input: VMOperationServiceInput): Promise<resp<{ upid?: string } | undefined>> {
+        return this.executeVMOperation({ ...input, operation: "reset" });
     }
 }
