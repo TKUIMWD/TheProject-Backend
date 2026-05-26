@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `be4db71 docs update vm read refactor progress`
+Latest remote baseline before this snapshot: `9b802f8 docs update ai box build refactor progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -34,6 +34,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - Template list/convert/submit/audit route body adapter logic moved from `TemplateService` into `TemplateRequestAdapterService`.
 - VM read/list/status/network route query adapter logic moved from `VMService` into `VMReadRequestAdapterService`.
 - AI Box Build job/run route params/body/header adapter logic moved from `AIBoxBuildService` into `AIBoxBuildRequestAdapterService`.
+- AI Chat hint/platform-guide/VM-management route body adapter logic moved from `AIChatService` into `AIChatRequestAdapterService`.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -44,6 +45,7 @@ The latest recorded full gate is green after these slices:
 - targeted Course structure tests: `npx vitest run tests/course-structure-request-adapter-service.test.ts tests/class-management-service.test.ts tests/chapter-management-service.test.ts tests/class-content-policy.test.ts tests/chapter-content-policy.test.ts tests/course-request-adapter-service.test.ts` (`6` files, `31` tests)
 - targeted VM Box/Guacamole tests: `npx vitest run tests/vm-box-list-service.test.ts tests/vm-box-review-service.test.ts tests/vm-box-writeup-service.test.ts tests/vm-box-answer-service.test.ts tests/vm-box-submission-create-service.test.ts tests/vm-box-submission-audit-service.test.ts tests/guacamole-connection-establishment-service.test.ts tests/guacamole-connection-preflight-service.test.ts tests/course-request-adapter-service.test.ts` (`9` files, `33` tests)
 - targeted AI Chat VM tests: `npx vitest run tests/ai-chat-vm-management-service.test.ts tests/ai-chat-vm-intent-policy.test.ts tests/ai-chat-vm-pending-action-policy.test.ts tests/ai-chat-vm-response-policy.test.ts tests/ai-chat-request-policy.test.ts` (`5` files, `26` tests)
+- targeted AI Chat request adapter tests: `npx vitest run tests/ai-chat-request-adapter-service.test.ts tests/ai-chat-box-hint-service.test.ts tests/ai-chat-platform-guide-service.test.ts tests/ai-chat-vm-management-service.test.ts tests/ai-chat-request-policy.test.ts tests/ai-chat-language-policy.test.ts` (`6` files, `30` tests)
 - targeted AI Box provisioning tests: `npx vitest run tests/ai-box-build-provisioning-service.test.ts tests/ai-box-build-run-execution-service.test.ts tests/ai-box-build-run-launch-service.test.ts tests/vm-creation-request-service.test.ts` (`4` files, `22` tests)
 - targeted AI Box request adapter tests: `npx vitest run tests/ai-box-build-request-adapter-service.test.ts tests/ai-box-build-draft-service.test.ts tests/ai-box-build-job-management-service.test.ts tests/ai-box-build-run-launch-service.test.ts tests/ai-box-build-run-execution-service.test.ts` (`5` files, `23` tests)
 - targeted Template list tests: `npx vitest run tests/template-list-service.test.ts` (`1` file, `4` tests)
@@ -56,7 +58,7 @@ The latest recorded full gate is green after these slices:
 - targeted Template Manage adapter tests: `npx vitest run tests/template-manage-request-adapter-service.test.ts tests/template-config-update-service.test.ts tests/template-deletion-service.test.ts tests/template-clone-service.test.ts tests/template-list-service.test.ts tests/template-conversion-service.test.ts tests/template-audit-service.test.ts` (`7` files, `40` tests)
 - targeted CRP adapter tests: `npx vitest run tests/compute-resource-plan-request-adapter-service.test.ts tests/compute-resource-plan-management-service.test.ts tests/compute-resource-plan-policy.test.ts` (`3` files, `19` tests)
 - targeted SuperAdmin adapter tests: `npx vitest run tests/super-admin-request-adapter-service.test.ts tests/super-admin-user-management-service.test.ts tests/super-admin-user-mutation-policy.test.ts` (`3` files, `12` tests)
-- `npm test` (`179` files, `902` tests)
+- `npm test` (`180` files, `905` tests)
 - `npm run build`
 - `npm audit --audit-level=moderate` (`0` vulnerabilities)
 - merge-conflict marker scan
@@ -93,6 +95,7 @@ The latest recorded full gate is green after these slices:
   - AI Chat VM management now accepts body/user context and calls VM read, VM operation, and VM deletion module ports instead of cloning Express requests or importing service facades.
   - AI Box Build provisioning now calls VM creation workflow DTOs directly instead of constructing an Express-like request.
   - AI Box Build job/run route-to-workflow adapter logic now lives in `AIBoxBuildRequestAdapterService`.
+  - AI Chat hint/platform-guide/VM-management route-to-workflow adapter logic now lives in `AIChatRequestAdapterService`.
 - Course, Template, VM Box, and Review domains have many extracted/tested service and policy slices, including create/update/list/review/membership/submission/audit/writeup/answer flows.
 - Template list, accessible-template list, and submitted-template detail assembly now live in `TemplateListService`.
 - Template list/convert/submit/audit route-to-workflow adapter logic now lives in `TemplateRequestAdapterService`.
@@ -123,7 +126,7 @@ Current facade/service file sizes:
 | `src/service/VMBoxService.ts` | 190 | Thin auth/error wrapper around VM Box request adapter. |
 | `src/service/CourseService.ts` | 160 | Thin auth/error wrapper around Course request adapter. |
 | `src/service/PVEService.ts` | 157 | Thin token/role wrapper around PVE request adapter. |
-| `src/service/AIChatService.ts` | 141 | Thin auth/error wrapper around hint, platform-guide, and VM-management modules. |
+| `src/service/AIChatService.ts` | 125 | Thin auth/error wrapper around AI Chat request adapter. |
 | `src/service/VMManageService.ts` | 120 | Thin token/role wrapper around VM Manage request adapter. |
 | `src/service/UserService.ts` | 118 | Thin auth/error wrapper around profile/read modules. |
 | `src/service/TemplateService.ts` | 106 | Thin token wrapper around Template request adapter. |
@@ -170,7 +173,7 @@ No extracted module currently imports Express `Request`; remaining `Request` imp
    - Add unique constraints only after duplicate groups are cleaned and archived as empty.
 
 2. Continue facade-boundary cleanup where useful.
-   - Candidate targets: smaller wrapper cleanup in remaining facades such as `AIChatService`, `GuacamoleService`, and similar wrappers where controller response shapes can stay unchanged.
+   - Candidate targets: smaller wrapper cleanup in remaining facades such as `GuacamoleService`, `VMBoxService`, and similar wrappers where controller response shapes can stay unchanged.
    - Keep controller response shapes unchanged.
 
 3. Keep gates mandatory for every slice.
@@ -199,6 +202,7 @@ Use small, isolated commits:
 10. `refactor template request adapter service`
 11. `refactor vm read request adapter service`
 12. `refactor ai box build request adapter service`
-13. `docs update backend refactor progress`
+13. `refactor ai chat request adapter service`
+14. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.
