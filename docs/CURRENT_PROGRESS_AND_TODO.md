@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `43bc9cc docs update course refactor progress`
+Latest remote baseline before this snapshot: `5d50e06 docs update pve refactor progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -39,6 +39,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - VM Box route-to-workflow request adapter now has injectable dependencies and direct mapping coverage; `VMBoxService` shares one request-context helper for body/query/params forwarding.
 - Course route-to-workflow request adapter now has injectable dependencies and direct mapping coverage; `CourseService` shares one request-context helper for body/query/params forwarding.
 - `PVEService` now shares one request-context helper for body/query forwarding into `PVERequestAdapterService`.
+- `TemplateService` now shares one token/error wrapper and one request-context helper for Template request adapter calls.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -109,6 +110,7 @@ The latest recorded full gate is green after these slices:
 - VM Box request adapter mapping is now directly tested with injected workflow ports, and `VMBoxService` now uses one shared request-context helper for forwarding actor/body/query/params into the adapter.
 - Template list, accessible-template list, and submitted-template detail assembly now live in `TemplateListService`.
 - Template list/convert/submit/audit route-to-workflow adapter logic now lives in `TemplateRequestAdapterService`.
+  - `TemplateService` now shares one token/error wrapper and request-context forwarding helper for user/admin/superadmin template routes.
 - User profile/read facade methods now share a thin auth/error wrapper while delegating to extracted user modules.
 - Guacamole SSH/RDP/VNC establishment now shares one service-level adapter helper.
 - VM status/network reads now share one service-level actor-context resolver.
@@ -140,8 +142,8 @@ Current facade/service file sizes:
 | `src/service/AIChatService.ts` | 125 | Thin auth/error wrapper around AI Chat request adapter. |
 | `src/service/VMManageService.ts` | 120 | Thin token/role wrapper around VM Manage request adapter. |
 | `src/service/UserService.ts` | 118 | Thin auth/error wrapper around profile/read modules. |
-| `src/service/TemplateService.ts` | 106 | Thin token wrapper around Template request adapter. |
 | `src/service/AIBoxBuildService.ts` | 101 | Thin token wrapper around AI Box Build request adapter. |
+| `src/service/TemplateService.ts` | 93 | Thin token wrapper around Template request adapter with shared request-context forwarding. |
 | `src/service/VMService.ts` | 90 | Thin read facade around VM read request adapter. |
 | `src/service/ChapterService.ts` | 89 | Thin token wrapper around course structure request adapter. |
 | `src/service/SuperAdminCRPService.ts` | 84 | Thin token/role wrapper around CRP request adapter. |
@@ -218,6 +220,7 @@ Use small, isolated commits:
 15. `refactor vm box request adapter coverage`
 16. `refactor course request adapter coverage`
 17. `refactor pve service request context forwarding`
-18. `docs update backend refactor progress`
+18. `refactor template service request context forwarding`
+19. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.
