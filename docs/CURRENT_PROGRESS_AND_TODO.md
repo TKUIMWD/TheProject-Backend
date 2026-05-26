@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `13c921d docs update vm manage refactor progress`
+Latest remote baseline before this snapshot: `3dd363a docs update template manage refactor progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -27,6 +27,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - PVE route body/query adapter logic moved from `PVEService` into `PVERequestAdapterService`.
 - VM Manage create/update/delete route body adapter logic moved from `VMManageService` into `VMManageRequestAdapterService`.
 - Template Manage update/delete/clone route body adapter logic moved from `TemplateManageService` into `TemplateManageRequestAdapterService`.
+- Compute Resource Plan create/update/delete/list/get-by-id route adapter logic moved from `SuperAdminCRPService` into `ComputeResourcePlanRequestAdapterService`.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -43,7 +44,8 @@ The latest recorded full gate is green after these slices:
 - targeted PVE adapter tests: `npx vitest run tests/pve-request-adapter-service.test.ts tests/pve-task-service.test.ts tests/pve-qemu-config-access-service.test.ts tests/pve-datacenter-status-service.test.ts tests/pve-qemu-config-dto-factory.test.ts tests/pve-datacenter-status-policy.test.ts tests/pve-client.test.ts` (`7` files, `28` tests)
 - targeted VM Manage adapter tests: `npx vitest run tests/vm-manage-request-adapter-service.test.ts tests/vm-creation-request-service.test.ts tests/vm-config-update-workflow-service.test.ts tests/vm-deletion-access-service.test.ts tests/vm-deletion-workflow-service.test.ts tests/vm-creation-workflow-service.test.ts tests/vm-config-execution-service.test.ts` (`7` files, `31` tests)
 - targeted Template Manage adapter tests: `npx vitest run tests/template-manage-request-adapter-service.test.ts tests/template-config-update-service.test.ts tests/template-deletion-service.test.ts tests/template-clone-service.test.ts tests/template-list-service.test.ts tests/template-conversion-service.test.ts tests/template-audit-service.test.ts` (`7` files, `40` tests)
-- `npm test` (`172` files, `881` tests)
+- targeted CRP adapter tests: `npx vitest run tests/compute-resource-plan-request-adapter-service.test.ts tests/compute-resource-plan-management-service.test.ts tests/compute-resource-plan-policy.test.ts` (`3` files, `19` tests)
+- `npm test` (`173` files, `886` tests)
 - `npm run build`
 - `npm audit --audit-level=moderate` (`0` vulnerabilities)
 - merge-conflict marker scan
@@ -88,6 +90,7 @@ The latest recorded full gate is green after these slices:
 - PVE request query/body mapping now lives in `PVERequestAdapterService`; `PVEService` is a token/role adapter for PVE workflows.
 - VM Manage create/update/delete body mapping now lives in `VMManageRequestAdapterService`; `VMManageService` is a token/role adapter.
 - Template Manage update/delete/clone body mapping now lives in `TemplateManageRequestAdapterService`; `TemplateManageService` is a token/role adapter.
+- CRP route params/body mapping now lives in `ComputeResourcePlanRequestAdapterService`; `SuperAdminCRPService` is a token/role adapter.
 - Course and VM Box route-to-workflow adapter logic now lives behind DTO-style request adapter services, leaving their facades as thin auth/error wrappers.
 - Safe non-unique indexes were added for common lookup/list paths.
 - Unique-constraint hardening remains deferred, but `docs/DATA_HARDENING_UNIQUE_CONSTRAINTS.md` now records staging/production duplicate checks and cleanup order for candidate unique keys.
@@ -108,10 +111,10 @@ Current facade/service file sizes:
 | `src/service/VMManageService.ts` | 120 | Thin token/role wrapper around VM Manage request adapter. |
 | `src/service/UserService.ts` | 118 | Thin auth/error wrapper around profile/read modules. |
 | `src/service/TemplateService.ts` | 117 | Listing/conversion/submission/audit workflows extracted. |
-| `src/service/SuperAdminCRPService.ts` | 98 | Thin wrapper. |
 | `src/service/ChapterService.ts` | 96 | Thin wrapper. |
 | `src/service/VMService.ts` | 92 | Thin read facade with shared actor-context resolver. |
 | `src/service/AuthService.ts` | 86 | Register/login/forgot-password extracted; verify/logout still in facade. |
+| `src/service/SuperAdminCRPService.ts` | 84 | Thin token/role wrapper around CRP request adapter. |
 | `src/service/VMOperateService.ts` | 81 | Thin request adapter delegating operation execution. |
 | `src/service/ClassService.ts` | 78 | Thin wrapper. |
 | `src/service/SuperAdminService.ts` | 78 | Thin wrapper. |
@@ -150,7 +153,7 @@ No extracted module currently imports Express `Request`; remaining `Request` imp
    - Add unique constraints only after duplicate groups are cleaned and archived as empty.
 
 2. Continue facade-boundary cleanup where useful.
-   - Candidate targets: smaller wrapper cleanup in `AuthService`, `SuperAdminCRPService`, and similar facades.
+   - Candidate targets: smaller wrapper cleanup in `AuthService`, `SuperAdminService`, and similar facades.
    - Keep controller response shapes unchanged.
 
 3. Keep gates mandatory for every slice.
@@ -172,6 +175,7 @@ Use small, isolated commits:
 3. `refactor pve request adapter service`
 4. `refactor vm manage request adapter service`
 5. `refactor template manage request adapter service`
-6. `docs update backend refactor progress`
+6. `refactor crp request adapter service`
+7. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.

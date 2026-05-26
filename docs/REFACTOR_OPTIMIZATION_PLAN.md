@@ -4490,3 +4490,23 @@ Acceptance criteria:
   - `npm run build`
   - `npm audit --audit-level=moderate` (`0` vulnerabilities)
   - conflict-marker scan, backend `console.*` scan, and `git diff --check`
+
+### 2026-05-26 CRP Request Adapter Service Slice
+
+- Added `src/modules/crp/ComputeResourcePlanRequestAdapterService.ts`.
+- Added `tests/compute-resource-plan-request-adapter-service.test.ts`.
+- Moved Compute Resource Plan route DTO mapping out of `SuperAdminCRPService` for:
+  - create body forwarding;
+  - update params/body forwarding;
+  - delete params forwarding;
+  - get-by-id params forwarding;
+  - list delegation without request-shaped data.
+- Consolidated repeated `SuperAdminCRPService` token-validation/error wrappers for user and superadmin routes.
+- `SuperAdminCRPService.ts` is now about `84` lines and imports only the CRP request adapter from `modules/crp`.
+- Verified:
+  - `npx vitest run tests/compute-resource-plan-request-adapter-service.test.ts tests/compute-resource-plan-management-service.test.ts tests/compute-resource-plan-policy.test.ts` (`3` files, `19` tests)
+  - `npm run typecheck`
+  - `npm test` (`173` files, `886` tests)
+  - `npm run build`
+  - `npm audit --audit-level=moderate` (`0` vulnerabilities)
+  - conflict-marker scan, backend `console.*` scan, and `git diff --check`
