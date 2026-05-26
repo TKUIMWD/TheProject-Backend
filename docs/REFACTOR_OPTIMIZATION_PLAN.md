@@ -4472,3 +4472,21 @@ Acceptance criteria:
   - `npm run build`
   - `npm audit --audit-level=moderate` (`0` vulnerabilities)
   - conflict-marker scan, backend `console.*` scan, and `git diff --check`
+
+### 2026-05-26 Template Manage Request Adapter Service Slice
+
+- Added `src/modules/templates/TemplateManageRequestAdapterService.ts`.
+- Added `tests/template-manage-request-adapter-service.test.ts`.
+- Moved Template Manage route DTO mapping out of `TemplateManageService` for:
+  - config update body forwarding;
+  - delete body `template_id` forwarding;
+  - clone body forwarding into the superadmin-only clone workflow.
+- Consolidated repeated `TemplateManageService` token-validation/error wrappers for user and superadmin routes.
+- `TemplateManageService.ts` is now about `68` lines and imports only the Template Manage request adapter from `modules/templates`.
+- Verified:
+  - `npx vitest run tests/template-manage-request-adapter-service.test.ts tests/template-config-update-service.test.ts tests/template-deletion-service.test.ts tests/template-clone-service.test.ts tests/template-list-service.test.ts tests/template-conversion-service.test.ts tests/template-audit-service.test.ts` (`7` files, `40` tests)
+  - `npm run typecheck`
+  - `npm test` (`172` files, `881` tests)
+  - `npm run build`
+  - `npm audit --audit-level=moderate` (`0` vulnerabilities)
+  - conflict-marker scan, backend `console.*` scan, and `git diff --check`

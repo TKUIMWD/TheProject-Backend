@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `bbce32b docs update pve refactor progress`
+Latest remote baseline before this snapshot: `13c921d docs update vm manage refactor progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -26,6 +26,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - AI Chat platform-guide workflow moved from `AIChatService` into `AIChatPlatformGuideService`.
 - PVE route body/query adapter logic moved from `PVEService` into `PVERequestAdapterService`.
 - VM Manage create/update/delete route body adapter logic moved from `VMManageService` into `VMManageRequestAdapterService`.
+- Template Manage update/delete/clone route body adapter logic moved from `TemplateManageService` into `TemplateManageRequestAdapterService`.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -41,7 +42,8 @@ The latest recorded full gate is green after these slices:
 - targeted VM operation/deletion + AI Chat boundary tests: `npx vitest run tests/ai-chat-platform-guide-service.test.ts tests/ai-chat-box-hint-service.test.ts tests/ai-chat-request-policy.test.ts tests/ai-chat-language-policy.test.ts tests/ai-chat-vm-management-service.test.ts tests/vm-operation-execution-service.test.ts tests/vm-deletion-access-service.test.ts` (`7` files, `35` tests)
 - targeted PVE adapter tests: `npx vitest run tests/pve-request-adapter-service.test.ts tests/pve-task-service.test.ts tests/pve-qemu-config-access-service.test.ts tests/pve-datacenter-status-service.test.ts tests/pve-qemu-config-dto-factory.test.ts tests/pve-datacenter-status-policy.test.ts tests/pve-client.test.ts` (`7` files, `28` tests)
 - targeted VM Manage adapter tests: `npx vitest run tests/vm-manage-request-adapter-service.test.ts tests/vm-creation-request-service.test.ts tests/vm-config-update-workflow-service.test.ts tests/vm-deletion-access-service.test.ts tests/vm-deletion-workflow-service.test.ts tests/vm-creation-workflow-service.test.ts tests/vm-config-execution-service.test.ts` (`7` files, `31` tests)
-- `npm test` (`171` files, `878` tests)
+- targeted Template Manage adapter tests: `npx vitest run tests/template-manage-request-adapter-service.test.ts tests/template-config-update-service.test.ts tests/template-deletion-service.test.ts tests/template-clone-service.test.ts tests/template-list-service.test.ts tests/template-conversion-service.test.ts tests/template-audit-service.test.ts` (`7` files, `40` tests)
+- `npm test` (`172` files, `881` tests)
 - `npm run build`
 - `npm audit --audit-level=moderate` (`0` vulnerabilities)
 - merge-conflict marker scan
@@ -85,6 +87,7 @@ The latest recorded full gate is green after these slices:
 - VM deletion ownership and workflow dispatch now lives in `VMDeletionAccessService`; `VMManageService` delegates delete DTOs.
 - PVE request query/body mapping now lives in `PVERequestAdapterService`; `PVEService` is a token/role adapter for PVE workflows.
 - VM Manage create/update/delete body mapping now lives in `VMManageRequestAdapterService`; `VMManageService` is a token/role adapter.
+- Template Manage update/delete/clone body mapping now lives in `TemplateManageRequestAdapterService`; `TemplateManageService` is a token/role adapter.
 - Course and VM Box route-to-workflow adapter logic now lives behind DTO-style request adapter services, leaving their facades as thin auth/error wrappers.
 - Safe non-unique indexes were added for common lookup/list paths.
 - Unique-constraint hardening remains deferred, but `docs/DATA_HARDENING_UNIQUE_CONSTRAINTS.md` now records staging/production duplicate checks and cleanup order for candidate unique keys.
@@ -112,7 +115,7 @@ Current facade/service file sizes:
 | `src/service/VMOperateService.ts` | 81 | Thin request adapter delegating operation execution. |
 | `src/service/ClassService.ts` | 78 | Thin wrapper. |
 | `src/service/SuperAdminService.ts` | 78 | Thin wrapper. |
-| `src/service/TemplateManageService.ts` | 76 | Thin wrapper. |
+| `src/service/TemplateManageService.ts` | 68 | Thin token/role wrapper around Template Manage request adapter. |
 
 ## Remaining Gaps
 
@@ -147,7 +150,7 @@ No extracted module currently imports Express `Request`; remaining `Request` imp
    - Add unique constraints only after duplicate groups are cleaned and archived as empty.
 
 2. Continue facade-boundary cleanup where useful.
-   - Candidate targets: smaller wrapper cleanup in `AuthService`, `TemplateManageService`, `SuperAdminCRPService`, and similar facades.
+   - Candidate targets: smaller wrapper cleanup in `AuthService`, `SuperAdminCRPService`, and similar facades.
    - Keep controller response shapes unchanged.
 
 3. Keep gates mandatory for every slice.
@@ -168,6 +171,7 @@ Use small, isolated commits:
 2. `refactor ai chat platform guide service`
 3. `refactor pve request adapter service`
 4. `refactor vm manage request adapter service`
-5. `docs update backend refactor progress`
+5. `refactor template manage request adapter service`
+6. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.
