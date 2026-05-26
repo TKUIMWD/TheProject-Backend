@@ -31,14 +31,14 @@ Scope: `/home/tkuimwd/Documents/GitHub/TheProject-Backend`
 ## Progress Snapshot
 
 - Phase 0 is complete for compile baseline, script cleanup, immediate sensitive log redaction, and backend `console.*` cleanup across service/utils/controller/router code paths.
-- Phase 1 is partially complete: typed env config, request-scoped TLS behavior, centralized dotenv loading, tested CORS whitelist policy, `PVEClient`, `GuacamoleApiClient`, `OpenAIClientFactory`, `OpenAICompatibleChatClient`, and `OpenCodeRunner` are in place. Auth token user ID validation now prevents malformed token payload IDs from reaching Mongoose lookups. Auth registration input/conflict rules and the registration workflow service are extracted/tested, and registration duplicate checks use one batched identity lookup. Auth login workflow, wrong-attempt lockout, unverified-email resend, and token response behavior are extracted/tested. User profile/password/avatar and user courses/CRP/SuperAdmin lookup workflow services are extracted/tested. More domain-specific service splits remain.
+- Phase 1 is partially complete: typed env config, request-scoped TLS behavior, centralized dotenv loading, tested CORS whitelist policy, `PVEClient`, `GuacamoleApiClient`, `OpenAIClientFactory`, `OpenAICompatibleChatClient`, and `OpenCodeRunner` are in place. Auth token user ID validation now prevents malformed token payload IDs from reaching Mongoose lookups. Auth registration input/conflict rules and the registration workflow service are extracted/tested, and registration duplicate checks use one batched identity lookup. Auth login workflow, wrong-attempt lockout, unverified-email resend, and token response behavior are extracted/tested. Auth forgot-password reset email, throttle, token validation, password policy, hashing, persistence, and invalid method behavior are extracted/tested behind a DTO-style workflow service. User profile/password/avatar and user courses/CRP/SuperAdmin lookup workflow services are extracted/tested. More domain-specific service splits remain.
 - Phase 3 has early slices complete: PVE calls are centralized through `PVEClient`, PVE QEMU config DTO projection and datacenter node status projection are extracted/tested, PVE VM task status/list/refresh/cleanup workflow service is extracted/tested, VM quota policy and used-resource initialization plus usage increment/reclaim payloads are extracted/tested, VM persistence payload rules, a VM ownership repository, a VM task repository, a VM resource repository, a VM resource accounting service, and a VM creation source repository are extracted/tested, VM operation permission/status rules and shared operation execution are extracted/tested, VM Cloud-Init credential selection/update validation is extracted/tested, VM config update request/resource delta/success response rules, VM config update workflow service, VM config operation metadata and shared PVE operation execution for name/CPU/memory/disk/cloud-init are extracted/tested, VM task initialization/status/step update/PVE refresh mapping/DTO rules are extracted/tested, VM creation request validation payload/identity rules, VM creation cleanup/retention helpers, VM creation response payload/message rules, shared VM creation clone/config/register workflow service, shared VM config execution workflow, and VM deletion workflow are extracted/tested or consolidated, VM disk readiness classification is extracted/tested, VM deletion ownership/status preconditions, PVE API failure messages, response classification, and response DTO rules are extracted/tested, VM list DTO assembly with batched owner lookup is extracted/tested, VM read/status/network workflow service is extracted/tested, and VM status/network read paths validate VM IDs before DB lookup. `VMManageService` no longer directly references the VM, VM task, user, used-resource, compute-plan, template, or VM box Mongoose models, and `PVEService` no longer directly owns VM task model queries.
-- Phase 4 has early slices complete: Guacamole HTTP calls now go through `GuacamoleApiClient`; direct URL construction, SSH/RDP/VNC connection profile construction, terminal font-size normalization, connection target validation, disconnect/delete connection ID validation, token response parsing, user lookup classification, user creation payloads, CREATE_CONNECTION permission patch/verification rules, auth/user lifecycle service, connection list/delete management service, delete permission policy, VM guest network IP selection, connection preflight messages/display-name fallback, shared SSH/RDP/VNC preflight lifecycle service, same-name connection lookup, create/delete-response classification, disconnect/delete success response payloads, protocol-specific create failure messages, shared get-or-create config service, established connection DTO/message assembly, shared established connection response finalization, shared SSH/RDP/VNC establishment workflow service, and user connection list DTO projection are extracted/tested. Guacamole VM lookup now goes through the shared VM repository.
-- Phase 5 has initial slices complete: OpenAI/OpenAI-compatible clients, OpenCode runner, AI Box Build job request/access validation, AI Box Build job repository boundary, AI Box Build job draft workflow service, AI Box Build job management workflow service, AI Box Build artifact normalization and validation helpers, AI Box Build agent response parsing/history/failure/split-repair aggregation helpers, AI Box Build agent/model workflow service, AI Box Build DTO assembly, AI Box Build Markdown/baseline rules, AI Box Build reference bundle parsing, fallback sanitization, and fallback workspace payload rules, AI Box Build OpenCode model/config/prompt rules, AI Box Build targeted repair rules, AI Box Build stale-job detection rules, AI Box Build execution-state rules, AI Box Build run queued/completion/failure state and persistence rules, AI Box Build provisioning/network log and IP selection rules, AI Box Build VM provisioning/boot/network workflow service, AI Box Build SSH script execution command planning and execution service, AI Box Build runtime preflight workflow service, AI Box Build run execution workflow service, AI Box Build workspace context and artifact-refresh payload assembly, AI Box Build workspace filesystem lifecycle service, AI Box Build generated-script readiness/fallback file management, AI Box Build runtime preflight rules, AI Box Build run request validation, workspace path safety, run-log redaction/tailing plus append/update payload rules, AI Box Build service pass-through wrapper cleanup, AI Chat request validation and prompt-injection input sanitization, AI Chat language policy, AI VM intent fallback/classifier parsing, AI VM target/response formatting, AI VM pending-action timing/pruning, and the AI Chat VM management workflow service are extracted/tested. `AIBoxBuildService` no longer directly references the AI Box Build job or VM Mongoose models. `AIChatService` is now a thin owner for hint, platform-guide, and VM-management entrypoints while VM inventory/classification/confirmation/execution orchestration lives behind an injectable service boundary.
+- Phase 4 has early slices complete: Guacamole HTTP calls now go through `GuacamoleApiClient`; direct URL construction, SSH/RDP/VNC connection profile construction, terminal font-size normalization, connection target validation, disconnect/delete connection ID validation, token response parsing, user lookup classification, user creation payloads, CREATE_CONNECTION permission patch/verification rules, auth/user lifecycle service, connection list/delete management service, delete permission policy, VM guest network IP selection, connection preflight messages/display-name fallback, shared SSH/RDP/VNC preflight lifecycle service, same-name connection lookup, create/delete-response classification, disconnect/delete success response payloads, protocol-specific create failure messages, shared get-or-create config service, established connection DTO/message assembly, shared established connection response finalization, shared SSH/RDP/VNC establishment workflow service, and user connection list DTO projection are extracted/tested. Guacamole VM lookup now goes through the shared VM repository. SSH/RDP/VNC establishment and preflight now accept actor/request DTO inputs instead of raw Express `Request`.
+- Phase 5 has initial slices complete: OpenAI/OpenAI-compatible clients, OpenCode runner, AI Box Build job request/access validation, AI Box Build job repository boundary, AI Box Build job draft workflow service, AI Box Build job management workflow service, AI Box Build artifact normalization and validation helpers, AI Box Build agent response parsing/history/failure/split-repair aggregation helpers, AI Box Build agent/model workflow service, AI Box Build DTO assembly, AI Box Build Markdown/baseline rules, AI Box Build reference bundle parsing, fallback sanitization, and fallback workspace payload rules, AI Box Build OpenCode model/config/prompt rules, AI Box Build targeted repair rules, AI Box Build stale-job detection rules, AI Box Build execution-state rules, AI Box Build run queued/completion/failure state and persistence rules, AI Box Build provisioning/network log and IP selection rules, AI Box Build VM provisioning/boot/network workflow service, AI Box Build SSH script execution command planning and execution service, AI Box Build runtime preflight workflow service, AI Box Build run execution workflow service, AI Box Build workspace context and artifact-refresh payload assembly, AI Box Build workspace filesystem lifecycle service, AI Box Build generated-script readiness/fallback file management, AI Box Build runtime preflight rules, AI Box Build run request validation, workspace path safety, run-log redaction/tailing plus append/update payload rules, AI Box Build service pass-through wrapper cleanup, AI Chat request validation and prompt-injection input sanitization, AI Chat language policy, AI VM intent fallback/classifier parsing, AI VM target/response formatting, AI VM pending-action timing/pruning, and the AI Chat VM management workflow service are extracted/tested. `AIBoxBuildService` no longer directly references the AI Box Build job or VM Mongoose models. `AIChatService` is now a thin owner for hint, platform-guide, and VM-management entrypoints while VM inventory/classification/confirmation/execution orchestration lives behind an injectable service boundary. AI Chat VM management now accepts body/user context and calls VM read/operate/delete DTO methods instead of cloning Express requests.
 - Phase 8 is active: Vitest is wired with focused unit tests for PVE, redaction, VM resource policy, Guacamole API request behavior, and OpenAI client behavior.
 - Phase 8 also has a minimal GitHub Actions workflow for install, typecheck, tests, build, and audit.
-- Phase 7 has a first safe slice complete: non-unique indexes were added for common user, VM, VM task, and AI box build lookup/list paths. Unique constraints still require data cleanup checks first.
-- Phase 6 has early slices complete: Course/Class/Chapter create/update content validation and shared ID validation, Class management workflow service, Chapter management workflow service, Course read/menu/first-template workflow service, Course create/update/delete workflow service, Course create/update persistence and response payload rules, Course repository boundary, Course class/chapter repository boundaries for menu/delete/approval/template-selection/submission flows, Course access/membership/review permission rules and membership ID update rules, Course membership/invitation workflow service, Course review request validation and workflow service, Course lifecycle/status workflow service, Course list/catalog workflow service, Course submission readiness and invitation rules, Course listing/page/menu/template-selection DTO assembly with batched lookup inputs, Course invite recipient filtering with batched user lookup, Template listing/submitted-template DTO assembly with batched template/user lookup, Template config update workflow service, Template conversion workflow service, Template submission create workflow service, Template deletion workflow service, Template submitted-template audit workflow service, Template clone workflow service, Course and VM Box rating validation/summary logic, shared Course/VM Box review DTO assembly with batched reviewer lookup, shared Course/VM Box review repository boundary, shared Course/VM Box user lookup/update repository boundary, shared VM Box template lookup repository boundary, shared review create/update persistence payload rules, Course and VM Box review ownership/membership/response rules, VM Box review workflow service, Course status transition rules, template/VM Box submission audit validation, VM Box submission audit workflow service/update/approved payload/email rules, VM Box submission create workflow service/validation/persistence/response rules, VM Box submitted-box repository boundary, expanded VM Box published-box repository boundary, VM Box writeup repository boundary and workflow service, VM Box AI assistant setting validation/permission/workflow service, VM Box review request validation, VM Box listing DTO assembly and workflow service with batched submitter/template/published-box/writeup-count lookup and shared template-info projection, VM Box template-info PVE fallback workflow service, VM Box answer request/status/evaluation/access/submission-outcome validation plus answer-record and box repository boundaries/workflow service, and VM Box writeup submission/review/visibility/query/DTO/permission validation with shared batched writeup DTO lookup are extracted/tested.
+- Phase 7 has safe slices complete: non-unique indexes were added for common user, VM, VM task, and AI box build lookup/list paths, and `docs/DATA_HARDENING_UNIQUE_CONSTRAINTS.md` records the duplicate checks and cleanup sequencing required before deferred unique constraints are added.
+- Phase 6 has early slices complete: Course/Class/Chapter create/update content validation and shared ID validation, Class management workflow service, Chapter management service, Course read/menu/first-template workflow service, Course create/update/delete workflow service, Course create/update persistence and response payload rules, Course repository boundary, Course request adapter service, Course class/chapter repository boundaries for menu/delete/approval/template-selection/submission flows, Course access/membership/review permission rules and membership ID update rules, Course membership/invitation workflow service, Course review request validation and workflow service, Course lifecycle/status workflow service, Course list/catalog workflow service, Course submission readiness and invitation rules, Course listing/page/menu/template-selection DTO assembly with batched lookup inputs, Course invite recipient filtering with batched user lookup, Template listing/submitted-template DTO assembly with batched template/user lookup, Template config update workflow service, Template conversion workflow service, Template submission create workflow service, Template deletion workflow service, Template submitted-template audit workflow service, Template clone workflow service, Course and VM Box rating validation/summary logic, shared Course/VM Box review DTO assembly with batched reviewer lookup, shared Course/VM Box review repository boundary, shared Course/VM Box user lookup/update repository boundary, shared VM Box template lookup repository boundary, shared review create/update persistence payload rules, Course and VM Box review ownership/membership/response rules, VM Box request adapter service, VM Box review workflow service, Course status transition rules, template/VM Box submission audit validation, VM Box submission audit workflow service/update/approved payload/email rules, VM Box submission create workflow service/validation/persistence/response rules, VM Box submitted-box repository boundary, expanded VM Box published-box repository boundary, VM Box writeup repository boundary and workflow service, VM Box AI assistant setting validation/permission/workflow service, VM Box review request validation, VM Box listing DTO assembly and workflow service with batched submitter/template/published-box/writeup-count lookup and shared template-info projection, VM Box template-info PVE fallback workflow service, VM Box answer request/status/evaluation/access/submission-outcome validation plus answer-record and box repository boundaries/workflow service, and VM Box writeup submission/review/visibility/query/DTO/permission validation with shared batched writeup DTO lookup are extracted/tested. `CourseService` and `VMBoxService` are now thin auth/error facades.
 - Phase 9 has an initial dependency cleanup complete: unused `file-type` was removed from runtime dependencies, built-in Node packages are not installed as dependencies, type packages are dev-only, and `engines.node` documents Node 20+.
 - User profile lookup by ID now validates target IDs and enforces the documented SuperAdmin-only boundary.
 - SuperAdmin user mutation flows now use the shared SuperAdmin token validator and a tested assignable-role policy.
@@ -4211,6 +4211,131 @@ Acceptance criteria:
   - `npx vitest run tests/auth-registration-service.test.ts tests/auth-registration-policy.test.ts tests/auth-login-service.test.ts` (`3` files, `18` tests)
   - `npm run typecheck`
   - `npm test` (`162` files, `839` tests)
+  - `npm run build`
+  - `npm audit --audit-level=moderate` (`0` vulnerabilities)
+  - conflict-marker scan, backend `console.*` scan, and `git diff --check`
+
+### 2026-05-26 Auth Forgot Password Service Slice
+
+- Added `src/modules/auth/AuthForgotPasswordService.ts`.
+- Added `tests/auth-forgot-password-service.test.ts`.
+- Moved forgot-password orchestration out of `AuthService` for:
+  - POST missing-email and unknown-email privacy response behavior;
+  - reset-token generation and reset email send throttling;
+  - PUT authorization header and reset-token validation;
+  - reset password required-field and strength validation;
+  - password hashing, persistence, and stable success response;
+  - invalid method response behavior.
+- `AuthService.ts` is now about `86` lines after the extraction.
+- Verified:
+  - `npx vitest run tests/auth-forgot-password-service.test.ts tests/auth-login-service.test.ts tests/auth-registration-service.test.ts tests/auth-token-policy.test.ts` (`4` files, `25` tests)
+  - `npm run typecheck`
+  - `npm test` (`163` files, `848` tests)
+  - `npm run build`
+  - `npm audit --audit-level=moderate` (`0` vulnerabilities)
+  - conflict-marker scan, backend `console.*` scan, and `git diff --check`
+
+### 2026-05-26 Course Request Adapter Service Slice
+
+- Added `src/modules/courses/CourseRequestAdapterService.ts`.
+- Added `tests/course-request-adapter-service.test.ts`.
+- Moved remaining Course route-to-workflow adapter logic out of `CourseService` for:
+  - route/body course ID validation before mutation/lifecycle workflows;
+  - read/menu/first-template DTO forwarding;
+  - create/update/delete, join/invite, review, list, approve/unapprove, submit, and visibility workflow calls.
+- `CourseService.ts` is now about `160` lines and acts as an auth/error wrapper.
+- Verified:
+  - `npx vitest run tests/course-request-adapter-service.test.ts tests/course-read-service.test.ts tests/course-list-service.test.ts tests/course-mutation-service.test.ts tests/course-membership-service.test.ts tests/course-review-service.test.ts tests/course-lifecycle-service.test.ts` (`7` files, `30` tests)
+  - `npm run typecheck`
+  - `npm test` (`164` files, `850` tests)
+  - `npm run build`
+  - `npm audit --audit-level=moderate` (`0` vulnerabilities)
+  - conflict-marker scan, backend `console.*` scan, and `git diff --check`
+
+### 2026-05-26 VM Box Request Adapter Service Slice
+
+- Added `src/modules/vm-box/VMBoxRequestAdapterService.ts`.
+- Moved remaining VM Box route-to-workflow adapter logic out of `VMBoxService` for:
+  - submission create/audit, public/submitted/pending lists, AI assistant setting, reviews, writeups, and answer records;
+  - route param/query/body normalization for review and writeup IDs;
+  - public unauthenticated list/read flows through the same DTO adapter boundary.
+- `VMBoxService.ts` is now about `190` lines and acts as an auth/error wrapper.
+- Verified:
+  - `npx vitest run tests/vm-box-list-service.test.ts tests/vm-box-review-service.test.ts tests/vm-box-writeup-service.test.ts tests/vm-box-answer-service.test.ts tests/vm-box-submission-create-service.test.ts tests/vm-box-submission-audit-service.test.ts` (covered again inside the `9` file targeted VM Box/Guacamole run)
+  - `npm run typecheck`
+  - `npm test` (`164` files, `850` tests)
+  - `npm run build`
+  - `npm audit --audit-level=moderate` (`0` vulnerabilities)
+  - conflict-marker scan, backend `console.*` scan, and `git diff --check`
+
+### 2026-05-26 Guacamole Connection Request Boundary Slice
+
+- Updated `src/modules/guacamole/GuacamoleConnectionEstablishmentService.ts`.
+- Updated `src/modules/guacamole/GuacamoleConnectionPreflightService.ts`.
+- Updated `src/service/GuacamoleService.ts`.
+- Updated Guacamole connection establishment/preflight tests.
+- Removed raw Express `Request` from Guacamole connection establishment and preflight modules by:
+  - validating the actor once in `GuacamoleService`;
+  - passing `{ request, user, isSuperAdmin }` into SSH/RDP/VNC establishment;
+  - passing the authenticated user into preflight token acquisition.
+- Verified:
+  - `npx vitest run tests/guacamole-connection-establishment-service.test.ts tests/guacamole-connection-preflight-service.test.ts tests/guacamole-connection-request-policy.test.ts` (`3` files, `13` tests)
+  - `npm run typecheck`
+  - `npm test` (`164` files, `850` tests)
+  - `npm run build`
+  - `npm audit --audit-level=moderate` (`0` vulnerabilities)
+  - conflict-marker scan, backend `console.*` scan, and `git diff --check`
+
+### 2026-05-26 AI Chat VM Action Request Boundary Slice
+
+- Updated `src/modules/ai-chat/AIChatVMManagementService.ts`.
+- Updated `src/service/AIChatService.ts`.
+- Added DTO entry points in `src/service/VMOperateService.ts` and `src/service/VMManageService.ts` for AI Chat VM execution.
+- Updated AI Chat VM management tests.
+- Removed raw Express `Request` and request cloning from AI Chat VM management by:
+  - passing `{ body, user, isSuperAdmin }` from `AIChatService`;
+  - calling `VMReadService.getVMStatus/getVMNetworkInfo` directly for read actions;
+  - calling `VMOperateService.executeVMOperation` for boot/shutdown/poweroff/reboot/reset;
+  - calling `VMManageService.deleteUserVMForUser` for delete.
+- Verified:
+  - `npx vitest run tests/ai-chat-vm-management-service.test.ts tests/ai-chat-vm-intent-policy.test.ts tests/ai-chat-vm-pending-action-policy.test.ts tests/ai-chat-vm-response-policy.test.ts tests/ai-chat-request-policy.test.ts` (`5` files, `26` tests)
+  - `npm run typecheck`
+  - `npm test` (`164` files, `850` tests)
+  - `npm run build`
+  - `npm audit --audit-level=moderate` (`0` vulnerabilities)
+  - conflict-marker scan, backend `console.*` scan, and `git diff --check`
+
+### 2026-05-26 AI Box Build Provisioning Request Boundary Slice
+
+- Updated `src/modules/ai-box-build/AIBoxBuildProvisioningService.ts`.
+- Updated `src/modules/ai-box-build/AIBoxBuildRunExecutionService.ts`.
+- Updated `src/modules/ai-box-build/AIBoxBuildRunLaunchService.ts`.
+- Updated AI Box provisioning tests.
+- Removed synthetic Express request construction from AI Box Build provisioning by:
+  - passing the full user snapshot from run launch into run execution/provisioning;
+  - calling `VMCreationRequestService.createFromTemplate({ user, body })` directly;
+  - keeping the existing VM record wait, Cloud-Init preparation, boot, network normalization, and IP detection flow.
+- Verified:
+  - `npx vitest run tests/ai-box-build-provisioning-service.test.ts tests/ai-box-build-run-execution-service.test.ts tests/ai-box-build-run-launch-service.test.ts tests/vm-creation-request-service.test.ts` (`4` files, `22` tests)
+  - `npm run typecheck`
+  - `npm test` (`164` files, `850` tests)
+  - `npm run build`
+  - `npm audit --audit-level=moderate` (`0` vulnerabilities)
+  - conflict-marker scan, backend `console.*` scan, and `git diff --check`
+
+### 2026-05-26 Data Hardening Unique Constraint Preflight Slice
+
+- Added `docs/DATA_HARDENING_UNIQUE_CONSTRAINTS.md`.
+- Documented duplicate checks and cleanup sequencing before adding deferred unique indexes for:
+  - `users.email`;
+  - `users.username`;
+  - `compute_resource_plans.name`;
+  - `vms.{pve_node,pve_vmid}`;
+  - `vm_tasks.task_id`.
+- Kept unique constraints deferred until staging/production duplicate groups are checked, cleaned, and archived as empty.
+- Verified with the same full gate from this local Phase 2 batch:
+  - `npm run typecheck`
+  - `npm test` (`164` files, `850` tests)
   - `npm run build`
   - `npm audit --audit-level=moderate` (`0` vulnerabilities)
   - conflict-marker scan, backend `console.*` scan, and `git diff --check`

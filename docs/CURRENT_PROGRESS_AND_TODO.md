@@ -7,12 +7,25 @@ Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
 
-The backend refactor branch is pushed and clean against `origin/refactor/backend-optimization-plan`.
+The backend refactor branch has local, unpushed Phase 2 slices on top of `origin/refactor/backend-optimization-plan`:
 
-The latest recorded full gate is green:
+- Auth forgot-password workflow extraction.
+- Course request adapter extraction and facade reduction.
+- VM Box request adapter extraction and facade reduction.
+- Guacamole connection establishment/preflight removal of raw Express `Request`.
+- AI Chat VM management removal of raw Express `Request` cloning.
+- AI Box Build provisioning removal of synthetic Express request creation for VM provisioning.
+- Phase 7 unique-constraint preflight runbook for duplicate checks and cleanup sequencing.
+
+The latest recorded full gate is green after these slices:
 
 - `npm run typecheck`
-- `npm test` (`162` files, `839` tests)
+- targeted Auth tests: `npx vitest run tests/auth-forgot-password-service.test.ts tests/auth-login-service.test.ts tests/auth-registration-service.test.ts tests/auth-token-policy.test.ts` (`4` files, `25` tests)
+- targeted Course tests: `npx vitest run tests/course-request-adapter-service.test.ts tests/course-read-service.test.ts tests/course-list-service.test.ts tests/course-mutation-service.test.ts tests/course-membership-service.test.ts tests/course-review-service.test.ts tests/course-lifecycle-service.test.ts` (`7` files, `30` tests)
+- targeted VM Box/Guacamole tests: `npx vitest run tests/vm-box-list-service.test.ts tests/vm-box-review-service.test.ts tests/vm-box-writeup-service.test.ts tests/vm-box-answer-service.test.ts tests/vm-box-submission-create-service.test.ts tests/vm-box-submission-audit-service.test.ts tests/guacamole-connection-establishment-service.test.ts tests/guacamole-connection-preflight-service.test.ts tests/course-request-adapter-service.test.ts` (`9` files, `33` tests)
+- targeted AI Chat VM tests: `npx vitest run tests/ai-chat-vm-management-service.test.ts tests/ai-chat-vm-intent-policy.test.ts tests/ai-chat-vm-pending-action-policy.test.ts tests/ai-chat-vm-response-policy.test.ts tests/ai-chat-request-policy.test.ts` (`5` files, `26` tests)
+- targeted AI Box provisioning tests: `npx vitest run tests/ai-box-build-provisioning-service.test.ts tests/ai-box-build-run-execution-service.test.ts tests/ai-box-build-run-launch-service.test.ts tests/vm-creation-request-service.test.ts` (`4` files, `22` tests)
+- `npm test` (`164` files, `850` tests)
 - `npm run build`
 - `npm audit --audit-level=moderate` (`0` vulnerabilities)
 - merge-conflict marker scan
@@ -36,15 +49,21 @@ The latest recorded full gate is green:
   - token user ID validation;
   - registration policy and registration workflow service;
   - login workflow, wrong-attempt lockout, unverified-email resend, and token response behavior.
+  - forgot-password workflow service covering reset email, throttle, token validation, password policy, hashing, persistence, and invalid methods.
 - VM/PVE refactor has substantial coverage:
   - VM creation, deletion, config update, read/status/network, operation policy, task persistence, resource accounting, PVE task status, PVE QEMU config access, and PVE datacenter status slices are extracted/tested.
 - Guacamole refactor has substantial coverage:
   - auth/user lifecycle, connection management, shared preflight, get-or-create config, SSH/RDP/VNC establishment, disconnect, delete/list DTOs, and VM lookup boundaries are extracted/tested.
+  - SSH/RDP/VNC establishment and preflight now accept user/request DTO inputs instead of raw Express `Request`.
 - AI service refactor has substantial coverage:
   - AI Box Build job/draft/agent/runtime/run/workspace/provisioning/SSH execution flows are extracted/tested;
   - AI Chat request validation, language policy, hint workflow, VM management workflow, target selection, pending-action flow, and response formatting are extracted/tested.
+  - AI Chat VM management now accepts body/user context and calls VM read/operate/delete DTO methods instead of cloning Express requests.
+  - AI Box Build provisioning now calls VM creation workflow DTOs directly instead of constructing an Express-like request.
 - Course, Template, VM Box, and Review domains have many extracted/tested service and policy slices, including create/update/list/review/membership/submission/audit/writeup/answer flows.
+- Course and VM Box route-to-workflow adapter logic now lives behind DTO-style request adapter services, leaving their facades as thin auth/error wrappers.
 - Safe non-unique indexes were added for common lookup/list paths.
+- Unique-constraint hardening remains deferred, but `docs/DATA_HARDENING_UNIQUE_CONSTRAINTS.md` now records staging/production duplicate checks and cleanup order for candidate unique keys.
 
 ## Service Size Snapshot
 
@@ -52,16 +71,16 @@ Current facade/service file sizes:
 
 | File | Lines | Note |
 | --- | ---: | --- |
-| `src/service/CourseService.ts` | 401 | Largest remaining facade; still a good Phase 2 target. |
-| `src/service/VMBoxService.ts` | 368 | Still broad; many workflows are extracted but facade remains busy. |
-| `src/service/GuacamoleService.ts` | 246 | Mostly wrapper plus auth/permission glue; Request boundary still remains. |
+| `src/service/GuacamoleService.ts` | 273 | Temporary adapter for auth/permission and connection DTO calls. |
 | `src/service/TemplateService.ts` | 232 | Medium remaining facade. |
 | `src/service/UserService.ts` | 202 | Profile/read work extracted; some Request boundary remains. |
-| `src/service/AIChatService.ts` | 239 | Thin owner, but AI VM management still depends on Request cloning. |
+| `src/service/AIChatService.ts` | 240 | Thin owner for hint, platform guide, and DTO-based VM management. |
+| `src/service/VMBoxService.ts` | 190 | Thin auth/error wrapper around VM Box request adapter. |
 | `src/service/PVEService.ts` | 177 | Much smaller after QEMU/datacenter extraction. |
-| `src/service/VMOperateService.ts` | 161 | Operation executor exists, but service still accepts Request. |
-| `src/service/AuthService.ts` | 143 | Register/login extracted; forgot-password/verify/logout still in facade. |
-| `src/service/VMManageService.ts` | 140 | Creation/update/deletion workflows mostly extracted. |
+| `src/service/VMOperateService.ts` | 181 | Request adapter plus DTO operation executor for AI Chat and service callers. |
+| `src/service/CourseService.ts` | 160 | Thin auth/error wrapper around Course request adapter. |
+| `src/service/AuthService.ts` | 86 | Register/login/forgot-password extracted; verify/logout still in facade. |
+| `src/service/VMManageService.ts` | 150 | Creation/update/deletion workflows mostly extracted; delete has DTO entry. |
 | `src/service/AIBoxBuildService.ts` | 126 | Thin pass-through wrapper. |
 | `src/service/VMService.ts` | 113 | VM read workflow extracted. |
 | `src/service/SuperAdminCRPService.ts` | 98 | Thin wrapper. |
@@ -94,48 +113,15 @@ Current services still importing `Request` from Express include:
 - `AIBoxBuildService`
 - `SuperAdminService`
 
-Some extracted modules still carry `Request` because they bridge legacy service methods:
-
-- `AIChatVMManagementService`
-- `GuacamoleConnectionPreflightService`
-- `GuacamoleConnectionEstablishmentService`
-- `AIBoxBuildProvisioningService`
+No extracted module currently imports Express `Request`; remaining `Request` imports are facade-level service adapters.
 
 ## Recommended Next TODO
 
-1. Extract `AuthForgotPasswordService`.
-   - Why first: `AuthService` is now small enough to finish cleanly, and forgot-password still mixes request method branching, token validation, password policy, email throttle, hashing, and persistence.
-   - Expected files:
-     - `src/modules/auth/AuthForgotPasswordService.ts`
-     - `tests/auth-forgot-password-service.test.ts`
-   - Acceptance:
-     - preserve existing POST/PUT response messages;
-     - keep email reset throttle behavior;
-     - cover missing email, unknown email privacy response, reset email send, throttle response, missing password, weak password, token validation error, successful password reset, and invalid method through facade or policy tests;
-     - run targeted Auth tests, then full gate.
+1. Continue Phase 7 data hardening.
+   - Run `docs/DATA_HARDENING_UNIQUE_CONSTRAINTS.md` checks on staging/production data.
+   - Add unique constraints only after duplicate groups are cleaned and archived as empty.
 
-2. Reduce `CourseService` as the next large facade.
-   - Candidate slice: extract remaining route-to-workflow adapter helpers or split public/admin listing wrappers.
-   - Goal: shrink `CourseService.ts` below roughly `250` lines while preserving existing API response shape.
-   - Tests: use existing course service/policy tests plus targeted new tests for any moved adapter logic.
-
-3. Reduce `VMBoxService` facade.
-   - Candidate slice: move remaining request adapter logic into DTO-level workflow calls.
-   - Goal: keep `VMBoxService` as a thin wrapper around extracted VM Box modules.
-   - Tests: run VM Box list/review/writeup/answer/submission targeted tests plus full gate.
-
-4. Remove Express `Request` from extracted modules where possible.
-   - Start with Guacamole:
-     - pass authenticated user/context and request body into connection establishment/preflight instead of passing raw `Request`;
-     - keep `GuacamoleService` as the temporary adapter until controllers are ready to change.
-   - Then AI Chat VM management:
-     - replace request cloning with DTO calls into VM read/operate/delete workflows.
-
-5. Continue Phase 7 data hardening.
-   - Unique constraints are still intentionally deferred.
-   - Before adding them, write data cleanup/dedup checks and migration notes for username/email and other identity-like fields.
-
-6. Keep gates mandatory for every slice.
+2. Keep gates mandatory for every slice.
    - Targeted tests for touched modules.
    - `npm run typecheck`
    - `npm test`
@@ -154,5 +140,7 @@ Use small, isolated commits:
 3. `refactor vm box service adapters`
 4. `refactor guacamole request boundaries`
 5. `refactor ai chat vm action boundaries`
+6. `refactor ai box provisioning boundary`
+7. `docs data hardening unique constraint preflight`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.
