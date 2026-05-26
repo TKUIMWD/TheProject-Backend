@@ -4388,7 +4388,7 @@ Acceptance criteria:
 - Verified with the same full gate from this local Phase 2 batch:
   - `npx vitest run tests/unique-constraint-duplicate-check.test.ts tests/schema-indexes.test.ts` (`2` files, `8` tests)
   - `npm run typecheck`
-  - `npm test` (`164` files, `850` tests)
+  - `npm test` (`166` files, `857` tests)
   - `npm run build`
   - `npm audit --audit-level=moderate` (`0` vulnerabilities)
   - conflict-marker scan, backend `console.*` scan, and `git diff --check`

@@ -82,20 +82,20 @@ Current facade/service file sizes:
 
 | File | Lines | Note |
 | --- | ---: | --- |
-| `src/service/GuacamoleService.ts` | 226 | Temporary adapter for auth/permission and connection DTO calls. |
 | `src/service/AIChatService.ts` | 240 | Thin owner for hint, platform guide, and DTO-based VM management. |
+| `src/service/GuacamoleService.ts` | 226 | Temporary adapter for auth/permission and connection DTO calls. |
 | `src/service/VMBoxService.ts` | 190 | Thin auth/error wrapper around VM Box request adapter. |
-| `src/service/PVEService.ts` | 177 | Much smaller after QEMU/datacenter extraction. |
 | `src/service/VMOperateService.ts` | 181 | Request adapter plus DTO operation executor for AI Chat and service callers. |
+| `src/service/PVEService.ts` | 177 | Much smaller after QEMU/datacenter extraction. |
 | `src/service/CourseService.ts` | 160 | Thin auth/error wrapper around Course request adapter. |
-| `src/service/UserService.ts` | 118 | Thin auth/error wrapper around profile/read modules. |
-| `src/service/TemplateService.ts` | 117 | Listing/conversion/submission/audit workflows extracted. |
-| `src/service/AuthService.ts` | 86 | Register/login/forgot-password extracted; verify/logout still in facade. |
 | `src/service/VMManageService.ts` | 150 | Creation/update/deletion workflows mostly extracted; delete has DTO entry. |
 | `src/service/AIBoxBuildService.ts` | 126 | Thin pass-through wrapper. |
+| `src/service/UserService.ts` | 118 | Thin auth/error wrapper around profile/read modules. |
+| `src/service/TemplateService.ts` | 117 | Listing/conversion/submission/audit workflows extracted. |
 | `src/service/VMService.ts` | 92 | Thin read facade with shared actor-context resolver. |
 | `src/service/SuperAdminCRPService.ts` | 98 | Thin wrapper. |
 | `src/service/ChapterService.ts` | 96 | Thin wrapper. |
+| `src/service/AuthService.ts` | 86 | Register/login/forgot-password extracted; verify/logout still in facade. |
 | `src/service/ClassService.ts` | 78 | Thin wrapper. |
 | `src/service/SuperAdminService.ts` | 78 | Thin wrapper. |
 | `src/service/TemplateManageService.ts` | 76 | Thin wrapper. |
