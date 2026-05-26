@@ -1,78 +1,61 @@
 import { Request } from "express";
 import { Service } from "../abstract/Service";
+import { User } from "../interfaces/User";
 import { logger } from "../middlewares/log";
-import { createResponse, resp } from "../utils/resp";
+import { superAdminRequestAdapterService } from "../modules/super-admin/SuperAdminRequestAdapterService";
 import { validateTokenAndGetSuperAdminUser } from "../utils/auth";
-import { User } from '../interfaces/User';
-import { superAdminUserManagementService } from "../modules/super-admin/SuperAdminUserManagementService";
+import { createResponse, resp } from "../utils/resp";
 
-/**
- * Service for SuperAdmins to manage user-related administrative tasks.
- */
 export class SuperAdminService extends Service {
     public async changeUserRole(request: Request): Promise<resp<undefined>> {
+        return this.withSuperAdmin(request, "changeUserRole", "Error changing user role", (actor) =>
+            superAdminRequestAdapterService.changeUserRole({
+                actor,
+                body: request.body
+            })
+        );
+    }
+
+    public async assignCRPToUser(request: Request): Promise<resp<any | undefined>> {
+        return this.withSuperAdmin(request, "assignCRPToUser", "Error assigning CRP to user", (actor) =>
+            superAdminRequestAdapterService.assignCRPToUser({
+                actor,
+                body: request.body
+            })
+        );
+    }
+
+    public async getAllUsers(request: Request): Promise<resp<User[] | undefined>> {
+        return this.withSuperAdmin(request, "getAllUsers", "Error getting all users", (actor) =>
+            superAdminRequestAdapterService.getAllUsers(actor),
+            "Internal server error"
+        );
+    }
+
+    public async getAllAdminUsers(request: Request): Promise<resp<User[] | undefined>> {
+        return this.withSuperAdmin(request, "getAllAdminUsers", "Error getting all admin users", (actor) =>
+            superAdminRequestAdapterService.getAllAdminUsers(actor),
+            "Internal server error"
+        );
+    }
+
+    private async withSuperAdmin<T>(
+        request: Request,
+        operation: string,
+        errorLogPrefix: string,
+        action: (actor: User) => Promise<resp<T | undefined>>,
+        internalErrorMessage = "Internal Server Error"
+    ): Promise<resp<T | undefined>> {
         try {
             const { user: actor, error } = await validateTokenAndGetSuperAdminUser<User>(request);
             if (error) {
                 return createResponse(error.code, error.message);
             }
 
-            const { userId, newRole } = request.body;
-            return superAdminUserManagementService.changeUserRole({
-                actor,
-                userId,
-                newRole
-            });
+            return action(actor);
         } catch (error: any) {
-            logger.error(`Error changing user role: ${error.message}`);
-            return createResponse(500, "Internal Server Error: " + error.message);
-        }
-    }
-
-    public async assignCRPToUser(request: Request): Promise<resp<any | undefined>> {
-        try {
-            const { user: actor, error } = await validateTokenAndGetSuperAdminUser<User>(request);
-            if (error) {
-                return error;
-            }
-
-            const { userId, planId } = request.body;
-            return superAdminUserManagementService.assignCRPToUser({
-                actor,
-                userId,
-                planId
-            });
-        } catch (error: any) {
-            logger.error(`Error assigning CRP to user: ${error.message}`);
-            return createResponse(500, "Internal Server Error: " + error.message);
-        }
-    }
-
-    public async getAllUsers(request: Request): Promise<resp<User[] | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetSuperAdminUser<User[]>(request);
-            if (error) {
-                return error;
-            }
-
-            return superAdminUserManagementService.listRegularUsers(user);
-        } catch (error) {
-            logger.error(`Error getting all users: ${error}`);
-            return createResponse(500, "Internal server error");
-        }
-    }
-
-    public async getAllAdminUsers(request: Request): Promise<resp<User[] | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetSuperAdminUser<User[]>(request);
-            if (error) {
-                return error;
-            }
-
-            return superAdminUserManagementService.listAdminUsers(user);
-        } catch (error) {
-            logger.error(`Error getting all admin users: ${error}`);
-            return createResponse(500, "Internal server error");
+            logger.error(`${errorLogPrefix}: ${error.message ?? error}`);
+            return createResponse(500, error.message ? `${internalErrorMessage}: ${error.message}` : internalErrorMessage);
         }
     }
 }
