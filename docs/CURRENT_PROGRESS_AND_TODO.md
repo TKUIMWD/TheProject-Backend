@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `4881da7 docs update course structure facade progress`
+Latest remote baseline before this snapshot: `fed2298 docs update auth facade progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -51,6 +51,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - `SuperAdminService` no longer accepts raw Express `Request`; `SuperAdminController` owns SuperAdmin token/body extraction and forwards DTO inputs.
 - `ClassService` and `ChapterService` no longer accept raw Express `Request`; their controllers own token/body/params extraction and forward DTO inputs.
 - `AuthService` no longer accepts raw Express `Request`; `AuthController` owns verify/logout token extraction and forgot-password request DTO assembly.
+- `TemplateManageService`, `SuperAdminCRPService`, `VMService`, `PVEService`, `TemplateService`, `AIBoxBuildService`, `AIChatService`, `UserService`, `VMManageService`, `GuacamoleService`, `CourseService`, and `VMBoxService` no longer accept raw Express `Request`; their controllers own token/header/body/query/params extraction and forward DTO inputs.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -82,6 +83,11 @@ The latest recorded full gate is green after these slices:
 - targeted SuperAdmin facade tests: `npx vitest run tests/super-admin-service.test.ts tests/super-admin-request-adapter-service.test.ts tests/super-admin-user-management-service.test.ts tests/super-admin-user-mutation-policy.test.ts` (`4` files, `13` tests)
 - targeted Course structure facade tests: `npx vitest run tests/class-service.test.ts tests/chapter-service.test.ts tests/course-structure-request-adapter-service.test.ts tests/class-management-service.test.ts tests/chapter-management-service.test.ts tests/class-content-policy.test.ts tests/chapter-content-policy.test.ts` (`7` files, `31` tests)
 - targeted Auth facade tests: `npx vitest run tests/auth-service.test.ts tests/auth-session-service.test.ts tests/auth-forgot-password-service.test.ts tests/auth-login-service.test.ts tests/auth-registration-service.test.ts tests/auth-token-policy.test.ts` (`6` files, `30` tests)
+- targeted TemplateManage/CRP/VM/PVE facade-boundary tests: `npx vitest run tests/template-manage-request-adapter-service.test.ts tests/compute-resource-plan-request-adapter-service.test.ts tests/vm-read-request-adapter-service.test.ts tests/pve-request-adapter-service.test.ts tests/vm-read-service.test.ts tests/pve-task-service.test.ts tests/template-config-update-service.test.ts tests/template-deletion-service.test.ts tests/template-clone-service.test.ts tests/compute-resource-plan-management-service.test.ts` (`10` files, `54` tests)
+- targeted Template/AI Box Build/AI Chat facade-boundary tests: `npx vitest run tests/template-request-adapter-service.test.ts tests/ai-box-build-request-adapter-service.test.ts tests/ai-chat-request-adapter-service.test.ts tests/template-list-service.test.ts tests/template-conversion-service.test.ts tests/template-submission-create-service.test.ts tests/template-audit-service.test.ts tests/ai-box-build-job-management-service.test.ts tests/ai-box-build-run-launch-service.test.ts tests/ai-chat-box-hint-service.test.ts tests/ai-chat-platform-guide-service.test.ts tests/ai-chat-vm-management-service.test.ts` (`12` files, `58` tests)
+- targeted User/VM Manage facade-boundary tests: `npx vitest run tests/user-profile-service.test.ts tests/user-read-service.test.ts tests/vm-manage-request-adapter-service.test.ts tests/vm-creation-request-service.test.ts tests/vm-config-update-workflow-service.test.ts tests/vm-deletion-access-service.test.ts tests/vm-deletion-workflow-service.test.ts tests/vm-creation-workflow-service.test.ts` (`8` files, `47` tests)
+- targeted Course/VM Box/Guacamole facade-boundary tests: `npx vitest run tests/course-request-adapter-service.test.ts tests/course-read-service.test.ts tests/course-list-service.test.ts tests/course-mutation-service.test.ts tests/course-membership-service.test.ts tests/course-review-service.test.ts tests/course-lifecycle-service.test.ts tests/course-structure-request-adapter-service.test.ts tests/vm-box-request-adapter-service.test.ts tests/vm-box-list-service.test.ts tests/vm-box-review-service.test.ts tests/vm-box-writeup-service.test.ts tests/vm-box-answer-service.test.ts tests/vm-box-submission-create-service.test.ts tests/vm-box-submission-audit-service.test.ts tests/vm-box-ai-assistant-service.test.ts tests/guacamole-request-adapter-service.test.ts tests/guacamole-connection-establishment-service.test.ts tests/guacamole-connection-preflight-service.test.ts tests/guacamole-disconnect-service.test.ts tests/guacamole-connection-management-service.test.ts tests/guacamole-connection-request-policy.test.ts` (`22` files, `102` tests)
+- `src/service` Express `Request`/auth helper scan
 - `npm test` (`187` files, `924` tests)
 - `npm run build`
 - `npm audit --audit-level=moderate` (`0` vulnerabilities)
@@ -138,6 +144,7 @@ The latest recorded full gate is green after these slices:
 - VM read/list/status/network route-to-workflow adapter logic now lives in `VMReadRequestAdapterService`.
 - VM operation execution now lives in `VMOperationExecutionService`; `VMOperateService` is a route/auth adapter.
 - `VMOperateService` now exposes DTO-style VM operation methods; Express `Request` handling remains in `VMOperateController`.
+- All current service facades now expose DTO-style methods and no longer import Express `Request`; Express token/header/body/query/params extraction is owned by controllers.
 - VM deletion ownership and workflow dispatch now lives in `VMDeletionAccessService`; `VMManageService` delegates delete DTOs.
 - PVE request query/body mapping now lives in `PVERequestAdapterService`; `PVEService` is a token/role adapter for PVE workflows.
   - `PVEService` now uses shared request-context forwarding for body/query adapter calls.
@@ -162,44 +169,30 @@ Current facade/service file sizes:
 
 | File | Lines | Note |
 | --- | ---: | --- |
-| `src/service/VMBoxService.ts` | 169 | Thin auth/error wrapper around VM Box request adapter with shared request-context forwarding. |
-| `src/service/CourseService.ts` | 157 | Thin auth/error wrapper around Course request adapter with shared request-context forwarding. |
-| `src/service/PVEService.ts` | 147 | Thin token/role wrapper around PVE request adapter with shared request-context forwarding. |
-| `src/service/AIChatService.ts` | 138 | Thin auth/error wrapper around AI Chat request adapter with shared request-context forwarding. |
-| `src/service/GuacamoleService.ts` | 127 | Thin token/permission wrapper around Guacamole request adapter with shared request-context forwarding. |
-| `src/service/UserService.ts` | 127 | Thin auth/error wrapper around profile/read modules with shared request-context forwarding. |
-| `src/service/VMManageService.ts` | 120 | Thin token/role wrapper around VM Manage request adapter. |
-| `src/service/AIBoxBuildService.ts` | 100 | Thin token wrapper around AI Box Build request adapter with shared request-context forwarding. |
+| `src/service/VMBoxService.ts` | 110 | Thin DTO facade around VM Box request adapter; no Express `Request` import. |
+| `src/service/CourseService.ts` | 110 | Thin DTO facade around Course request adapter; no Express `Request` import. |
+| `src/service/UserService.ts` | 109 | Thin DTO facade around profile/read modules; no Express `Request` import. |
 | `src/service/AuthService.ts` | 99 | Thin DTO facade around Auth workflow/session services; no Express `Request` import. |
-| `src/service/TemplateService.ts` | 93 | Thin token wrapper around Template request adapter with shared request-context forwarding. |
-| `src/service/VMService.ts` | 90 | Thin read facade around VM read request adapter. |
-| `src/service/SuperAdminCRPService.ts` | 87 | Thin token/role wrapper around CRP request adapter with shared request-context forwarding. |
+| `src/service/AIBoxBuildService.ts` | 75 | Thin DTO facade around AI Box Build request adapter; no Express `Request` import. |
 | `src/service/VMOperateService.ts` | 65 | Thin DTO facade delegating operation execution; no Express `Request` import. |
-| `src/service/TemplateManageService.ts` | 70 | Thin token/role wrapper around Template Manage request adapter with shared request-context forwarding. |
 | `src/service/SuperAdminService.ts` | 62 | Thin DTO facade around SuperAdmin request adapter; no Express `Request` import. |
-| `src/service/ChapterService.ts` | 48 | Thin DTO facade around course structure request adapter; no Express `Request` import. |
+| `src/service/PVEService.ts` | 55 | Thin DTO facade around PVE request adapter/workflows; no Express `Request` import. |
+| `src/service/GuacamoleService.ts` | 55 | Thin DTO facade around Guacamole request adapter; no Express `Request` import. |
+| `src/service/ChapterService.ts` | 53 | Thin DTO facade around course structure request adapter; no Express `Request` import. |
+| `src/service/SuperAdminCRPService.ts` | 45 | Thin DTO facade around CRP request adapter; no Express `Request` import. |
 | `src/service/ClassService.ts` | 38 | Thin DTO facade around course structure request adapter; no Express `Request` import. |
+| `src/service/TemplateService.ts` | 36 | Thin DTO facade around Template request adapter; no Express `Request` import. |
+| `src/service/AIChatService.ts` | 34 | Thin DTO facade around AI Chat request adapter; no Express `Request` import. |
+| `src/service/VMManageService.ts` | 30 | Thin DTO facade around VM Manage request adapter; no Express `Request` import. |
+| `src/service/VMService.ts` | 29 | Thin DTO facade around VM read request adapter; no Express `Request` import. |
+| `src/service/TemplateManageService.ts` | 24 | Thin DTO facade around Template Manage request adapter; no Express `Request` import. |
+| `src/service/PageService.ts` | 4 | Placeholder service unchanged. |
 
 ## Remaining Gaps
 
-The main unfinished architectural theme is Phase 2: service boundary cleanup. Most service facade classes still accept Express `Request`, even when their underlying workflow modules already accept DTOs or actor context.
+The main local Phase 2 facade-boundary gap is closed for the current service layer: `src/service` has no Express `Request` imports and no direct `validateTokenAndGet*`/`getTokenRole` helper imports.
 
-Current services still importing `Request` from Express include:
-
-- `CourseService`
-- `GuacamoleService`
-- `TemplateManageService`
-- `UserService`
-- `VMManageService`
-- `SuperAdminCRPService`
-- `VMService`
-- `TemplateService`
-- `AIChatService`
-- `PVEService`
-- `VMBoxService`
-- `AIBoxBuildService`
-
-No extracted module currently imports Express `Request`; remaining `Request` imports are facade-level service adapters.
+Phase 7 unique-constraint hardening still needs external environment validation. The read-only duplicate preflight exists locally, but staging/production duplicate checks and cleanup must be run against those real datasets before adding unique constraints.
 
 ## Recommended Next TODO
 
@@ -207,9 +200,9 @@ No extracted module currently imports Express `Request`; remaining `Request` imp
    - Run `npm run data:check-unique-duplicates` on staging/production data.
    - Add unique constraints only after duplicate groups are cleaned and archived as empty.
 
-2. Continue facade-boundary cleanup where useful.
-   - Candidate targets: smaller wrapper cleanup in remaining facades where controller response shapes can stay unchanged.
-   - Keep controller response shapes unchanged.
+2. Optional controller helper consolidation.
+   - Several controllers now share similar token-validation and DTO-building helpers.
+   - Keep response shapes unchanged if consolidating them into common middleware/helpers.
 
 3. Keep gates mandatory for every slice.
    - Targeted tests for touched modules.
