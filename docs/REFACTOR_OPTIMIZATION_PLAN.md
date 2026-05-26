@@ -4452,3 +4452,23 @@ Acceptance criteria:
   - `npm run build`
   - `npm audit --audit-level=moderate` (`0` vulnerabilities)
   - conflict-marker scan, backend `console.*` scan, and `git diff --check`
+
+### 2026-05-26 VM Manage Request Adapter Service Slice
+
+- Added `src/modules/vm/VMManageRequestAdapterService.ts`.
+- Added `tests/vm-manage-request-adapter-service.test.ts`.
+- Moved VM Manage route DTO mapping out of `VMManageService` for:
+  - template creation body forwarding;
+  - Box template creation body forwarding;
+  - VM config update body forwarding;
+  - delete body `vm_id` forwarding into `VMDeletionAccessService`.
+- Consolidated repeated `VMManageService` token-validation/error wrappers for create/update/create-from-box routes.
+- Removed the leftover service-facade DTO delete entry point after AI Chat moved to VM module ports.
+- `VMManageService.ts` is now about `120` lines and imports only the VM Manage request adapter from `modules/vm`.
+- Verified:
+  - `npx vitest run tests/vm-manage-request-adapter-service.test.ts tests/vm-creation-request-service.test.ts tests/vm-config-update-workflow-service.test.ts tests/vm-deletion-access-service.test.ts tests/vm-deletion-workflow-service.test.ts tests/vm-creation-workflow-service.test.ts tests/vm-config-execution-service.test.ts` (`7` files, `31` tests)
+  - `npm run typecheck`
+  - `npm test` (`171` files, `878` tests)
+  - `npm run build`
+  - `npm audit --audit-level=moderate` (`0` vulnerabilities)
+  - conflict-marker scan, backend `console.*` scan, and `git diff --check`
