@@ -10,6 +10,11 @@ import { AIBoxBuildJobManagementService } from "../modules/ai-box-build/AIBoxBui
 import { aiBoxBuildDraftService } from "../modules/ai-box-build/AIBoxBuildDraftService";
 import { AIBoxBuildRunExecutionService } from "../modules/ai-box-build/AIBoxBuildRunExecutionService";
 import { AIBoxBuildRunLaunchService } from "../modules/ai-box-build/AIBoxBuildRunLaunchService";
+import {
+    AIBoxBuildDeleteJobResponse,
+    AIBoxBuildRequestAdapterService
+} from "../modules/ai-box-build/AIBoxBuildRequestAdapterService";
+import { User } from "../interfaces/User";
 
 export class AIBoxBuildService extends Service {
     private static runningJobs = new Set<string>();
@@ -21,106 +26,76 @@ export class AIBoxBuildService extends Service {
         runningJobs: AIBoxBuildService.runningJobs,
         runExecution: this.runExecutionService
     });
+    private readonly requestAdapter = new AIBoxBuildRequestAdapterService({
+        draft: aiBoxBuildDraftService,
+        jobManagement: this.jobManagementService,
+        runLaunch: this.runLaunchService
+    });
 
     public async createJob(Request: Request): Promise<resp<AIBoxBuildJobDTO | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetAdminUser<AIBoxBuildJobDTO>(Request);
-            if (error) return error;
-
-            return aiBoxBuildDraftService.createJob({
-                user,
-                request: Request.body
-            });
-        } catch (error) {
-            logger.error("Error creating AI box build job:", error);
-            return createResponse(500, "Internal Server Error");
-        }
+        return this.withAdminUser(Request, "creating AI box build job", (user) => this.requestAdapter.createJob({
+            user,
+            body: Request.body
+        }));
     }
 
     public async listJobs(Request: Request): Promise<resp<AIBoxBuildJobDTO[] | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetAdminUser<AIBoxBuildJobDTO[]>(Request);
-            if (error) return error;
-
-            return this.jobManagementService.listJobs(user);
-        } catch (error) {
-            logger.error("Error listing AI box build jobs:", error);
-            return createResponse(500, "Internal Server Error");
-        }
+        return this.withAdminUser(Request, "listing AI box build jobs", (user) => this.requestAdapter.listJobs({ user }));
     }
 
     public async getJob(Request: Request): Promise<resp<AIBoxBuildJobDTO | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetAdminUser<AIBoxBuildJobDTO>(Request);
-            if (error) return error;
-
-            const { job_id } = Request.params;
-            return this.jobManagementService.getJob({ user, jobId: job_id });
-        } catch (error) {
-            logger.error("Error fetching AI box build job:", error);
-            return createResponse(500, "Internal Server Error");
-        }
+        return this.withAdminUser(Request, "fetching AI box build job", (user) => this.requestAdapter.getJob({
+            user,
+            params: Request.params
+        }));
     }
 
-    public async deleteJob(Request: Request): Promise<resp<{ deleted_job_id: string; workspace_path?: string; workspace_deleted: boolean } | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetAdminUser<{ deleted_job_id: string; workspace_path?: string; workspace_deleted: boolean }>(Request);
-            if (error) return error;
-
-            const { job_id } = Request.params;
-            return this.jobManagementService.deleteJob({ user, jobId: job_id });
-        } catch (error) {
-            logger.error("Error deleting AI box build job:", error);
-            return createResponse(500, error instanceof Error ? error.message : "Internal Server Error");
-        }
+    public async deleteJob(Request: Request): Promise<resp<AIBoxBuildDeleteJobResponse | undefined>> {
+        return this.withAdminUser(Request, "deleting AI box build job", (user) => this.requestAdapter.deleteJob({
+            user,
+            params: Request.params
+        }), (error) => error instanceof Error ? error.message : "Internal Server Error");
     }
 
     public async addMessage(Request: Request): Promise<resp<AIBoxBuildJobDTO | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetAdminUser<AIBoxBuildJobDTO>(Request);
-            if (error) return error;
-
-            const { job_id } = Request.params;
-            return aiBoxBuildDraftService.addMessage({
-                user,
-                jobId: job_id,
-                request: Request.body
-            });
-        } catch (error) {
-            logger.error("Error updating AI box build job:", error);
-            return createResponse(500, "Internal Server Error");
-        }
+        return this.withAdminUser(Request, "updating AI box build job", (user) => this.requestAdapter.addMessage({
+            user,
+            params: Request.params,
+            body: Request.body
+        }));
     }
 
     public async updateStatus(Request: Request): Promise<resp<AIBoxBuildJobDTO | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetAdminUser<AIBoxBuildJobDTO>(Request);
-            if (error) return error;
-
-            const { job_id } = Request.params;
-            const { status } = Request.body;
-            return this.jobManagementService.updateStatus({ user, jobId: job_id, status });
-        } catch (error) {
-            logger.error("Error updating AI box build job status:", error);
-            return createResponse(500, "Internal Server Error");
-        }
+        return this.withAdminUser(Request, "updating AI box build job status", (user) => this.requestAdapter.updateStatus({
+            user,
+            params: Request.params,
+            body: Request.body
+        }));
     }
 
     public async launchBuildRun(Request: Request): Promise<resp<AIBoxBuildJobDTO | undefined>> {
+        return this.withAdminUser(Request, "launching AI box build run", (user) => this.requestAdapter.launchBuildRun({
+            user,
+            params: Request.params,
+            body: Request.body,
+            authorizationHeader: Request.headers.authorization || ""
+        }));
+    }
+
+    private async withAdminUser<T>(
+        Request: Request,
+        actionName: string,
+        action: (user: User) => Promise<resp<T | undefined>>,
+        errorMessage: (error: unknown) => string = () => "Internal Server Error"
+    ): Promise<resp<T | undefined>> {
         try {
-            const { user, error } = await validateTokenAndGetAdminUser<AIBoxBuildJobDTO>(Request);
+            const { user, error } = await validateTokenAndGetAdminUser<T>(Request);
             if (error) return error;
 
-            const { job_id } = Request.params;
-            return this.runLaunchService.launch({
-                user,
-                jobId: job_id,
-                body: Request.body,
-                authorizationHeader: Request.headers.authorization || ""
-            });
+            return action(user);
         } catch (error) {
-            logger.error("Error launching AI box build run:", error);
-            return createResponse(500, "Internal Server Error");
+            logger.error(`Error ${actionName}:`, error);
+            return createResponse(500, errorMessage(error));
         }
     }
 }
