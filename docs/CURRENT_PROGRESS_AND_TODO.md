@@ -2,12 +2,12 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest pushed commit: `1005d66 docs data hardening unique constraint preflight`
+Latest remote baseline before this snapshot: `7666189 docs refresh backend refactor progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
 
-The backend refactor branch has local, unpushed Phase 2 slices on top of `origin/refactor/backend-optimization-plan`:
+The backend refactor branch has completed these Phase 2 and Phase 7 slices on `refactor/backend-optimization-plan`:
 
 - Auth forgot-password workflow extraction.
 - Course request adapter extraction and facade reduction.
@@ -20,6 +20,11 @@ The backend refactor branch has local, unpushed Phase 2 slices on top of `origin
 - Guacamole service connection helper consolidation.
 - VM service read-context helper consolidation.
 - Phase 7 unique-constraint preflight runbook and read-only duplicate check command.
+- VM operation execution moved from `VMOperateService` into `VMOperationExecutionService`.
+- VM deletion access/ownership checks moved from `VMManageService` into `VMDeletionAccessService`.
+- AI Chat VM management now depends on VM module ports instead of service facades.
+- AI Chat platform-guide workflow moved from `AIChatService` into `AIChatPlatformGuideService`.
+- `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
 
@@ -31,7 +36,8 @@ The latest recorded full gate is green after these slices:
 - targeted AI Box provisioning tests: `npx vitest run tests/ai-box-build-provisioning-service.test.ts tests/ai-box-build-run-execution-service.test.ts tests/ai-box-build-run-launch-service.test.ts tests/vm-creation-request-service.test.ts` (`4` files, `22` tests)
 - targeted Template list tests: `npx vitest run tests/template-list-service.test.ts` (`1` file, `4` tests)
 - targeted data hardening tests: `npx vitest run tests/unique-constraint-duplicate-check.test.ts tests/schema-indexes.test.ts` (`2` files, `8` tests)
-- `npm test` (`166` files, `857` tests)
+- targeted VM operation/deletion + AI Chat boundary tests: `npx vitest run tests/ai-chat-platform-guide-service.test.ts tests/ai-chat-box-hint-service.test.ts tests/ai-chat-request-policy.test.ts tests/ai-chat-language-policy.test.ts tests/ai-chat-vm-management-service.test.ts tests/vm-operation-execution-service.test.ts tests/vm-deletion-access-service.test.ts` (`7` files, `35` tests)
+- `npm test` (`169` files, `868` tests)
 - `npm run build`
 - `npm audit --audit-level=moderate` (`0` vulnerabilities)
 - merge-conflict marker scan
@@ -63,14 +69,16 @@ The latest recorded full gate is green after these slices:
   - SSH/RDP/VNC establishment and preflight now accept user/request DTO inputs instead of raw Express `Request`.
 - AI service refactor has substantial coverage:
   - AI Box Build job/draft/agent/runtime/run/workspace/provisioning/SSH execution flows are extracted/tested;
-  - AI Chat request validation, language policy, hint workflow, VM management workflow, target selection, pending-action flow, and response formatting are extracted/tested.
-  - AI Chat VM management now accepts body/user context and calls VM read/operate/delete DTO methods instead of cloning Express requests.
+  - AI Chat request validation, language policy, hint workflow, platform-guide workflow, VM management workflow, target selection, pending-action flow, and response formatting are extracted/tested.
+  - AI Chat VM management now accepts body/user context and calls VM read, VM operation, and VM deletion module ports instead of cloning Express requests or importing service facades.
   - AI Box Build provisioning now calls VM creation workflow DTOs directly instead of constructing an Express-like request.
 - Course, Template, VM Box, and Review domains have many extracted/tested service and policy slices, including create/update/list/review/membership/submission/audit/writeup/answer flows.
 - Template list, accessible-template list, and submitted-template detail assembly now live in `TemplateListService`.
 - User profile/read facade methods now share a thin auth/error wrapper while delegating to extracted user modules.
 - Guacamole SSH/RDP/VNC establishment now shares one service-level adapter helper.
 - VM status/network reads now share one service-level actor-context resolver.
+- VM operation execution now lives in `VMOperationExecutionService`; `VMOperateService` is a route/auth adapter.
+- VM deletion ownership and workflow dispatch now lives in `VMDeletionAccessService`; `VMManageService` delegates delete DTOs.
 - Course and VM Box route-to-workflow adapter logic now lives behind DTO-style request adapter services, leaving their facades as thin auth/error wrappers.
 - Safe non-unique indexes were added for common lookup/list paths.
 - Unique-constraint hardening remains deferred, but `docs/DATA_HARDENING_UNIQUE_CONSTRAINTS.md` now records staging/production duplicate checks and cleanup order for candidate unique keys.
@@ -82,20 +90,20 @@ Current facade/service file sizes:
 
 | File | Lines | Note |
 | --- | ---: | --- |
-| `src/service/AIChatService.ts` | 240 | Thin owner for hint, platform guide, and DTO-based VM management. |
 | `src/service/GuacamoleService.ts` | 226 | Temporary adapter for auth/permission and connection DTO calls. |
 | `src/service/VMBoxService.ts` | 190 | Thin auth/error wrapper around VM Box request adapter. |
-| `src/service/VMOperateService.ts` | 181 | Request adapter plus DTO operation executor for AI Chat and service callers. |
 | `src/service/PVEService.ts` | 177 | Much smaller after QEMU/datacenter extraction. |
 | `src/service/CourseService.ts` | 160 | Thin auth/error wrapper around Course request adapter. |
-| `src/service/VMManageService.ts` | 150 | Creation/update/deletion workflows mostly extracted; delete has DTO entry. |
+| `src/service/AIChatService.ts` | 141 | Thin auth/error wrapper around hint, platform-guide, and VM-management modules. |
 | `src/service/AIBoxBuildService.ts` | 126 | Thin pass-through wrapper. |
+| `src/service/VMManageService.ts` | 124 | Creation/update/delete DTO adapter with deletion access extracted. |
 | `src/service/UserService.ts` | 118 | Thin auth/error wrapper around profile/read modules. |
 | `src/service/TemplateService.ts` | 117 | Listing/conversion/submission/audit workflows extracted. |
-| `src/service/VMService.ts` | 92 | Thin read facade with shared actor-context resolver. |
 | `src/service/SuperAdminCRPService.ts` | 98 | Thin wrapper. |
 | `src/service/ChapterService.ts` | 96 | Thin wrapper. |
+| `src/service/VMService.ts` | 92 | Thin read facade with shared actor-context resolver. |
 | `src/service/AuthService.ts` | 86 | Register/login/forgot-password extracted; verify/logout still in facade. |
+| `src/service/VMOperateService.ts` | 81 | Thin request adapter delegating operation execution. |
 | `src/service/ClassService.ts` | 78 | Thin wrapper. |
 | `src/service/SuperAdminService.ts` | 78 | Thin wrapper. |
 | `src/service/TemplateManageService.ts` | 76 | Thin wrapper. |
@@ -133,7 +141,7 @@ No extracted module currently imports Express `Request`; remaining `Request` imp
    - Add unique constraints only after duplicate groups are cleaned and archived as empty.
 
 2. Continue facade-boundary cleanup where useful.
-   - Candidate targets: `AIChatService`, `PVEService`, `VMOperateService`, and `VMManageService`.
+   - Candidate targets: `PVEService`, `VMManageService` creation/update helpers, and smaller wrapper cleanup in `AuthService`/`TemplateManageService`.
    - Keep controller response shapes unchanged.
 
 3. Keep gates mandatory for every slice.
@@ -150,10 +158,8 @@ No extracted module currently imports Express `Request`; remaining `Request` imp
 
 Use small, isolated commits:
 
-1. `feat data hardening duplicate preflight command`
-2. `refactor template list service`
-3. `refactor user service facade`
-4. `refactor guacamole vm service facades`
-5. `docs update backend refactor progress`
+1. `refactor vm operation deletion module boundaries`
+2. `refactor ai chat platform guide service`
+3. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.

@@ -4392,3 +4392,42 @@ Acceptance criteria:
   - `npm run build`
   - `npm audit --audit-level=moderate` (`0` vulnerabilities)
   - conflict-marker scan, backend `console.*` scan, and `git diff --check`
+
+### 2026-05-26 VM Operation and Deletion Module Boundary Slice
+
+- Added `src/modules/vm/VMOperationExecutionService.ts`.
+- Added `src/modules/vm/VMDeletionAccessService.ts`.
+- Added `tests/vm-operation-execution-service.test.ts`.
+- Added `tests/vm-deletion-access-service.test.ts`.
+- Moved boot/shutdown/poweroff/reboot/reset execution out of `VMOperateService` into a VM module service covering:
+  - VM ID validation;
+  - VM lookup;
+  - owner/superadmin permission checks;
+  - current power-state checks;
+  - PVE operation dispatch;
+  - boot task wait and optional guest network identity normalization.
+- Moved delete ownership validation, VM lookup, and deletion workflow dispatch out of `VMManageService` into `VMDeletionAccessService`.
+- Updated `AIChatVMManagementService` so the AI Chat module depends on VM module ports instead of importing service facades.
+- Verified:
+  - `npx vitest run tests/vm-operation-execution-service.test.ts tests/vm-deletion-access-service.test.ts tests/vm-operation-policy.test.ts tests/vm-deletion-policy.test.ts tests/vm-deletion-workflow-service.test.ts tests/ai-chat-vm-management-service.test.ts` (`6` files, `37` tests)
+  - `npm run typecheck`
+  - `npm test` (`169` files, `868` tests)
+  - `npm run build`
+  - `npm audit --audit-level=moderate` (`0` vulnerabilities)
+  - conflict-marker scan, backend `console.*` scan, and `git diff --check`
+
+### 2026-05-26 AI Chat Platform Guide Service Slice
+
+- Added `src/modules/ai-chat/AIChatPlatformGuideService.ts`.
+- Added `tests/ai-chat-platform-guide-service.test.ts`.
+- Moved platform-guide loading, prompt construction, user input validation, streaming completion, and non-stream completion out of `AIChatService`.
+- `AIChatService` now authenticates the request, resolves the token role, and delegates platform-guide generation through `{ user, userRole, body }`.
+- `AIChatService.ts` is now about `141` lines after this extraction.
+- `src/modules` has no reverse imports from `src/service`.
+- Verified:
+  - `npx vitest run tests/ai-chat-platform-guide-service.test.ts tests/ai-chat-box-hint-service.test.ts tests/ai-chat-request-policy.test.ts tests/ai-chat-language-policy.test.ts tests/ai-chat-vm-management-service.test.ts tests/vm-operation-execution-service.test.ts tests/vm-deletion-access-service.test.ts` (`7` files, `35` tests)
+  - `npm run typecheck`
+  - `npm test` (`169` files, `868` tests)
+  - `npm run build`
+  - `npm audit --audit-level=moderate` (`0` vulnerabilities)
+  - conflict-marker scan, backend `console.*` scan, and `git diff --check`
