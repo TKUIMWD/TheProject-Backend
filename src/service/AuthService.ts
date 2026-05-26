@@ -1,5 +1,5 @@
 import { Service } from "../abstract/Service";
-import { resp , createResponse } from "../utils/resp";
+import { resp, createResponse } from "../utils/resp";
 import { DBResp } from "../interfaces/Response/DBResp";
 import { Document } from "mongoose";
 import { AuthResponse } from "../interfaces/Response/AuthResponse";
@@ -9,6 +9,7 @@ import { validateTokenAndGetUser } from "../utils/auth";
 import { authForgotPasswordService } from "../modules/auth/AuthForgotPasswordService";
 import { authLoginService } from "../modules/auth/AuthLoginService";
 import { authRegistrationService } from "../modules/auth/AuthRegistrationService";
+import { authSessionService } from "../modules/auth/AuthSessionService";
 
 
 export class AuthService extends Service {
@@ -26,23 +27,7 @@ export class AuthService extends Service {
     }
 
     public async verify(Request: Request): Promise<resp<AuthResponse | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetUser<AuthResponse>(Request);
-            if (error) {
-                return error;
-            }
-
-            if (user) {
-                user.isVerified = true;
-                await user.save();
-                logger.info(`email verified successfully for ${user.email}`);
-                return createResponse(200, "email verified successfully");
-            }
-            return createResponse(200, "email verified successfully");
-        } catch (error) {
-            logger.error(error);
-            return createResponse(500, "internal server error");
-        }
+        return this.withAuthenticatedUser<AuthResponse>(Request, (user) => authSessionService.verifyEmail(user));
     }
 
     /*
@@ -59,21 +44,7 @@ export class AuthService extends Service {
     }
 
     public async logout(Request: Request): Promise<resp<DBResp<Document> | undefined>> {
-        try {
-            const { user, error } = await validateTokenAndGetUser<DBResp<Document>>(Request);
-            if (error) {
-                return error;
-            }
-
-            if (user) {
-                logger.info(`logout successful for ${user.username}`);
-                return createResponse(200, "logout successful");
-            }
-            return createResponse(200, "logout successful");
-        } catch (error) {
-            logger.error(error);
-            return createResponse(500, "internal server error");
-        }
+        return this.withAuthenticatedUser<DBResp<Document>>(Request, (user) => authSessionService.logout(user));
     }
 
     public async forgotPassword(Request: Request): Promise<resp<DBResp<Document> | undefined>> {
@@ -82,5 +53,22 @@ export class AuthService extends Service {
             body: Request.body,
             authorizationHeader: Request.headers.authorization
         });
+    }
+
+    private async withAuthenticatedUser<T>(
+        Request: Request,
+        action: (user: any) => Promise<resp<T | undefined>>
+    ): Promise<resp<T | undefined>> {
+        try {
+            const { user, error } = await validateTokenAndGetUser<T>(Request);
+            if (error) {
+                return error;
+            }
+
+            return action(user);
+        } catch (error) {
+            logger.error(error);
+            return createResponse(500, "internal server error");
+        }
     }
 }
