@@ -1,8 +1,8 @@
-import { Request } from "express";
 import { pve_api } from "../../enum/PVE_API";
 import { AIBoxBuildExecutionStatus } from "../../interfaces/AIBoxBuildJob";
+import { PVEResp } from "../../interfaces/Response/PVEResp";
+import { User } from "../../interfaces/User";
 import { pveClient } from "../pve/PVEClient";
-import { VMManageService } from "../../service/VMManageService";
 import { VMUtils, GuestAgentCommandResult } from "../../utils/VMUtils";
 import { resp } from "../../utils/resp";
 import { env } from "../../config/env";
@@ -30,9 +30,10 @@ import {
     buildVMIPWaitLogMessage,
     selectPreferredVMIPAddress
 } from "./AIBoxBuildProvisioningPolicy";
+import { vmCreationRequestService } from "../vm/VMCreationRequestService";
 
-type VMManageServicePort = {
-    createVMFromTemplate(request: Request): Promise<resp<any>>;
+type VMCreationServicePort = {
+    createFromTemplate(input: { user: User; body: Record<string, unknown> }): Promise<resp<PVEResp | undefined>>;
 };
 
 type JobRepositoryPort = {
@@ -70,7 +71,7 @@ export type AIBoxBuildProvisioningConfig = {
 };
 
 export type AIBoxBuildProvisioningServiceDeps = {
-    vmManageService?: VMManageServicePort;
+    vmCreationService?: VMCreationServicePort;
     jobRepository?: JobRepositoryPort;
     vmRepository?: VMRepositoryPort;
     vmUtils?: VMUtilsPort;
@@ -93,7 +94,7 @@ const defaultConfig = (): AIBoxBuildProvisioningConfig => ({
 const defaultSleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
 export class AIBoxBuildProvisioningService {
-    private readonly vmManageService: VMManageServicePort;
+    private readonly vmCreationService: VMCreationServicePort;
     private readonly jobRepository: JobRepositoryPort;
     private readonly vmRepository: VMRepositoryPort;
     private readonly vmUtils: VMUtilsPort;
@@ -102,7 +103,7 @@ export class AIBoxBuildProvisioningService {
     private readonly sleep: (ms: number) => Promise<void>;
 
     constructor(deps: AIBoxBuildProvisioningServiceDeps = {}) {
-        this.vmManageService = deps.vmManageService ?? new VMManageService();
+        this.vmCreationService = deps.vmCreationService ?? vmCreationRequestService;
         this.jobRepository = deps.jobRepository ?? aiBoxBuildJobRepository;
         this.vmRepository = deps.vmRepository ?? vmRepository;
         this.vmUtils = deps.vmUtils ?? VMUtils;
@@ -115,11 +116,11 @@ export class AIBoxBuildProvisioningService {
         jobId: string;
         config: AIBoxRunRequest;
         authorizationHeader: string;
-        userSnapshot: { _id: string; role: string; email?: string };
+        userSnapshot: User;
     }): Promise<{ vmId?: string; pveVmid: string; pveNode: string; vmIp: string; sshUser: string; sshPassword: string }> {
         await this.setExecutionStatus(input.jobId, AIBoxBuildExecutionStatus.provisioning, "Creating VM from template.");
-        const createResp = await this.vmManageService.createVMFromTemplate({
-            headers: { authorization: input.authorizationHeader },
+        const createResp = await this.vmCreationService.createFromTemplate({
+            user: input.userSnapshot,
             body: {
                 template_id: input.config.template_id,
                 name: input.config.name,
@@ -130,7 +131,7 @@ export class AIBoxBuildProvisioningService {
                 ciuser: input.config.ciuser,
                 cipassword: input.config.cipassword
             }
-        } as Request);
+        });
 
         if (createResp.code !== 200 || !createResp.body) {
             throw new Error(buildAIBoxVMCreationFailureMessage(createResp.code, createResp.message));
@@ -151,7 +152,12 @@ export class AIBoxBuildProvisioningService {
             }
         );
 
-        const vmRecord = await this.waitForVMRecord(input.userSnapshot._id, pveNode, pveVmid);
+        const userId = input.userSnapshot._id?.toString();
+        if (!userId) {
+            throw new Error("User ID is required for AI box VM provisioning");
+        }
+
+        const vmRecord = await this.waitForVMRecord(userId, pveNode, pveVmid);
         if (vmRecord?._id) {
             await this.jobRepository.updateById(input.jobId, { vm_id: vmRecord._id.toString(), updated_at: new Date() });
         }

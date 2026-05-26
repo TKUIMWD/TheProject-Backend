@@ -26,9 +26,9 @@ function makeService(options: {
     const calls: Array<{ method: string; args: unknown[] }> = [];
     const networkIpBatches = [...(options.networkIpBatches ?? [["10.0.0.5"]])];
 
-    const vmManageService = {
-        createVMFromTemplate: async (request: any) => {
-            calls.push({ method: "createVMFromTemplate", args: [request] });
+    const vmCreationService = {
+        createFromTemplate: async (input: any) => {
+            calls.push({ method: "createFromTemplate", args: [input] });
             return {
                 code: options.createCode ?? 200,
                 message: options.createCode ? "bad gateway" : "ok",
@@ -92,7 +92,7 @@ function makeService(options: {
         calls,
         pveRequests,
         service: new AIBoxBuildProvisioningService({
-            vmManageService,
+            vmCreationService,
             jobRepository,
             vmRepository,
             vmUtils,
@@ -121,7 +121,7 @@ describe("AIBoxBuildProvisioningService", () => {
             jobId: "job-1",
             config: makeRunConfig(),
             authorizationHeader: "Bearer token",
-            userSnapshot: { _id: "user-1", role: "admin", email: "user@example.test" }
+            userSnapshot: { _id: "user-1", role: "admin", email: "user@example.test", username: "alice" } as any
         });
 
         expect(result).toEqual({
@@ -132,8 +132,8 @@ describe("AIBoxBuildProvisioningService", () => {
             sshUser: "student",
             sshPassword: "secret"
         });
-        expect(calls.find(call => call.method === "createVMFromTemplate")?.args[0]).toMatchObject({
-            headers: { authorization: "Bearer token" },
+        expect(calls.find(call => call.method === "createFromTemplate")?.args[0]).toMatchObject({
+            user: { _id: "user-1", role: "admin", email: "user@example.test" },
             body: {
                 template_id: "template-1",
                 name: "ai-box-job-1",
@@ -146,7 +146,7 @@ describe("AIBoxBuildProvisioningService", () => {
             }
         });
         expect(calls.map(call => call.method)).toEqual([
-            "createVMFromTemplate",
+            "createFromTemplate",
             "findByOwnerAndPVE",
             "getVMConfig",
             "regenerateCloudInit",

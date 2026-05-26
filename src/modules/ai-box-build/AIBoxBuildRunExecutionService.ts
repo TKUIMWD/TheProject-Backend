@@ -23,6 +23,7 @@ import { aiBoxBuildWorkspaceService } from "./AIBoxBuildWorkspaceService";
 import { AIBoxBuildProvisioningService } from "./AIBoxBuildProvisioningService";
 import { AIBoxBuildSSHExecutionService } from "./AIBoxBuildSSHExecutionService";
 import { CommandResult, openCodeRunner } from "../opencode/OpenCodeRunner";
+import { User } from "../../interfaces/User";
 
 type AIBoxVMContext = {
     vmId?: string;
@@ -64,7 +65,7 @@ type RunExecutionProvisioningService = {
         jobId: string;
         config: AIBoxRunRequest;
         authorizationHeader: string;
-        userSnapshot: { _id: string; role: string; email?: string };
+        userSnapshot: User;
     }): Promise<AIBoxVMContext>;
 };
 
@@ -131,7 +132,7 @@ export class AIBoxBuildRunExecutionService {
         jobId: string;
         config: AIBoxRunRequest;
         authorizationHeader: string;
-        userSnapshot: { _id: string; role: string; email?: string };
+        userSnapshot: User;
     }): Promise<void> {
         const { jobId, config, authorizationHeader, userSnapshot } = input;
         try {

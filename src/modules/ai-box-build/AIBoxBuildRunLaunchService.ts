@@ -48,7 +48,7 @@ type RunExecutionPort = {
         jobId: string;
         config: AIBoxRunRequest;
         authorizationHeader: string;
-        userSnapshot: { _id: string; role: User["role"]; email: string };
+        userSnapshot: User;
     }): Promise<unknown>;
 };
 
@@ -173,17 +173,12 @@ export class AIBoxBuildRunLaunchService {
                 return createResponse(409, "This AI build job is already running or changed state; refresh before starting another run", latestJob ? buildAIBoxBuildJobDTO(latestJob) : undefined);
             }
 
-            const userSnapshot = {
-                _id: input.user._id?.toString() || "",
-                role: input.user.role,
-                email: input.user.email
-            };
             this.runningJobs.add(normalizedJobId);
             this.runExecution.executeBuildRun({
                 jobId: normalizedJobId,
                 config: runConfig.value,
                 authorizationHeader: input.authorizationHeader,
-                userSnapshot
+                userSnapshot: input.user
             })
                 .catch((error) => logger.error(`AI box build run ${normalizedJobId} failed outside handler:`, error))
                 .finally(() => this.runningJobs.delete(normalizedJobId));
