@@ -41,7 +41,8 @@
     "start": "node ./build/app.js",
     "dev": "concurrently \"tsc -w\" \"nodemon build/app.js\"",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "data:check-unique-duplicates": "npm run build && node build/scripts/checkUniqueConstraintDuplicates.js"
   },
   "author": "",
   "license": "ISC",

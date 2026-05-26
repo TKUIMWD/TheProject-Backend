@@ -16,7 +16,15 @@ This runbook records the duplicate-data checks required before any deferred uniq
 
 ## MongoDB Duplicate Checks
 
-Run these in `mongosh` against the target database. The output should be an empty array before adding a unique index.
+Run the checked-in preflight command against the target database:
+
+```bash
+npm run data:check-unique-duplicates
+```
+
+The command uses `DBUSER`, `DBPASSWORD`, `DBHOST`, `DBPORT`, and `DBNAME` from the current environment. It is read-only. It exits with code `1` when any duplicate group is found, and exits with code `0` only when every candidate unique key is clean.
+
+The equivalent manual `mongosh` checks are listed below. The output should be an empty array before adding a unique index.
 
 ```javascript
 db.users.aggregate([
@@ -71,3 +79,8 @@ db.vm_tasks.aggregate([
 4. Re-run the duplicate checks and archive the empty results.
 5. Add unique indexes in a small schema-only change with rollback notes.
 6. Run the full backend gate before shipping the schema change.
+
+## Current Execution Status
+
+- 2026-05-26: Added the read-only duplicate preflight command and tests.
+- 2026-05-26: The command was not run against staging or production in this repository session; choose the target environment explicitly before running it.
