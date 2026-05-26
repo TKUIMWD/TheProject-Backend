@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `7e76bd2 docs fix vm box service size ordering`
+Latest remote baseline before this snapshot: `43bc9cc docs update course refactor progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -38,6 +38,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - Guacamole connection/disconnect/list/delete route body adapter logic moved from `GuacamoleService` into `GuacamoleRequestAdapterService`.
 - VM Box route-to-workflow request adapter now has injectable dependencies and direct mapping coverage; `VMBoxService` shares one request-context helper for body/query/params forwarding.
 - Course route-to-workflow request adapter now has injectable dependencies and direct mapping coverage; `CourseService` shares one request-context helper for body/query/params forwarding.
+- `PVEService` now shares one request-context helper for body/query forwarding into `PVERequestAdapterService`.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -115,6 +116,7 @@ The latest recorded full gate is green after these slices:
 - VM operation execution now lives in `VMOperationExecutionService`; `VMOperateService` is a route/auth adapter.
 - VM deletion ownership and workflow dispatch now lives in `VMDeletionAccessService`; `VMManageService` delegates delete DTOs.
 - PVE request query/body mapping now lives in `PVERequestAdapterService`; `PVEService` is a token/role adapter for PVE workflows.
+  - `PVEService` now uses shared request-context forwarding for body/query adapter calls.
 - VM Manage create/update/delete body mapping now lives in `VMManageRequestAdapterService`; `VMManageService` is a token/role adapter.
 - Template Manage update/delete/clone body mapping now lives in `TemplateManageRequestAdapterService`; `TemplateManageService` is a token/role adapter.
 - CRP route params/body mapping now lives in `ComputeResourcePlanRequestAdapterService`; `SuperAdminCRPService` is a token/role adapter.
@@ -133,7 +135,7 @@ Current facade/service file sizes:
 | --- | ---: | --- |
 | `src/service/VMBoxService.ts` | 169 | Thin auth/error wrapper around VM Box request adapter with shared request-context forwarding. |
 | `src/service/CourseService.ts` | 157 | Thin auth/error wrapper around Course request adapter with shared request-context forwarding. |
-| `src/service/PVEService.ts` | 157 | Thin token/role wrapper around PVE request adapter. |
+| `src/service/PVEService.ts` | 147 | Thin token/role wrapper around PVE request adapter with shared request-context forwarding. |
 | `src/service/GuacamoleService.ts` | 134 | Thin token/permission wrapper around Guacamole request adapter. |
 | `src/service/AIChatService.ts` | 125 | Thin auth/error wrapper around AI Chat request adapter. |
 | `src/service/VMManageService.ts` | 120 | Thin token/role wrapper around VM Manage request adapter. |
@@ -182,7 +184,7 @@ No extracted module currently imports Express `Request`; remaining `Request` imp
    - Add unique constraints only after duplicate groups are cleaned and archived as empty.
 
 2. Continue facade-boundary cleanup where useful.
-   - Candidate targets: smaller wrapper cleanup in remaining facades such as `PVEService` and similar wrappers where controller response shapes can stay unchanged.
+   - Candidate targets: smaller wrapper cleanup in remaining facades where controller response shapes can stay unchanged.
    - Keep controller response shapes unchanged.
 
 3. Keep gates mandatory for every slice.
@@ -215,6 +217,7 @@ Use small, isolated commits:
 14. `refactor guacamole request adapter service`
 15. `refactor vm box request adapter coverage`
 16. `refactor course request adapter coverage`
-17. `docs update backend refactor progress`
+17. `refactor pve service request context forwarding`
+18. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.
