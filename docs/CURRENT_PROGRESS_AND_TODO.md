@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `3dd363a docs update template manage refactor progress`
+Latest remote baseline before this snapshot: `13b40ad docs update crp refactor progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -28,6 +28,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - VM Manage create/update/delete route body adapter logic moved from `VMManageService` into `VMManageRequestAdapterService`.
 - Template Manage update/delete/clone route body adapter logic moved from `TemplateManageService` into `TemplateManageRequestAdapterService`.
 - Compute Resource Plan create/update/delete/list/get-by-id route adapter logic moved from `SuperAdminCRPService` into `ComputeResourcePlanRequestAdapterService`.
+- SuperAdmin user-management route body adapter logic moved from `SuperAdminService` into `SuperAdminRequestAdapterService`.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -45,7 +46,8 @@ The latest recorded full gate is green after these slices:
 - targeted VM Manage adapter tests: `npx vitest run tests/vm-manage-request-adapter-service.test.ts tests/vm-creation-request-service.test.ts tests/vm-config-update-workflow-service.test.ts tests/vm-deletion-access-service.test.ts tests/vm-deletion-workflow-service.test.ts tests/vm-creation-workflow-service.test.ts tests/vm-config-execution-service.test.ts` (`7` files, `31` tests)
 - targeted Template Manage adapter tests: `npx vitest run tests/template-manage-request-adapter-service.test.ts tests/template-config-update-service.test.ts tests/template-deletion-service.test.ts tests/template-clone-service.test.ts tests/template-list-service.test.ts tests/template-conversion-service.test.ts tests/template-audit-service.test.ts` (`7` files, `40` tests)
 - targeted CRP adapter tests: `npx vitest run tests/compute-resource-plan-request-adapter-service.test.ts tests/compute-resource-plan-management-service.test.ts tests/compute-resource-plan-policy.test.ts` (`3` files, `19` tests)
-- `npm test` (`173` files, `886` tests)
+- targeted SuperAdmin adapter tests: `npx vitest run tests/super-admin-request-adapter-service.test.ts tests/super-admin-user-management-service.test.ts tests/super-admin-user-mutation-policy.test.ts` (`3` files, `12` tests)
+- `npm test` (`174` files, `889` tests)
 - `npm run build`
 - `npm audit --audit-level=moderate` (`0` vulnerabilities)
 - merge-conflict marker scan
@@ -91,6 +93,7 @@ The latest recorded full gate is green after these slices:
 - VM Manage create/update/delete body mapping now lives in `VMManageRequestAdapterService`; `VMManageService` is a token/role adapter.
 - Template Manage update/delete/clone body mapping now lives in `TemplateManageRequestAdapterService`; `TemplateManageService` is a token/role adapter.
 - CRP route params/body mapping now lives in `ComputeResourcePlanRequestAdapterService`; `SuperAdminCRPService` is a token/role adapter.
+- SuperAdmin role/CRP assignment body mapping now lives in `SuperAdminRequestAdapterService`; `SuperAdminService` is a token adapter.
 - Course and VM Box route-to-workflow adapter logic now lives behind DTO-style request adapter services, leaving their facades as thin auth/error wrappers.
 - Safe non-unique indexes were added for common lookup/list paths.
 - Unique-constraint hardening remains deferred, but `docs/DATA_HARDENING_UNIQUE_CONSTRAINTS.md` now records staging/production duplicate checks and cleanup order for candidate unique keys.
@@ -117,8 +120,8 @@ Current facade/service file sizes:
 | `src/service/SuperAdminCRPService.ts` | 84 | Thin token/role wrapper around CRP request adapter. |
 | `src/service/VMOperateService.ts` | 81 | Thin request adapter delegating operation execution. |
 | `src/service/ClassService.ts` | 78 | Thin wrapper. |
-| `src/service/SuperAdminService.ts` | 78 | Thin wrapper. |
 | `src/service/TemplateManageService.ts` | 68 | Thin token/role wrapper around Template Manage request adapter. |
+| `src/service/SuperAdminService.ts` | 61 | Thin token wrapper around SuperAdmin request adapter. |
 
 ## Remaining Gaps
 
@@ -153,7 +156,7 @@ No extracted module currently imports Express `Request`; remaining `Request` imp
    - Add unique constraints only after duplicate groups are cleaned and archived as empty.
 
 2. Continue facade-boundary cleanup where useful.
-   - Candidate targets: smaller wrapper cleanup in `AuthService`, `SuperAdminService`, and similar facades.
+   - Candidate targets: smaller wrapper cleanup in `AuthService`, `ChapterService`, `ClassService`, and similar facades.
    - Keep controller response shapes unchanged.
 
 3. Keep gates mandatory for every slice.
@@ -176,6 +179,7 @@ Use small, isolated commits:
 4. `refactor vm manage request adapter service`
 5. `refactor template manage request adapter service`
 6. `refactor crp request adapter service`
-7. `docs update backend refactor progress`
+7. `refactor super admin request adapter service`
+8. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.

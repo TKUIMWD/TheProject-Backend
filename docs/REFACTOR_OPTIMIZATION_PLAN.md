@@ -4510,3 +4510,21 @@ Acceptance criteria:
   - `npm run build`
   - `npm audit --audit-level=moderate` (`0` vulnerabilities)
   - conflict-marker scan, backend `console.*` scan, and `git diff --check`
+
+### 2026-05-26 SuperAdmin Request Adapter Service Slice
+
+- Added `src/modules/super-admin/SuperAdminRequestAdapterService.ts`.
+- Added `tests/super-admin-request-adapter-service.test.ts`.
+- Moved SuperAdmin route DTO mapping out of `SuperAdminService` for:
+  - role-change body `userId`/`newRole` forwarding;
+  - CRP-assignment body `userId`/`planId` forwarding;
+  - user/admin list delegation without request-shaped data.
+- Consolidated repeated `SuperAdminService` superadmin token-validation/error wrappers.
+- `SuperAdminService.ts` is now about `61` lines and imports only the SuperAdmin request adapter from `modules/super-admin`.
+- Verified:
+  - `npx vitest run tests/super-admin-request-adapter-service.test.ts tests/super-admin-user-management-service.test.ts tests/super-admin-user-mutation-policy.test.ts` (`3` files, `12` tests)
+  - `npm run typecheck`
+  - `npm test` (`174` files, `889` tests)
+  - `npm run build`
+  - `npm audit --audit-level=moderate` (`0` vulnerabilities)
+  - conflict-marker scan, backend `console.*` scan, and `git diff --check`
