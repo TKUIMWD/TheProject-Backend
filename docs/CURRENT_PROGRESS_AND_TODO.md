@@ -2,7 +2,7 @@
 
 Date: 2026-05-26
 Branch: `refactor/backend-optimization-plan`
-Latest remote baseline before this snapshot: `8dd9180 docs update auth refactor progress`
+Latest remote baseline before this snapshot: `c10fb6b docs update course structure refactor progress`
 Main source plan: `docs/REFACTOR_OPTIMIZATION_PLAN.md`
 
 ## Current Status
@@ -31,6 +31,7 @@ The backend refactor branch has completed these Phase 2 and Phase 7 slices on `r
 - SuperAdmin user-management route body adapter logic moved from `SuperAdminService` into `SuperAdminRequestAdapterService`.
 - Auth verify/logout session behavior moved from `AuthService` into `AuthSessionService`.
 - Course class/chapter route params/body adapter logic moved from `ClassService` and `ChapterService` into `CourseStructureRequestAdapterService`.
+- Template list/convert/submit/audit route body adapter logic moved from `TemplateService` into `TemplateRequestAdapterService`.
 - `src/modules` has no reverse imports from `src/service`.
 
 The latest recorded full gate is green after these slices:
@@ -43,6 +44,7 @@ The latest recorded full gate is green after these slices:
 - targeted AI Chat VM tests: `npx vitest run tests/ai-chat-vm-management-service.test.ts tests/ai-chat-vm-intent-policy.test.ts tests/ai-chat-vm-pending-action-policy.test.ts tests/ai-chat-vm-response-policy.test.ts tests/ai-chat-request-policy.test.ts` (`5` files, `26` tests)
 - targeted AI Box provisioning tests: `npx vitest run tests/ai-box-build-provisioning-service.test.ts tests/ai-box-build-run-execution-service.test.ts tests/ai-box-build-run-launch-service.test.ts tests/vm-creation-request-service.test.ts` (`4` files, `22` tests)
 - targeted Template list tests: `npx vitest run tests/template-list-service.test.ts` (`1` file, `4` tests)
+- targeted Template request adapter tests: `npx vitest run tests/template-request-adapter-service.test.ts tests/template-list-service.test.ts tests/template-conversion-service.test.ts tests/template-submission-create-service.test.ts tests/template-audit-service.test.ts tests/template-submission-audit-policy.test.ts` (`6` files, `28` tests)
 - targeted data hardening tests: `npx vitest run tests/unique-constraint-duplicate-check.test.ts tests/schema-indexes.test.ts` (`2` files, `8` tests)
 - targeted VM operation/deletion + AI Chat boundary tests: `npx vitest run tests/ai-chat-platform-guide-service.test.ts tests/ai-chat-box-hint-service.test.ts tests/ai-chat-request-policy.test.ts tests/ai-chat-language-policy.test.ts tests/ai-chat-vm-management-service.test.ts tests/vm-operation-execution-service.test.ts tests/vm-deletion-access-service.test.ts` (`7` files, `35` tests)
 - targeted PVE adapter tests: `npx vitest run tests/pve-request-adapter-service.test.ts tests/pve-task-service.test.ts tests/pve-qemu-config-access-service.test.ts tests/pve-datacenter-status-service.test.ts tests/pve-qemu-config-dto-factory.test.ts tests/pve-datacenter-status-policy.test.ts tests/pve-client.test.ts` (`7` files, `28` tests)
@@ -50,7 +52,7 @@ The latest recorded full gate is green after these slices:
 - targeted Template Manage adapter tests: `npx vitest run tests/template-manage-request-adapter-service.test.ts tests/template-config-update-service.test.ts tests/template-deletion-service.test.ts tests/template-clone-service.test.ts tests/template-list-service.test.ts tests/template-conversion-service.test.ts tests/template-audit-service.test.ts` (`7` files, `40` tests)
 - targeted CRP adapter tests: `npx vitest run tests/compute-resource-plan-request-adapter-service.test.ts tests/compute-resource-plan-management-service.test.ts tests/compute-resource-plan-policy.test.ts` (`3` files, `19` tests)
 - targeted SuperAdmin adapter tests: `npx vitest run tests/super-admin-request-adapter-service.test.ts tests/super-admin-user-management-service.test.ts tests/super-admin-user-mutation-policy.test.ts` (`3` files, `12` tests)
-- `npm test` (`176` files, `895` tests)
+- `npm test` (`177` files, `897` tests)
 - `npm run build`
 - `npm audit --audit-level=moderate` (`0` vulnerabilities)
 - merge-conflict marker scan
@@ -88,6 +90,7 @@ The latest recorded full gate is green after these slices:
   - AI Box Build provisioning now calls VM creation workflow DTOs directly instead of constructing an Express-like request.
 - Course, Template, VM Box, and Review domains have many extracted/tested service and policy slices, including create/update/list/review/membership/submission/audit/writeup/answer flows.
 - Template list, accessible-template list, and submitted-template detail assembly now live in `TemplateListService`.
+- Template list/convert/submit/audit route-to-workflow adapter logic now lives in `TemplateRequestAdapterService`.
 - User profile/read facade methods now share a thin auth/error wrapper while delegating to extracted user modules.
 - Guacamole SSH/RDP/VNC establishment now shares one service-level adapter helper.
 - VM status/network reads now share one service-level actor-context resolver.
@@ -118,7 +121,7 @@ Current facade/service file sizes:
 | `src/service/AIBoxBuildService.ts` | 126 | Thin pass-through wrapper. |
 | `src/service/VMManageService.ts` | 120 | Thin token/role wrapper around VM Manage request adapter. |
 | `src/service/UserService.ts` | 118 | Thin auth/error wrapper around profile/read modules. |
-| `src/service/TemplateService.ts` | 117 | Listing/conversion/submission/audit workflows extracted. |
+| `src/service/TemplateService.ts` | 106 | Thin token wrapper around Template request adapter. |
 | `src/service/VMService.ts` | 92 | Thin read facade with shared actor-context resolver. |
 | `src/service/ChapterService.ts` | 89 | Thin token wrapper around course structure request adapter. |
 | `src/service/SuperAdminCRPService.ts` | 84 | Thin token/role wrapper around CRP request adapter. |
@@ -161,7 +164,7 @@ No extracted module currently imports Express `Request`; remaining `Request` imp
    - Add unique constraints only after duplicate groups are cleaned and archived as empty.
 
 2. Continue facade-boundary cleanup where useful.
-   - Candidate targets: smaller wrapper cleanup in remaining facades such as `TemplateService`, `VMService`, and similar wrappers where controller response shapes can stay unchanged.
+   - Candidate targets: smaller wrapper cleanup in remaining facades such as `VMService`, `AIChatService`, and similar wrappers where controller response shapes can stay unchanged.
    - Keep controller response shapes unchanged.
 
 3. Keep gates mandatory for every slice.
@@ -187,6 +190,7 @@ Use small, isolated commits:
 7. `refactor super admin request adapter service`
 8. `refactor auth session service`
 9. `refactor course structure request adapter service`
-10. `docs update backend refactor progress`
+10. `refactor template request adapter service`
+11. `docs update backend refactor progress`
 
 After each slice, update `docs/REFACTOR_OPTIMIZATION_PLAN.md` and this file with the new verification result.
