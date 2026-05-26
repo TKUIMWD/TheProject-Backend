@@ -24,6 +24,8 @@ const GUACAMOLE_API_USERNAME = env.guacamole.apiUsername;
 const GUACAMOLE_API_PASSWORD = env.guacamole.apiPassword;
 const PROJECTUSER_GUACAMOLE_PASSWORD = env.guacamole.projectUserPassword;
 
+type GuacamoleUserValidation = { user: User; isSuperAdmin: boolean } | { error: resp<undefined> };
+
 export class GuacamoleService extends Service {
     private readonly connectionEstablishmentService: GuacamoleConnectionEstablishmentService;
 
@@ -46,7 +48,7 @@ export class GuacamoleService extends Service {
     /**
      * 驗證用戶權限
      */
-    private async _validateUserPermissions(req: Request): Promise<{ user: User; isSuperAdmin: boolean } | { error: resp<undefined> }> {
+    private async _validateUserPermissions(req: Request): Promise<GuacamoleUserValidation> {
         try {
             // 優先嘗試 SuperAdmin 驗證
             const { user: superUser, error: superError } = await validateTokenAndGetSuperAdminUser<User>(req);
@@ -69,39 +71,6 @@ export class GuacamoleService extends Service {
         }
     }
 
-    /**
-     * 獲取 Guacamole 認證令牌 (使用用戶信箱和統一密碼)
-     */
-    private async _getGuacamoleAuthToken(req: Request): Promise<resp<GuacamoleAuthToken | undefined>> {
-        try {
-            // 檢查 Guacamole 服務配置
-            if (!this._checkGuacamoleConfiguration()) {
-                logger.error("Guacamole configuration missing:", {
-                    url: !!GUACAMOLE_URL,
-                    username: !!GUACAMOLE_API_USERNAME,
-                    password: !!GUACAMOLE_API_PASSWORD,
-                    userPassword: !!PROJECTUSER_GUACAMOLE_PASSWORD
-                });
-                return createResponse(503, "Guacamole service is not configured. Please contact administrator to configure the service.");
-            }
-
-            // 驗證用戶權限並獲取用戶信息
-            const userValidation = await this._validateUserPermissions(req);
-            if ('error' in userValidation) {
-                return userValidation.error;
-            }
-
-            return this._getGuacamoleAuthTokenForUser(userValidation.user);
-
-        } catch (error) {
-            logger.error("Error in _getGuacamoleAuthToken:", {
-                message: error instanceof Error ? error.message : 'Unknown error',
-                stack: error instanceof Error ? error.stack : undefined
-            });
-            return createResponse(500, `Error getting Guacamole auth token: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
-    }
-
     private async _getGuacamoleAuthTokenForUser(user: User): Promise<resp<GuacamoleAuthToken | undefined>> {
         if (!user.email) {
             return createResponse(400, "User email is required for Guacamole authentication");
@@ -115,62 +84,21 @@ export class GuacamoleService extends Service {
      * 建立 SSH 連線
      */
     public async establishSSHConnection(req: Request): Promise<resp<GuacamoleConnection | undefined>> {
-        try {
-            const userValidation = await this._validateUserPermissions(req);
-            if ('error' in userValidation) {
-                return userValidation.error;
-            }
-
-            return this.connectionEstablishmentService.establishSSHConnection({
-                request: req.body,
-                user: userValidation.user,
-                isSuperAdmin: userValidation.isSuperAdmin
-            });
-        } catch (error) {
-            logger.error("Error establishing SSH connection:", error);
-            return createResponse(500, "Internal Server Error");
-        }
+        return this.establishConnection(req, "SSH", (input) => this.connectionEstablishmentService.establishSSHConnection(input));
     }
 
     /**
      * 建立 RDP 連線
      */
     public async establishRDPConnection(req: Request): Promise<resp<GuacamoleConnection | undefined>> {
-        try {
-            const userValidation = await this._validateUserPermissions(req);
-            if ('error' in userValidation) {
-                return userValidation.error;
-            }
-
-            return this.connectionEstablishmentService.establishRDPConnection({
-                request: req.body,
-                user: userValidation.user,
-                isSuperAdmin: userValidation.isSuperAdmin
-            });
-        } catch (error) {
-            return createResponse(500, "Internal Server Error");
-        }
+        return this.establishConnection(req, "RDP", (input) => this.connectionEstablishmentService.establishRDPConnection(input));
     }
 
     /**
      * 建立 VNC 連線
      */
     public async establishVNCConnection(req: Request): Promise<resp<GuacamoleConnection | undefined>> {
-        try {
-            const userValidation = await this._validateUserPermissions(req);
-            if ('error' in userValidation) {
-                return userValidation.error;
-            }
-
-            return this.connectionEstablishmentService.establishVNCConnection({
-                request: req.body,
-                user: userValidation.user,
-                isSuperAdmin: userValidation.isSuperAdmin
-            });
-        } catch (error) {
-            logger.error("Error establishing VNC connection:", error);
-            return createResponse(500, "Internal Server Error");
-        }
+        return this.establishConnection(req, "VNC", (input) => this.connectionEstablishmentService.establishVNCConnection(input));
     }
 
     /**
@@ -202,8 +130,7 @@ export class GuacamoleService extends Service {
         try {
             // 檢查 Guacamole 服務配置
             if (!this._checkGuacamoleConfiguration()) {
-                logger.error("Guacamole service is not configured for listing connections");
-                return createResponse(503, "Guacamole service is not configured. Please contact administrator to configure the service.");
+                return this.guacamoleNotConfigured("Guacamole service is not configured for listing connections");
             }
 
             // 驗證用戶權限
@@ -241,8 +168,7 @@ export class GuacamoleService extends Service {
         try {
             // 檢查 Guacamole 服務配置
             if (!this._checkGuacamoleConfiguration()) {
-                logger.error("Guacamole service is not configured");
-                return createResponse(503, "Guacamole service is not configured. Please contact administrator to configure the service.");
+                return this.guacamoleNotConfigured("Guacamole service is not configured");
             }
 
             // 驗證用戶權限
@@ -269,5 +195,32 @@ export class GuacamoleService extends Service {
             logger.error("Error deleting connection:", error);
             return createResponse(500, "Internal Server Error");
         }
+    }
+
+    private async establishConnection(
+        req: Request,
+        protocol: "SSH" | "RDP" | "VNC",
+        action: (input: { request: any; user: User; isSuperAdmin: boolean }) => Promise<resp<GuacamoleConnection | undefined>>
+    ): Promise<resp<GuacamoleConnection | undefined>> {
+        try {
+            const userValidation = await this._validateUserPermissions(req);
+            if ('error' in userValidation) {
+                return userValidation.error;
+            }
+
+            return action({
+                request: req.body,
+                user: userValidation.user,
+                isSuperAdmin: userValidation.isSuperAdmin
+            });
+        } catch (error) {
+            logger.error(`Error establishing ${protocol} connection:`, error);
+            return createResponse(500, "Internal Server Error");
+        }
+    }
+
+    private guacamoleNotConfigured(logMessage: string): resp<undefined> {
+        logger.error(logMessage);
+        return createResponse(503, "Guacamole service is not configured. Please contact administrator to configure the service.");
     }
 }
