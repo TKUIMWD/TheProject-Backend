@@ -61,9 +61,58 @@ export class PVEController extends Controller {
     Response.status(resp.code).send(resp);
   }
 
+  public async getRecentTasks(Request: Request, Response: Response) {
+    const resp = await this.withValidatedInput(Request, "getRecentTasks", validateTokenAndGetAdminUser, (user) =>
+      this.service.getRecentTasks(this.toAdapterInput(Request, user))
+    );
+    Response.status(resp.code).send(resp);
+  }
+
   public async getDatacenterStatus(Request: Request, Response: Response) {
-    const resp = await this.withValidatedInput(Request, "getDatacenterStatus", validateTokenAndGetSuperAdminUser, () =>
+    const resp = await this.withValidatedInput(Request, "getDatacenterStatus", validateTokenAndGetAdminUser, () =>
       this.service.getDatacenterStatus()
+    );
+    Response.status(resp.code).send(resp);
+  }
+
+  public async getVMInventory(Request: Request, Response: Response) {
+    const resp = await this.withValidatedInput(Request, "getVMInventory", validateTokenAndGetAdminUser, () =>
+      this.service.getVMInventory()
+    );
+    Response.status(resp.code).send(resp);
+  }
+
+  public async getStorageDetails(Request: Request, Response: Response) {
+    const resp = await this.withValidatedInput(Request, "getStorageDetails", validateTokenAndGetAdminUser, () =>
+      this.service.getStorageDetails()
+    );
+    Response.status(resp.code).send(resp);
+  }
+
+  public async getVMDetail(Request: Request, Response: Response) {
+    const resp = await this.withValidatedInput(Request, "getVMDetail", validateTokenAndGetAdminUser, (user) =>
+      this.service.getVMDetail(this.toAdapterInput(Request, user))
+    );
+    Response.status(resp.code).send(resp);
+  }
+
+  public async operateVM(Request: Request, Response: Response) {
+    const resp = await this.withValidatedInput(Request, "operateVM", validateTokenAndGetAdminUser, () =>
+      this.service.operateVM({ body: Request.body })
+    );
+    Response.status(resp.code).send(resp);
+  }
+
+  public async deleteVMs(Request: Request, Response: Response) {
+    const resp = await this.withValidatedInput(Request, "deleteVMs", validateTokenAndGetAdminUser, () =>
+      this.service.deleteVMs({ body: Request.body })
+    );
+    Response.status(resp.code).send(resp);
+  }
+
+  public async getDashboardTrends(Request: Request, Response: Response) {
+    const resp = await this.withValidatedInput(Request, "getDashboardTrends", validateTokenAndGetAdminUser, (user) =>
+      this.service.getDashboardTrends(this.toAdapterInput(Request, user))
     );
     Response.status(resp.code).send(resp);
   }

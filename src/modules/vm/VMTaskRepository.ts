@@ -1,5 +1,5 @@
 import { DeleteResult, UpdateResult } from "mongodb";
-import { VM_Task, VM_Task_Query } from "../../interfaces/VM/VM_Task";
+import { VM_Task, VM_Task_Query, VM_Task_Recent_Query } from "../../interfaces/VM/VM_Task";
 import { VM_TaskModel } from "../../orm/schemas/VM/VM_TaskSchemas";
 
 type ExecQuery<T> = { exec(): Promise<T> };
@@ -73,6 +73,14 @@ export class VMTaskRepository {
     }
 
     public async listForUser(query: VM_Task_Query, pagination: { skip: number; limit: number }): Promise<any[]> {
+        return this.taskModel.find(query)
+            .sort({ created_at: -1 })
+            .skip(pagination.skip)
+            .limit(pagination.limit)
+            .exec();
+    }
+
+    public async listRecent(query: VM_Task_Recent_Query, pagination: { skip: number; limit: number }): Promise<any[]> {
         return this.taskModel.find(query)
             .sort({ created_at: -1 })
             .skip(pagination.skip)

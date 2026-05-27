@@ -5,9 +5,11 @@ import { logger } from "../../middlewares/log";
 import { createResponse, resp } from "../../utils/resp";
 import { PVEClient, pveClient } from "./PVEClient";
 import { buildPVEDatacenterNodeStatus } from "./PVEDatacenterStatusPolicy";
+import { PVEDashboardTrendStore, pveDashboardTrendStore } from "./PVEDashboardTrendStore";
 
 type PVEDatacenterStatusServiceDeps = {
     pve?: Pick<PVEClient, "request">;
+    trendStore?: Pick<PVEDashboardTrendStore, "record">;
 };
 
 type StorageTotals = {
@@ -20,14 +22,16 @@ const EXTRA_LOCAL_STORAGE_TYPES = ["zfspool", "lvmthin"];
 
 export class PVEDatacenterStatusService {
     private readonly pve: Pick<PVEClient, "request">;
+    private readonly trendStore: Pick<PVEDashboardTrendStore, "record">;
 
     constructor(deps: PVEDatacenterStatusServiceDeps = {}) {
         this.pve = deps.pve ?? pveClient;
+        this.trendStore = deps.trendStore ?? pveDashboardTrendStore;
     }
 
     public async getDatacenterStatus(): Promise<resp<any>> {
         try {
-            const nodesResp: PVEResp = await this.pve.request("GET", pve_api.nodes);
+            const nodesResp: PVEResp = await this.pve.request("GET", pve_api.cluster_resources_nodes);
             if (!nodesResp || !nodesResp.data) {
                 return createResponse(404, "Nodes not found");
             }
@@ -37,7 +41,7 @@ export class PVEDatacenterStatusService {
             const storageTotal = aggregate.datacenterMaxDisk + aggregate.sharedTotal + aggregate.extraLocalTotal;
             const storageUsed = aggregate.datacenterDisk + aggregate.sharedUsed + aggregate.extraLocalUsed;
 
-            return createResponse(200, "Datacenter status fetched successfully", {
+            const statusBody = {
                 overview: {
                     total_nodes: nodes.length,
                     online_nodes: aggregate.online,
@@ -53,8 +57,13 @@ export class PVEDatacenterStatusService {
                     storage_total_tb: +(storageTotal / Math.pow(1024, 4)).toFixed(2),
                     storage_percent: storageTotal > 0 ? Math.round((storageUsed / storageTotal) * 100) : 0
                 },
-                nodes: aggregate.nodeList
-            });
+                nodes: aggregate.nodeList,
+                fetched_at: new Date().toISOString(),
+                source: "cluster/resources?type=node"
+            };
+
+            this.trendStore.record(statusBody);
+            return createResponse(200, "Datacenter status fetched successfully", statusBody);
         } catch (error) {
             logger.error("Error in PVEDatacenterStatusService.getDatacenterStatus:", error);
             return createResponse(500, "Internal Server Error");
@@ -91,18 +100,26 @@ export class PVEDatacenterStatusService {
 
         for (const node of nodes) {
             const isOnline = node.status === "online";
+            const nodeName = this.getNodeName(node);
+            const cpu = this.finiteNumber(node.cpu);
+            const maxcpu = this.finiteNumber(node.maxcpu);
+            const mem = this.finiteNumber(node.mem);
+            const maxmem = this.finiteNumber(node.maxmem);
+            const disk = this.finiteNumber(node.disk);
+            const maxdisk = this.finiteNumber(node.maxdisk);
+
             if (isOnline) online++;
             else offline++;
 
-            datacenterCpu += node.cpu * node.maxcpu;
-            datacenterMaxCpu += node.maxcpu;
-            datacenterMem += node.mem;
-            datacenterMaxMem += node.maxmem;
-            datacenterDisk += node.disk;
-            datacenterMaxDisk += node.maxdisk;
+            datacenterCpu += cpu * maxcpu;
+            datacenterMaxCpu += maxcpu;
+            datacenterMem += mem;
+            datacenterMaxMem += maxmem;
+            datacenterDisk += disk;
+            datacenterMaxDisk += maxdisk;
 
-            if (isOnline) {
-                const storageTotals = await this.aggregateNodeStorage(node.node, sharedStorageMap);
+            if (isOnline && nodeName) {
+                const storageTotals = await this.aggregateNodeStorage(nodeName, sharedStorageMap);
                 extraLocalTotal += storageTotals.extraLocalTotal;
                 extraLocalUsed += storageTotals.extraLocalUsed;
             }
@@ -191,6 +208,14 @@ export class PVEDatacenterStatusService {
 
     private isExtraLocalStorage(storage: any, storageId: string): boolean {
         return storage.shared === 0 && storageId !== "local" && storage.type && EXTRA_LOCAL_STORAGE_TYPES.includes(storage.type);
+    }
+
+    private getNodeName(node: PVE_NodeStatus): string {
+        return node.node || node.id?.replace(/^node\//, "") || "";
+    }
+
+    private finiteNumber(value: unknown): number {
+        return typeof value === "number" && Number.isFinite(value) ? value : 0;
     }
 }
 

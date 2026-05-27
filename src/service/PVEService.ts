@@ -45,11 +45,49 @@ export class PVEService extends Service {
         });
     }
 
+    public getRecentTasks(input: PVEServiceAdapterInput): Promise<resp<any>> {
+        return pveRequestAdapterService.getRecentTasks({
+            query: input.query ?? {}
+        });
+    }
+
     public cleanupTasks(): Promise<resp<any>> {
         return pveRequestAdapterService.cleanupTasks();
     }
 
     public getDatacenterStatus(): Promise<resp<any>> {
         return pveRequestAdapterService.getDatacenterStatus();
+    }
+
+    public getVMInventory(): Promise<resp<any>> {
+        return pveRequestAdapterService.getVMInventory();
+    }
+
+    public getStorageDetails(): Promise<resp<any>> {
+        return pveRequestAdapterService.getStorageDetails();
+    }
+
+    public getVMDetail(input: PVEServiceAdapterInput): Promise<resp<any>> {
+        return pveRequestAdapterService.getVMDetail({
+            query: input.query ?? {}
+        });
+    }
+
+    public operateVM(input: { body?: any }): Promise<resp<any>> {
+        return pveRequestAdapterService.operateVM({
+            body: input.body ?? {}
+        });
+    }
+
+    public deleteVMs(input: { body?: any }): Promise<resp<any>> {
+        return pveRequestAdapterService.deleteVMs({
+            body: input.body ?? {}
+        });
+    }
+
+    public getDashboardTrends(input: PVEServiceAdapterInput): Promise<resp<any>> {
+        return pveRequestAdapterService.getDashboardTrends({
+            query: input.query ?? {}
+        });
     }
 }

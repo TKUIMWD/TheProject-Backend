@@ -18,7 +18,6 @@ const nodes = [
         uptime: 3600
     },
     {
-        node: "pve-b",
         status: "online",
         id: "node/pve-b",
         cpu: 0.25,
@@ -50,12 +49,16 @@ function makeService(options: {
     nodeError?: Error;
 } = {}) {
     const calls: Array<{ method: string; url: string }> = [];
+    const trendRecords: any[] = [];
     const service = new PVEDatacenterStatusService({
+        trendStore: {
+            record: (status) => trendRecords.push(status)
+        },
         pve: {
             request: async (method, url) => {
                 calls.push({ method, url });
-                if (options.nodeError && url.endsWith("/nodes")) throw options.nodeError;
-                if (url.endsWith("/nodes")) {
+                if (options.nodeError && url.includes("/cluster/resources?type=node")) throw options.nodeError;
+                if (url.includes("/cluster/resources?type=node")) {
                     return options.nodesResp ?? { data: nodes };
                 }
 
@@ -69,12 +72,12 @@ function makeService(options: {
         }
     });
 
-    return { calls, service };
+    return { calls, service, trendRecords };
 }
 
 describe("PVEDatacenterStatusService", () => {
     it("aggregates node, shared storage, and extra local storage usage", async () => {
-        const { service, calls } = makeService({
+        const { service, calls, trendRecords } = makeService({
             storageByNode: {
                 "pve-a": {
                     data: [
@@ -115,15 +118,18 @@ describe("PVEDatacenterStatusService", () => {
                     { name: "pve-a", online: true, cpu_percent: 50, memory_percent: 50 },
                     { name: "pve-b", online: true, cpu_percent: 25, memory_percent: 50 },
                     { name: "pve-c", online: false, cpu_percent: 0, memory_percent: 50 }
-                ]
+                ],
+                source: "cluster/resources?type=node"
             }
         });
 
         expect(calls.map((call) => call.url)).toEqual([
-            expect.stringMatching(/\/nodes$/),
+            expect.stringContaining("/cluster/resources?type=node"),
             expect.stringContaining("/nodes/pve-a/storage"),
             expect.stringContaining("/nodes/pve-b/storage")
         ]);
+        expect(trendRecords).toHaveLength(1);
+        expect(trendRecords[0].datacenter.cpu_percent).toBe(36);
     });
 
     it("returns not found when PVE returns no node data", async () => {
@@ -134,6 +140,53 @@ describe("PVEDatacenterStatusService", () => {
             message: "Nodes not found",
             body: undefined
         });
+    });
+
+    it("guards malformed node metrics without returning NaN or fetching nameless storage", async () => {
+        const { service, calls } = makeService({
+            nodesResp: {
+                data: [
+                    {
+                        status: "online",
+                        id: "",
+                        cpu: Number.NaN,
+                        maxcpu: Number.NaN,
+                        mem: Number.NaN,
+                        maxmem: Number.NaN,
+                        disk: Number.NaN,
+                        maxdisk: Number.NaN,
+                        uptime: Number.NaN
+                    }
+                ]
+            }
+        });
+
+        await expect(service.getDatacenterStatus()).resolves.toMatchObject({
+            code: 200,
+            body: {
+                overview: {
+                    total_nodes: 1,
+                    online_nodes: 1,
+                    offline_nodes: 0
+                },
+                datacenter: {
+                    cpu_total: 0,
+                    cpu_percent: 0,
+                    memory_total_gb: 0,
+                    memory_used_gb: 0,
+                    memory_percent: 0,
+                    storage_used_tb: 0,
+                    storage_total_tb: 0,
+                    storage_percent: 0
+                },
+                nodes: [
+                    { name: "unknown", address: "unknown", cpu_percent: 0, memory_percent: 0 }
+                ]
+            }
+        });
+        expect(calls.map((call) => call.url)).toEqual([
+            expect.stringContaining("/cluster/resources?type=node")
+        ]);
     });
 
     it("ignores per-node storage failures and still returns node overview", async () => {

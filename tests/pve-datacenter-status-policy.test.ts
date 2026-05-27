@@ -53,4 +53,30 @@ describe("PVEDatacenterStatusPolicy", () => {
             }
         });
     });
+
+    it("guards malformed PVE metrics without emitting NaN", () => {
+        expect(buildPVEDatacenterNodeStatus({
+            status: "offline",
+            id: "",
+            cpu: Number.NaN,
+            maxcpu: Number.NaN,
+            mem: Number.NaN,
+            maxmem: Number.NaN,
+            disk: 0,
+            maxdisk: 0,
+            uptime: Number.NaN
+        })).toEqual({
+            name: "unknown",
+            online: false,
+            address: "unknown",
+            cpu_percent: 0,
+            memory_percent: 0,
+            uptime: {
+                days: 0,
+                hours: 0,
+                minutes: 0,
+                seconds: 0
+            }
+        });
+    });
 });

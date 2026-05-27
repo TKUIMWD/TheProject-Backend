@@ -7,6 +7,8 @@ export const pve_api: PVEApiEndPoints = {
     test: `${pve_api_base}/test`,
     access_ticket: `${pve_api_base}/access/ticket`,
     nodes: `${pve_api_base}/nodes`,
+    cluster_resources_nodes: `${pve_api_base}/cluster/resources?type=node`,
+    cluster_resources_vms: `${pve_api_base}/cluster/resources?type=vm`,
     nodes_storage: (node: string) => `${pve_api_base}/nodes/${node}/storage`,
     nodes_qemu: (node: string) => `${pve_api_base}/nodes/${node}/qemu`,
     nodes_qemu_config: (node: string, vmid: string) => `${pve_api_base}/nodes/${node}/qemu/${vmid}/config`,

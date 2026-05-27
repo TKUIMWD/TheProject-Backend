@@ -70,6 +70,10 @@ export interface VM_Task_Query {
     status?: VM_Task_Status;
 }
 
+export interface VM_Task_Recent_Query {
+    status?: VM_Task_Status | { $in: VM_Task_Status[] };
+}
+
 export interface VM_Task_Query_With_Pagination extends VM_Task_Query {
     page?: number;
     limit?: number;

@@ -3,18 +3,20 @@ import { pve_api } from "../../enum/PVE_API";
 import { PVE_TASK_STATUS, PVE_Task_Status_Response } from "../../interfaces/PVE";
 import { PVEResp } from "../../interfaces/Response/PVEResp";
 import { User } from "../../interfaces/User";
-import { VM_Task, VM_Task_Query, VM_Task_Status, VM_Task_With_PVE_Status } from "../../interfaces/VM/VM_Task";
+import { VM_Task, VM_Task_Query, VM_Task_Recent_Query, VM_Task_Status, VM_Task_With_PVE_Status } from "../../interfaces/VM/VM_Task";
 import { logger } from "../../middlewares/log";
 import { createResponse, resp } from "../../utils/resp";
 import { validatePaginationInput } from "../common/PaginationPolicy";
 import { PVEClient, pveClient } from "./PVEClient";
 import { buildVMTaskPVERefreshDecision, buildVMTaskWithPVEStatusDTO } from "../vm/VMTaskFactory";
 import { vmTaskRepository } from "../vm/VMTaskRepository";
+import { buildPVERecentTaskDTO, parsePVERecentTaskStatusFilter } from "./PVERecentTaskPolicy";
 
 type VMTaskServiceRepository = {
     listTasksByIdsForUser(taskIds: string[], userId: string): Promise<VM_Task[]>;
     findLatestForUser(userId: string): Promise<VM_Task | null>;
     listForUser(query: VM_Task_Query, pagination: { skip: number; limit: number }): Promise<VM_Task[]>;
+    listRecent(query: VM_Task_Recent_Query, pagination: { skip: number; limit: number }): Promise<VM_Task[]>;
     count(query?: unknown): Promise<number>;
     findByTaskIdForUser(taskId: string, userId: string): Promise<VM_Task | null>;
     updateTask(taskId: string, update: unknown): Promise<unknown>;
@@ -131,6 +133,55 @@ export class PVETaskService {
 
         const refreshedTask = await this.refreshAndUpdateTaskStatus(task);
         return createResponse(200, "Task status refreshed successfully", refreshedTask);
+    }
+
+    public async getRecentTasks(input: {
+        page?: unknown;
+        limit?: unknown;
+        status?: unknown;
+    }): Promise<resp<any>> {
+        const pagination = validatePaginationInput({
+            page: input.page,
+            limit: input.limit
+        });
+        if (!pagination.valid) {
+            return createResponse(400, pagination.message);
+        }
+
+        const statusFilter = parsePVERecentTaskStatusFilter(input.status);
+        if (!statusFilter.valid) {
+            return createResponse(400, statusFilter.message);
+        }
+
+        const query: VM_Task_Recent_Query = {};
+        if (statusFilter.queryStatus) {
+            query.status = statusFilter.queryStatus;
+        }
+
+        const [tasks, totalTasks] = await Promise.all([
+            this.taskRepo.listRecent(query, { skip: pagination.skip, limit: pagination.limit }),
+            this.taskRepo.count(query)
+        ]);
+
+        const paginationBody = {
+            page: pagination.page,
+            limit: pagination.limit,
+            total: totalTasks,
+            totalPages: Math.ceil(totalTasks / pagination.limit)
+        };
+
+        if (tasks.length === 0) {
+            return createResponse(200, "No recent tasks found", {
+                tasks: [],
+                pagination: paginationBody
+            });
+        }
+
+        const tasksWithStatus = await Promise.all(tasks.map((task) => this.getTaskWithPVEStatus(task)));
+        return createResponse(200, "Recent tasks fetched successfully", {
+            tasks: tasksWithStatus.map(buildPVERecentTaskDTO),
+            pagination: paginationBody
+        });
     }
 
     public async cleanupTasks(): Promise<resp<any>> {

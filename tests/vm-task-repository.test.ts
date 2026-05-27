@@ -173,6 +173,21 @@ describe("VMTaskRepository", () => {
         ]);
     });
 
+    it("lists recent tasks with dashboard query filters", async () => {
+        const { repository, calls } = makeRepository();
+
+        await expect(repository.listRecent({
+            status: { $in: [VM_Task_Status.PENDING, VM_Task_Status.IN_PROGRESS] }
+        }, { skip: 10, limit: 5 })).resolves.toEqual([{ task_id: "task-1" }]);
+
+        expect(calls).toEqual([
+            { method: "find", args: [{ status: { $in: [VM_Task_Status.PENDING, VM_Task_Status.IN_PROGRESS] } }] },
+            { method: "sort", args: [{ created_at: -1 }] },
+            { method: "skip", args: [10] },
+            { method: "limit", args: [5] }
+        ]);
+    });
+
     it("finds a task by task ID/user and supports cleanup stats", async () => {
         const { repository, calls } = makeRepository();
         const cutoff = new Date("2026-04-26T00:00:00.000Z");

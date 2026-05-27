@@ -110,7 +110,7 @@ Run it against staging or production data before adding unique constraints. The 
 
 ## Important Modules
 
-- `src/modules/pve` - PVE client, QEMU config access, task status workflows, datacenter DTO policy.
+- `src/modules/pve` - PVE client, QEMU config access, task status workflows, datacenter, VM inventory, and storage DTO policies.
 - `src/modules/vm` - VM creation, deletion, config update, read workflows, resource accounting, repositories, and task policies.
 - `src/modules/guacamole` - Guacamole API client, auth, connection profile, preflight, lifecycle, management, and disconnect services.
 - `src/modules/ai-chat` - AI chat request policies, language policy, Box hint service, and VM management assistant workflows.
@@ -142,7 +142,7 @@ Major completed slices include:
 
 - Auth registration, login, verification, logout, and forgot-password workflows.
 - VM creation, deletion, config update, read/status/network, operation execution, task status, and resource accounting.
-- PVE client and request adapters for QEMU config, node status, task status, cleanup, and datacenter status.
+- PVE client and request adapters for QEMU config, node status, task status, recent task history, cleanup, datacenter status, VM inventory, storage details, QEMU VM detail, dashboard VM operations, and dashboard trends.
 - Guacamole auth/user lifecycle, SSH/RDP/VNC establishment, preflight, connection management, disconnect, and request adapters.
 - AI Chat Box hints, platform guide, VM management workflows, request validation, language policy, and pending-action handling.
 - AI Box Build job/draft/run/workspace/provisioning/OpenCode/SSH execution workflows.
@@ -154,7 +154,7 @@ The latest recorded local gate is green:
 
 - `npm run typecheck`
 - targeted facade-boundary tests: `52` files, `261` tests
-- `npm test`: `187` files, `924` tests
+- `npm test`: `197` files, `968` tests
 - `npm run build`
 - `npm audit --audit-level=moderate`: `0` vulnerabilities
 - scans for merge-conflict markers, backend `console.*`, reverse imports from `src/modules` to `src/service`, and service-layer Express `Request`/auth-helper imports

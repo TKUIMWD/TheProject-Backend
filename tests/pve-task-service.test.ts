@@ -80,6 +80,10 @@ function makeService(options: {
                 calls.push({ method: "listForUser", args: [query, pagination] });
                 return options.tasks ?? [makeTask()];
             },
+            listRecent: async (query, pagination) => {
+                calls.push({ method: "listRecent", args: [query, pagination] });
+                return options.tasks ?? [makeTask()];
+            },
             count: async (query) => {
                 calls.push({ method: "count", args: [query] });
                 return options.count ?? 1;
@@ -187,6 +191,114 @@ describe("PVETaskService", () => {
             progress: 100,
             "steps.0.step_status": VM_Task_Status.COMPLETED
         });
+    });
+
+    it("returns recent dashboard tasks with compact task DTOs", async () => {
+        const { service, calls } = makeService({
+            count: 8,
+            tasks: [
+                makeTask({
+                    status: VM_Task_Status.FAILED,
+                    progress: 60,
+                    steps: [
+                        {
+                            step_name: "Clone VM from Template",
+                            pve_upid: "UPID:failed",
+                            step_status: VM_Task_Status.FAILED,
+                            step_start_time: now,
+                            step_end_time: new Date("2026-05-26T00:05:00.000Z"),
+                            error_message: "storage full"
+                        }
+                    ]
+                })
+            ],
+            pveData: {
+                status: PVE_TASK_STATUS.STOPPED,
+                type: "qmclone",
+                user: "root@pam",
+                starttime: 1,
+                endtime: 2,
+                exitstatus: "storage full"
+            }
+        });
+
+        await expect(service.getRecentTasks({
+            page: "1",
+            limit: "5",
+            status: "failed"
+        })).resolves.toMatchObject({
+            code: 200,
+            message: "Recent tasks fetched successfully",
+            body: {
+                pagination: {
+                    page: 1,
+                    limit: 5,
+                    total: 8,
+                    totalPages: 2
+                },
+                tasks: [
+                    {
+                        task_id: "task-1",
+                        upid: "UPID:failed",
+                        node: "pve-a",
+                        vmid: "101",
+                        action_type: "Clone VM from Template",
+                        status: VM_Task_Status.FAILED,
+                        start_time: "2026-05-26T00:00:00.000Z",
+                        end_time: "2026-05-26T00:05:00.000Z",
+                        progress: 60,
+                        error_message: "storage full"
+                    }
+                ]
+            }
+        });
+
+        expect(calls).toContainEqual({
+            method: "listRecent",
+            args: [{ status: VM_Task_Status.FAILED }, { skip: 0, limit: 5 }]
+        });
+    });
+
+    it("maps running dashboard task filter to pending and in-progress tasks", async () => {
+        const { service, calls } = makeService();
+
+        await service.getRecentTasks({ status: "running" });
+
+        expect(calls).toContainEqual({
+            method: "listRecent",
+            args: [
+                { status: { $in: [VM_Task_Status.PENDING, VM_Task_Status.IN_PROGRESS] } },
+                { skip: 0, limit: 10 }
+            ]
+        });
+    });
+
+    it("returns an empty recent task list with pagination", async () => {
+        const { service } = makeService({ tasks: [], count: 0 });
+
+        await expect(service.getRecentTasks({})).resolves.toEqual({
+            code: 200,
+            message: "No recent tasks found",
+            body: {
+                tasks: [],
+                pagination: {
+                    page: 1,
+                    limit: 10,
+                    total: 0,
+                    totalPages: 0
+                }
+            }
+        });
+    });
+
+    it("rejects invalid recent task status filters", async () => {
+        const { service, calls } = makeService();
+
+        await expect(service.getRecentTasks({ status: "done" })).resolves.toMatchObject({
+            code: 400,
+            message: "Invalid task status filter"
+        });
+        expect(calls).toEqual([]);
     });
 
     it("cleans old tasks and returns post-cleanup counts", async () => {
